@@ -98,6 +98,44 @@ describe('shared adapter utilities', () => {
       const configs = normalizeToToolConfigs(qm);
       expect(configs).toHaveLength(0);
     });
+
+    it('throws Error when registry query returns non-array (async query)', () => {
+      // Create a mock object that looks like a Quartermaster but returns a Promise
+      const mockQm = {
+        query: () => Promise.resolve([]), // Returns Promise, not array
+        register: () => mockQm,
+        execute: () => Promise.resolve({}),
+      };
+      expect(() => normalizeToToolConfigs(mockQm as any)).toThrow(
+        'Async queries not supported in adapter. Call query() first and await it.',
+      );
+    });
+
+    it('throws TypeError for invalid item in array', () => {
+      const invalidItem = { notATool: true };
+      expect(() => normalizeToToolConfigs([invalidItem] as any)).toThrow(TypeError);
+      expect(() => normalizeToToolConfigs([invalidItem] as any)).toThrow(
+        'Invalid tool input: expected QuartermasterTool or ToolConfig',
+      );
+    });
+
+    it('throws TypeError for completely invalid input', () => {
+      const invalidInput = 'not a tool';
+      expect(() => normalizeToToolConfigs(invalidInput as any)).toThrow(TypeError);
+      expect(() => normalizeToToolConfigs(invalidInput as any)).toThrow(
+        'Invalid input: expected tool, tool array, or Quartermaster registry',
+      );
+    });
+
+    it('throws TypeError for object that looks like config but is missing execute', () => {
+      const almostConfig = {
+        name: 'fake',
+        description: 'fake',
+        schema: testSchema,
+        // missing execute
+      };
+      expect(() => normalizeToToolConfigs(almostConfig as any)).toThrow(TypeError);
+    });
   });
 
   describe('isSingleInput', () => {
