@@ -1,8 +1,12 @@
 import {
   type AddEventListenerOptionsLike,
+  type AsyncIteratorOptions,
   createEventTarget,
-  type EventfulEvent,
+  type EmissionEvent,
   type MinimalAbortSignal,
+  type ObservableLike,
+  type Observer,
+  type Subscription,
 } from 'event-emission';
 
 import { createTool } from './create-tool';
@@ -125,7 +129,7 @@ export interface QuartermasterEvents {
 }
 
 export type QuartermasterEventDispatcher = <K extends keyof QuartermasterEvents & string>(
-  event: EventfulEvent<QuartermasterEvents[K]>,
+  event: EmissionEvent<QuartermasterEvents[K]>,
 ) => boolean;
 
 export interface Quartermaster {
@@ -156,10 +160,42 @@ export interface Quartermaster {
   toJSON: () => SerializedQuartermaster;
   addEventListener: <K extends keyof QuartermasterEvents & string>(
     type: K,
-    listener: (event: EventfulEvent<QuartermasterEvents[K]>) => void | Promise<void>,
+    listener: (event: EmissionEvent<QuartermasterEvents[K]>) => void | Promise<void>,
     options?: AddEventListenerOptionsLike,
   ) => () => void;
   dispatchEvent: QuartermasterEventDispatcher;
+
+  // Observable-based event methods (event-emission 0.2.0)
+  on: <K extends keyof QuartermasterEvents & string>(
+    type: K,
+    options?: AddEventListenerOptionsLike | boolean,
+  ) => ObservableLike<EmissionEvent<QuartermasterEvents[K]>>;
+  once: <K extends keyof QuartermasterEvents & string>(
+    type: K,
+    listener: (event: EmissionEvent<QuartermasterEvents[K]>) => void | Promise<void>,
+    options?: Omit<AddEventListenerOptionsLike, 'once'>,
+  ) => () => void;
+  subscribe: <K extends keyof QuartermasterEvents & string>(
+    type: K,
+    observerOrNext?:
+      | Observer<EmissionEvent<QuartermasterEvents[K]>>
+      | ((value: EmissionEvent<QuartermasterEvents[K]>) => void),
+    error?: (err: unknown) => void,
+    complete?: () => void,
+  ) => Subscription;
+  toObservable: () => ObservableLike<
+    EmissionEvent<QuartermasterEvents[keyof QuartermasterEvents]>
+  >;
+
+  // Async iteration (event-emission 0.2.0)
+  events: <K extends keyof QuartermasterEvents & string>(
+    type: K,
+    options?: AsyncIteratorOptions,
+  ) => AsyncIterableIterator<EmissionEvent<QuartermasterEvents[K]>>;
+
+  // Lifecycle methods
+  complete: () => void;
+  readonly completed: boolean;
 }
 
 export function createQuartermaster(
@@ -169,7 +205,23 @@ export function createQuartermaster(
   const registry = new Map<string, QuartermasterTool>();
   const storedConfigurations = new Map<string, ToolConfig>();
   const hub = createEventTarget<QuartermasterEvents>();
-  const { addEventListener, dispatchEvent, clear } = hub;
+  const {
+    addEventListener,
+    dispatchEvent,
+    clear,
+    on,
+    once,
+    subscribe,
+    toObservable,
+    events,
+    complete,
+  } = hub;
+
+  // Helper to emit events with proper typing (event-emission accepts partial events at runtime)
+  const emit = <K extends keyof QuartermasterEvents & string>(
+    type: K,
+    detail: QuartermasterEvents[K],
+  ) => dispatchEvent({ type, detail } as EmissionEvent<QuartermasterEvents[K]>);
   const baseContext = options.context ? { ...options.context } : {};
   const buildTool =
     typeof options.toolFactory === 'function'
@@ -198,10 +250,10 @@ export function createQuartermaster(
     for (const configuration of configurations) {
       const normalized = normalizeConfiguration(configuration);
       const tool = buildTool(normalized);
-      dispatchEvent({ type: 'registering', detail: tool });
+      emit('registering', tool);
       storedConfigurations.set(normalized.name, normalized);
       registry.set(tool.name, tool);
-      dispatchEvent({ type: 'registered', detail: tool });
+      emit('registered', tool);
     }
     return api;
   }
@@ -223,18 +275,18 @@ export function createQuartermaster(
           error: `Tool not found: ${call.name}`,
         };
         results.push(notFound);
-        dispatchEvent({ type: 'not-found', detail: call });
+        emit('not-found', call);
         continue;
       }
 
-      dispatchEvent({ type: 'call', detail: { tool, call } });
+      emit('call', { tool, call });
       try {
         const result = await tool.execute(call as any);
         results.push(result);
         if (result.error) {
-          dispatchEvent({ type: 'error', detail: { tool, result } });
+          emit('error', { tool, result });
         } else {
-          dispatchEvent({ type: 'complete', detail: { tool, result } });
+          emit('complete', { tool, result });
         }
       } catch (error) {
         const errResult: ToolResult = {
@@ -244,7 +296,7 @@ export function createQuartermaster(
           error: error instanceof Error ? error.message : String(error),
         };
         results.push(errResult);
-        dispatchEvent({ type: 'error', detail: { tool, result: errResult } });
+        emit('error', { tool, result: errResult });
       }
     }
     return Array.isArray(input) ? results : results[0]!;
@@ -253,7 +305,7 @@ export function createQuartermaster(
   function query(criteria?: QueryInput): QueryResult | Promise<QueryResult> {
     const tools = Array.from(registry.values());
     if (!criteria) {
-      dispatchEvent({ type: 'query', detail: { results: tools } });
+      emit('query', { results: tools });
       return tools;
     }
     const predicates = buildPredicates(criteria);
@@ -269,7 +321,7 @@ export function createQuartermaster(
 
     if (!predicates.length) {
       const results = applyRanking(tools);
-      dispatchEvent({ type: 'query', detail: { criteria, results } });
+      emit('query', { criteria, results });
       return results;
     }
     const combined = composePredicates(predicates);
@@ -277,12 +329,12 @@ export function createQuartermaster(
     if (isPromise(filtered)) {
       return filtered.then((matches) => {
         const ranked = applyRanking(matches);
-        dispatchEvent({ type: 'query', detail: { criteria, results: ranked } });
+        emit('query', { criteria, results: ranked });
         return ranked;
       });
     }
     const ranked = applyRanking(filtered);
-    dispatchEvent({ type: 'query', detail: { criteria, results: ranked } });
+    emit('query', { criteria, results: ranked });
     return ranked;
   }
 
@@ -332,6 +384,18 @@ export function createQuartermaster(
     toJSON,
     addEventListener,
     dispatchEvent,
+    // Observable-based event methods (event-emission 0.2.0)
+    on,
+    once,
+    subscribe,
+    toObservable,
+    // Async iteration (event-emission 0.2.0)
+    events,
+    // Lifecycle methods
+    complete,
+    get completed() {
+      return hub.completed;
+    },
   };
 
   if (serialized.length) {

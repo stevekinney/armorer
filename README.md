@@ -2,6 +2,17 @@
 
 A lightweight, type-safe registry for validated AI tools. Build tools with Zod schemas and metadata, register them in a quartermaster, and execute/query them with event hooks.
 
+## Why Quartermaster?
+
+AI tool-calling is often the "wild west" of your application. Managing a growing list of functions, validating LLM-generated arguments, and tracking execution across different providers can quickly become a maintenance nightmare.
+
+**Quartermaster** transforms your tools from loose functions into a structured, observable, and searchable "armory."
+
+- **Zod-Powered Type Safety**: Define your tool's schema once. Quartermaster handles validation and provides full TypeScript inference, so you never have to guess what's in your `params`.
+- **Provider Agnostic**: Whether you're using OpenAI, Anthropic, Gemini, or a local Llama model, Quartermaster speaks their language by generating standard JSON Schemas.
+- **Deep Observability**: With a built-in event system, you can hook into every stage of a tool's lifecycle—track progress, log errors, or update UIs in real-time as the LLM works.
+- **Dynamic Discovery**: Don't just hardcode a list of tools. Use the powerful query system to find tools by tags, metadata, or schema shape, allowing your agent to discover the capabilities it needs on the fly.
+
 ## Features
 
 - **Type-Safe Tools**: Define tools with Zod schemas for runtime validation and TypeScript inference

@@ -15,9 +15,13 @@ export type { CreateToolOptions, WithContext } from './create-tool';
 export { createTool, createToolCall, withContext } from './create-tool';
 export type {
   AddEventListenerOptionsLike,
+  AsyncIteratorOptions,
   DefaultToolEvents,
   MinimalAbortSignal,
+  ObservableLike,
+  Observer,
   QuartermasterTool,
+  Subscription,
   ToolCallWithArguments,
   ToolConfig,
   ToolContext,

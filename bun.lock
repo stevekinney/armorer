@@ -5,7 +5,7 @@
     "": {
       "name": "project-name",
       "dependencies": {
-        "event-emission": "^0.1.0",
+        "event-emission": "0.2.0",
       },
       "devDependencies": {
         "@eslint/eslintrc": "^3.3.3",
@@ -348,7 +348,7 @@
 
     "esutils": ["esutils@2.0.3", "", {}, "sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g=="],
 
-    "event-emission": ["event-emission@0.1.0", "", {}, "sha512-S6pabXxUSf7TiplDroTBRNlRD+5HHdUyLwdbExcbLDzXhJuq3cONfPX3/mb5Cq9zWISJ5+wPTq010wRMhcqMdQ=="],
+    "event-emission": ["event-emission@0.2.0", "", {}, "sha512-Ferz4OM+vBTTqeJ1/McLO1EzOEoGahAI7N+KQaD5c95wnDfodt0AflTpIqo3hv4XKModKy8U9+St3kQqMWVPvA=="],
 
     "eventemitter3": ["eventemitter3@5.0.1", "", {}, "sha512-GWkBvjiSZK87ELrYOSESUYeVIc9mvLLf/nXalMOS5dYrgZq9o5OVkbZAVM06CVxYsCwH9BDZFPlQTlPA1j4ahA=="],
 

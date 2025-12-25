@@ -1,14 +1,25 @@
 import type {
   AddEventListenerOptionsLike,
-  EventfulEvent,
+  AsyncIteratorOptions,
+  EmissionEvent,
   MinimalAbortSignal,
+  ObservableLike,
+  Observer,
+  Subscription,
 } from 'event-emission';
 import { z } from 'zod';
 
 import type { ToolCall, ToolResult } from './types';
 
 export type ToolParametersSchema = z.ZodSchema;
-export type { AddEventListenerOptionsLike, MinimalAbortSignal } from 'event-emission';
+export type {
+  AddEventListenerOptionsLike,
+  AsyncIteratorOptions,
+  MinimalAbortSignal,
+  ObservableLike,
+  Observer,
+  Subscription,
+} from 'event-emission';
 
 /**
  * Unified tool configuration type.
@@ -60,7 +71,7 @@ export type DefaultToolEvents = {
 
 export type MergeEvents<Custom extends ToolEventsMap> = DefaultToolEvents & Custom;
 
-export type ToolCustomEvent<Detail> = EventfulEvent<Detail>;
+export type ToolCustomEvent<Detail> = EmissionEvent<Detail>;
 
 /**
  * Context passed to tool execute functions.
@@ -121,12 +132,46 @@ export type QuartermasterTool<
   tags?: readonly string[];
   metadata: M;
   (params: unknown): Promise<R>;
+
+  // Event listener methods
   addEventListener: <K extends keyof E & string>(
     type: K,
     listener: (event: ToolCustomEvent<E[K]>) => void | Promise<void>,
     options?: AddEventListenerOptionsLike,
   ) => () => void;
   dispatchEvent: <K extends keyof E & string>(event: ToolCustomEvent<E[K]>) => boolean;
+
+  // Observable-based event methods (new in event-emission 0.2.0)
+  on: <K extends keyof E & string>(
+    type: K,
+    options?: AddEventListenerOptionsLike | boolean,
+  ) => ObservableLike<ToolCustomEvent<E[K]>>;
+  once: <K extends keyof E & string>(
+    type: K,
+    listener: (event: ToolCustomEvent<E[K]>) => void | Promise<void>,
+    options?: Omit<AddEventListenerOptionsLike, 'once'>,
+  ) => () => void;
+  subscribe: <K extends keyof E & string>(
+    type: K,
+    observerOrNext?:
+      | Observer<ToolCustomEvent<E[K]>>
+      | ((value: ToolCustomEvent<E[K]>) => void),
+    error?: (err: unknown) => void,
+    complete?: () => void,
+  ) => Subscription;
+  toObservable: () => ObservableLike<ToolCustomEvent<E[keyof E]>>;
+
+  // Async iteration (new in event-emission 0.2.0)
+  events: <K extends keyof E & string>(
+    type: K,
+    options?: AsyncIteratorOptions,
+  ) => AsyncIterableIterator<ToolCustomEvent<E[K]>>;
+
+  // Lifecycle methods
+  complete: () => void;
+  readonly completed: boolean;
+
+  // Tool execution methods
   execute: (
     call: ToolCallWithArguments,
     options?: ToolExecuteOptions,

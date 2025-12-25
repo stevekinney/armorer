@@ -85,7 +85,20 @@ export function createTool<
   const typedSchema = normalizedSchema as unknown as z.ZodType<TInput>;
 
   const hub = createEventTarget<E>();
-  const { addEventListener, dispatchEvent, clear } = hub;
+  const {
+    addEventListener,
+    dispatchEvent,
+    on,
+    once,
+    subscribe,
+    toObservable,
+    events,
+    complete,
+  } = hub;
+
+  // Helper to emit events with proper typing (event-emission accepts partial events at runtime)
+  const emit = (type: string, detail: unknown) =>
+    dispatchEvent({ type, detail } as Parameters<typeof dispatchEvent>[0]);
 
   let toolConfiguration!: ToolConfig;
 
@@ -121,14 +134,8 @@ export function createTool<
         }
       }
       const errorObj = new Error(message);
-      dispatchEvent({
-        type: 'execute-error' as any,
-        detail: { ...baseDetail, error: errorObj } as any,
-      });
-      dispatchEvent({
-        type: 'settled' as any,
-        detail: { ...baseDetail, error: errorObj } as any,
-      });
+      emit('execute-error', { ...baseDetail, error: errorObj });
+      emit('settled', { ...baseDetail, error: errorObj });
       return {
         toolCallId: toolCall.id ?? '',
         toolName: name,
@@ -142,20 +149,14 @@ export function createTool<
     }
 
     try {
-      dispatchEvent({
-        type: 'execute-start' as any,
-        detail: { ...baseDetail, params: toolCall.arguments } as any,
-      });
+      emit('execute-start', { ...baseDetail, params: toolCall.arguments });
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
       }
       const parsed = schema.parse(toolCall.arguments) as TInput;
       const typedToolCall = { ...toolCall, arguments: parsed } as ToolCallWithArguments;
       const parsedDetail = { toolCall: typedToolCall, toolConfiguration };
-      dispatchEvent({
-        type: 'validate-success' as any,
-        detail: { ...parsedDetail, params: toolCall.arguments, parsed } as any,
-      });
+      emit('validate-success', { ...parsedDetail, params: toolCall.arguments, parsed });
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
       }
@@ -174,14 +175,8 @@ export function createTool<
           ? withTimeout(runner, options.timeoutMs)
           : runner;
       const value = await raceWithSignal(timed, options.signal);
-      dispatchEvent({
-        type: 'execute-success' as any,
-        detail: { ...parsedDetail, result: value } as any,
-      });
-      dispatchEvent({
-        type: 'settled' as any,
-        detail: { ...parsedDetail, result: value } as any,
-      });
+      emit('execute-success', { ...parsedDetail, result: value });
+      emit('settled', { ...parsedDetail, result: value });
       return {
         toolCallId: typedToolCall.id ?? '',
         toolName: name,
@@ -193,17 +188,11 @@ export function createTool<
       }
       const isZod = (error as any)?.name === 'ZodError';
       if (isZod) {
-        dispatchEvent({
-          type: 'validate-error' as any,
-          detail: { ...baseDetail, params: toolCall.arguments, error } as any,
-        });
+        emit('validate-error', { ...baseDetail, params: toolCall.arguments, error });
       } else {
-        dispatchEvent({
-          type: 'execute-error' as any,
-          detail: { ...baseDetail, error } as any,
-        });
+        emit('execute-error', { ...baseDetail, error });
       }
-      dispatchEvent({ type: 'settled' as any, detail: { ...baseDetail, error } as any });
+      emit('settled', { ...baseDetail, error });
       return {
         toolCallId: toolCall.id ?? '',
         toolName: name,
@@ -260,8 +249,21 @@ export function createTool<
     execute,
     rawExecute: fn, // Expose the original user function for testing
     toolConfiguration,
+    // Event listener methods
     addEventListener,
     dispatchEvent,
+    // Observable-based event methods (event-emission 0.2.0)
+    on,
+    once,
+    subscribe,
+    toObservable,
+    // Async iteration (event-emission 0.2.0)
+    events,
+    // Lifecycle methods
+    complete,
+    get completed() {
+      return hub.completed;
+    },
     toJSON,
     toString: () => `**${name}**: ${description}`,
     [Symbol.toPrimitive]: () => name,
@@ -298,9 +300,9 @@ export function createTool<
     },
   );
 
-  // Provide [Symbol.dispose] to clear listeners if available/used
+  // Provide [Symbol.dispose] to complete the event target (clears listeners and marks complete)
   (bag as any)[Symbol.dispose] = () => {
-    clear();
+    complete();
   };
 
   (bag as any).executeWith = (options: ToolExecuteWithOptions) => {

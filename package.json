@@ -76,7 +76,7 @@
     ]
   },
   "dependencies": {
-    "event-emission": "^0.1.0"
+    "event-emission": "0.2.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",
