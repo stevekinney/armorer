@@ -68,3 +68,14 @@ export {
 
 // Types
 export type { ToolCall, ToolConfiguration, ToolResult } from './types';
+
+// Tool composition
+export { compose, pipe, PipelineError } from './compose';
+export type {
+  AnyTool,
+  ComposedTool,
+  ComposedToolEvents,
+  InferToolInput,
+  InferToolOutput,
+  ToolWithInput,
+} from './compose-types';
