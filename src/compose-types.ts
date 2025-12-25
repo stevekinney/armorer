@@ -8,8 +8,8 @@ import type {
   ToolParametersSchema,
 } from './is-tool';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /** Extract input type from a tool's schema */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type InferToolInput<T> =
   T extends QuartermasterTool<infer S, any, any, any>
     ? S extends z.ZodType<infer I>
@@ -18,9 +18,9 @@ export type InferToolInput<T> =
     : never;
 
 /** Extract output type from a tool */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type InferToolOutput<T> =
   T extends QuartermasterTool<any, any, infer R, any> ? R : never;
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 /** Any tool (for constraint purposes) */
 export type AnyTool = QuartermasterTool<

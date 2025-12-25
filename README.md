@@ -19,6 +19,8 @@ AI tool-calling is often the "wild west" of your application. Managing a growing
 - **Tool Registry**: Register, query, and execute tools from a central registry
 - **Event System**: Listen to tool lifecycle events (start, success, error, progress)
 - **Query System**: Find tools by tags, schemas, text search, or custom predicates
+- **Provider Adapters**: One-line export to OpenAI, Anthropic, and Google Gemini formats
+- **Tool Composition**: Chain tools together with `pipe()` and `compose()` with full type inference
 - **AbortSignal Support**: Cancel tool execution with standard AbortController
 - **Metadata Support**: Attach custom metadata to tools for filtering and categorization
 - **Zero Dependencies on LLM Providers**: Works with any LLM that supports tool calling
@@ -336,6 +338,177 @@ const jsonSchema = tool.toJSON();
 // }
 ```
 
+## Provider Adapters
+
+Export tools in the format expected by different LLM providers. Each adapter is available as a separate subpath export.
+
+### OpenAI
+
+```typescript
+import { toOpenAI } from 'quartermaster/openai';
+
+// Single tool
+const openAITool = toOpenAI(myTool);
+
+// Multiple tools
+const openAITools = toOpenAI([tool1, tool2]);
+
+// From registry
+const openAITools = toOpenAI(quartermaster);
+
+// Use with OpenAI SDK
+const response = await openai.chat.completions.create({
+  model: 'gpt-4',
+  messages,
+  tools: toOpenAI(quartermaster),
+});
+```
+
+### Anthropic
+
+```typescript
+import { toAnthropic } from 'quartermaster/anthropic';
+
+// Single tool
+const anthropicTool = toAnthropic(myTool);
+
+// Multiple tools
+const anthropicTools = toAnthropic([tool1, tool2]);
+
+// From registry
+const anthropicTools = toAnthropic(quartermaster);
+
+// Use with Anthropic SDK
+const response = await anthropic.messages.create({
+  model: 'claude-sonnet-4-20250514',
+  messages,
+  tools: toAnthropic(quartermaster),
+});
+```
+
+### Google Gemini
+
+```typescript
+import { toGemini } from 'quartermaster/gemini';
+
+// Single tool
+const geminiDeclaration = toGemini(myTool);
+
+// Multiple tools
+const geminiDeclarations = toGemini([tool1, tool2]);
+
+// From registry
+const geminiDeclarations = toGemini(quartermaster);
+
+// Use with Gemini SDK
+const model = genAI.getGenerativeModel({
+  model: 'gemini-pro',
+  tools: [{ functionDeclarations: toGemini(quartermaster) }],
+});
+```
+
+## Tool Composition
+
+Chain tools together with `pipe()` and `compose()`. The output of each tool flows as input to the next, with full TypeScript type inference preserved across the chain.
+
+### pipe()
+
+Chains tools left-to-right (data flows forward):
+
+```typescript
+import { pipe, createTool } from 'quartermaster';
+import { z } from 'zod';
+
+const parseNumber = createTool({
+  name: 'parse-number',
+  description: 'Parse string to number',
+  schema: z.object({ str: z.string() }),
+  execute: async ({ str }) => parseInt(str, 10),
+});
+
+const double = createTool({
+  name: 'double',
+  description: 'Double a number',
+  schema: z.number(),
+  execute: async (n) => n * 2,
+});
+
+const stringify = createTool({
+  name: 'stringify',
+  description: 'Format as result string',
+  schema: z.number(),
+  execute: async (n) => `Result: ${n}`,
+});
+
+// Chain tools together - types flow through automatically
+const pipeline = pipe(parseNumber, double, stringify);
+
+// Input type is inferred from first tool: { str: string }
+// Output type is inferred from last tool: string
+const result = await pipeline({ str: '21' });
+console.log(result); // "Result: 42"
+```
+
+### compose()
+
+Chains tools right-to-left (mathematical function composition):
+
+```typescript
+import { compose } from 'quartermaster';
+
+// compose(c, b, a) is equivalent to pipe(a, b, c)
+const pipeline = compose(stringify, double, parseNumber);
+
+const result = await pipeline({ str: '21' });
+console.log(result); // "Result: 42"
+```
+
+### Composed Tools are Tools
+
+Composed tools implement the full `QuartermasterTool` interface:
+
+```typescript
+const pipeline = pipe(parseNumber, double);
+
+// Register in a quartermaster
+qm.register(pipeline.toolConfiguration);
+
+// Listen to events
+pipeline.addEventListener('step-start', (e) => {
+  console.log(`Step ${e.detail.stepIndex}: ${e.detail.stepName}`);
+});
+
+pipeline.addEventListener('step-complete', (e) => {
+  console.log(`Step ${e.detail.stepIndex} output:`, e.detail.output);
+});
+
+// Compose further
+const extendedPipeline = pipe(pipeline, stringify);
+```
+
+### Error Handling
+
+Errors are wrapped with step context for debugging:
+
+```typescript
+import { PipelineError } from 'quartermaster';
+
+try {
+  await pipeline({ str: 'invalid' });
+} catch (e) {
+  if (e.message.includes('Pipeline failed at step')) {
+    // Error message includes: "Pipeline failed at step 1 (double)"
+    console.error(e.message);
+  }
+}
+
+// Or use executeWith for detailed results
+const result = await pipeline.executeWith({ params: { str: '21' } });
+if (result.error) {
+  console.error('Pipeline error:', result.error);
+}
+```
+
 ## API Reference
 
 ### `createTool(options)`
@@ -394,6 +567,45 @@ import {
   schemaContainsKeys,
   rankByIntent,
 } from 'quartermaster';
+```
+
+### `pipe(...tools)`
+
+Chains 2-9 tools together, passing output of each as input to the next.
+
+```typescript
+import { pipe } from 'quartermaster';
+
+const pipeline = pipe(toolA, toolB, toolC);
+const result = await pipeline(input); // Fully typed
+```
+
+**Returns:** A `QuartermasterTool` with:
+
+- Input type from first tool's schema
+- Output type from last tool's return type
+- Events: `step-start`, `step-complete`, `step-error`
+
+### `compose(...tools)`
+
+Like `pipe()` but right-to-left (mathematical function composition).
+
+```typescript
+import { compose } from 'quartermaster';
+
+// compose(c, b, a) === pipe(a, b, c)
+const pipeline = compose(toolC, toolB, toolA);
+```
+
+### Provider Adapters
+
+```typescript
+import { toOpenAI } from 'quartermaster/openai';
+import { toAnthropic } from 'quartermaster/anthropic';
+import { toGemini } from 'quartermaster/gemini';
+
+// Each accepts: tool, tool array, or Quartermaster registry
+// Returns provider-specific format
 ```
 
 ## TypeScript
