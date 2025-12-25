@@ -5,8 +5,7 @@
     "": {
       "name": "project-name",
       "dependencies": {
-        "change-case": "^5.4.4",
-        "zod": "^4.2.1",
+        "event-emission": "^0.1.0",
       },
       "devDependencies": {
         "@eslint/eslintrc": "^3.3.3",
@@ -39,6 +38,10 @@
         "typescript-eslint": "^8.50.0",
         "unified": "^11.0.5",
         "unist-util-remove": "^4.0.0",
+        "zod": "^4.2.1",
+      },
+      "peerDependencies": {
+        "zod": "^4.0.0",
       },
     },
   },
@@ -344,6 +347,8 @@
     "estraverse": ["estraverse@5.3.0", "", {}, "sha512-MMdARuVEQziNTeJD8DgMqmhwR11BRQ/cBP+pLtYdSTnf3MIO8fFeiINEbX36ZdNlfU/7A9f3gUw49B3oQsvwBA=="],
 
     "esutils": ["esutils@2.0.3", "", {}, "sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g=="],
+
+    "event-emission": ["event-emission@0.1.0", "", {}, "sha512-S6pabXxUSf7TiplDroTBRNlRD+5HHdUyLwdbExcbLDzXhJuq3cONfPX3/mb5Cq9zWISJ5+wPTq010wRMhcqMdQ=="],
 
     "eventemitter3": ["eventemitter3@5.0.1", "", {}, "sha512-GWkBvjiSZK87ELrYOSESUYeVIc9mvLLf/nXalMOS5dYrgZq9o5OVkbZAVM06CVxYsCwH9BDZFPlQTlPA1j4ahA=="],
 
