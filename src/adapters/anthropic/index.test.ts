@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createQuartermaster, createTool } from '../../index';
+import { createArmorer, createTool } from '../../index';
 import { toAnthropic } from './index';
 
 describe('toAnthropic', () => {
@@ -72,15 +72,15 @@ describe('toAnthropic', () => {
 
   describe('registry conversion', () => {
     it('returns array for registry input', () => {
-      const qm = createQuartermaster().register(tool.toolConfiguration);
-      const result = toAnthropic(qm);
+      const armorer = createArmorer().register(tool);
+      const result = toAnthropic(armorer);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(1);
     });
 
     it('returns empty array for empty registry', () => {
-      const qm = createQuartermaster();
-      const result = toAnthropic(qm);
+      const armorer = createArmorer();
+      const result = toAnthropic(armorer);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(0);
     });
@@ -88,7 +88,7 @@ describe('toAnthropic', () => {
 
   describe('tool config conversion', () => {
     it('works with tool configuration', () => {
-      const result = toAnthropic(tool.toolConfiguration);
+      const result = toAnthropic(tool.configuration);
       expect(result.name).toBe('search');
       expect(result.input_schema.type).toBe('object');
     });

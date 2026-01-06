@@ -161,7 +161,7 @@ export default [
       'src/schema-utilities.ts',
       'src/inspect.ts',
       'src/create-tool.ts',
-      'src/create-quartermaster.ts',
+      'src/create-armorer.ts',
     ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',

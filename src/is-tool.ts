@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 import type { ToolCall, ToolResult } from './types';
 
-export type ToolParametersSchema = z.ZodSchema;
+export type ToolParametersSchema = z.ZodType<Record<string, unknown>>;
 export type {
   AddEventListenerOptionsLike,
   AsyncIteratorOptions,
@@ -32,7 +32,9 @@ export interface ToolConfig {
   name: string;
   description: string;
   schema: ToolParametersSchema;
-  execute: (params: unknown, context?: unknown) => Promise<unknown>;
+  execute:
+    | ((params: unknown, context?: unknown) => Promise<unknown>)
+    | Promise<(params: unknown, context?: unknown) => Promise<unknown>>;
   tags?: readonly string[];
   metadata?: ToolMetadata;
 }
@@ -50,7 +52,7 @@ export type ToolCallWithArguments = ToolCall & {
 
 export type ToolEventDetailContext = {
   toolCall: ToolCall;
-  toolConfiguration: ToolConfig;
+  configuration: ToolConfig;
 };
 
 export type ToolMetadata = Record<string, unknown>;
@@ -80,7 +82,7 @@ export interface ToolContext<E extends ToolEventsMap = DefaultToolEvents> {
   dispatch: <K extends keyof E & string>(event: ToolCustomEvent<E[K]>) => boolean;
   meta?: { toolName: string; callId?: string };
   toolCall: ToolCallWithArguments;
-  toolConfiguration: ToolConfig;
+  configuration: ToolConfig;
 }
 
 export interface ToolExecuteOptions {
@@ -96,30 +98,31 @@ export type ToolExecuteWithOptions = ToolExecuteOptions & {
   timeoutMs?: number;
 };
 
-export function isTool(obj: unknown): obj is QuartermasterTool {
+export function isTool(obj: unknown): obj is ArmorerTool {
   return (
     typeof obj === 'function' &&
     'name' in obj &&
     'description' in obj &&
     'schema' in obj &&
-    'execute' in obj
+    'execute' in obj &&
+    'configuration' in obj
   );
 }
 
 /**
- * A tool that can be registered with Quartermaster and executed.
+ * A tool that can be registered with Armorer and executed.
  *
  * Use with type parameters for compile-time safety on a specific tool:
  * ```ts
- * const myTool: QuartermasterTool<typeof mySchema> = createTool({...});
+ * const myTool: ArmorerTool<typeof mySchema> = createTool({...});
  * ```
  *
  * Use without type parameters for collections:
  * ```ts
- * const tools: QuartermasterTool[] = [tool1, tool2, tool3];
+ * const tools: ArmorerTool[] = [tool1, tool2, tool3];
  * ```
  */
-export type QuartermasterTool<
+export type ArmorerTool<
   T extends ToolParametersSchema = ToolParametersSchema,
   E extends ToolEventsMap = DefaultToolEvents,
   R = unknown,
@@ -128,7 +131,7 @@ export type QuartermasterTool<
   name: string;
   description: string;
   schema: T;
-  toolConfiguration: ToolConfig;
+  configuration: ToolConfig;
   tags?: readonly string[];
   metadata: M;
   (params: unknown): Promise<R>;
@@ -172,10 +175,10 @@ export type QuartermasterTool<
   readonly completed: boolean;
 
   // Tool execution methods
-  execute: (
-    call: ToolCallWithArguments,
-    options?: ToolExecuteOptions,
-  ) => Promise<ToolResult>;
+  execute: {
+    (call: ToolCallWithArguments, options?: ToolExecuteOptions): Promise<ToolResult>;
+    (params: unknown, options?: ToolExecuteOptions): Promise<R>;
+  };
   executeWith: (options: ToolExecuteWithOptions) => Promise<ToolResult>;
   rawExecute: (params: unknown, context: ToolContext<E>) => Promise<R>;
 };

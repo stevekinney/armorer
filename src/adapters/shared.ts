@@ -1,22 +1,22 @@
-import type { Quartermaster, QuartermasterTool, ToolConfig } from '../index';
+import type { Armorer, ArmorerTool, ToolConfig } from '../index';
 import { isTool } from '../is-tool';
 
 /**
- * Type guard to check if input is a Quartermaster registry.
+ * Type guard to check if input is an Armorer registry.
  */
-export function isQuartermaster(input: unknown): input is Quartermaster {
+export function isArmorer(input: unknown): input is Armorer {
   return (
     input !== null &&
     typeof input === 'object' &&
     'query' in input &&
     'register' in input &&
     'execute' in input &&
-    typeof (input as Quartermaster).query === 'function'
+    typeof (input as Armorer).query === 'function'
   );
 }
 
 /**
- * Type guard to check if input is a ToolConfig (not a QuartermasterTool).
+ * Type guard to check if input is a ToolConfig (not an ArmorerTool).
  */
 export function isToolConfig(input: unknown): input is ToolConfig {
   return (
@@ -31,31 +31,25 @@ export function isToolConfig(input: unknown): input is ToolConfig {
 }
 
 /**
- * Converts a QuartermasterTool to its ToolConfig.
+ * Converts an ArmorerTool to its ToolConfig.
  */
-function toolToConfig(tool: QuartermasterTool): ToolConfig {
-  return tool.toolConfiguration;
+function toolToConfig(tool: ArmorerTool): ToolConfig {
+  return tool.configuration;
 }
 
 /**
  * Normalizes various input types to an array of ToolConfig objects.
  */
 export function normalizeToToolConfigs(
-  input:
-    | QuartermasterTool
-    | ToolConfig
-    | (QuartermasterTool | ToolConfig)[]
-    | Quartermaster,
+  input: ArmorerTool | ToolConfig | (ArmorerTool | ToolConfig)[] | Armorer,
 ): ToolConfig[] {
-  // Handle Quartermaster registry
-  if (isQuartermaster(input)) {
+  // Handle Armorer registry
+  if (isArmorer(input)) {
     const tools = input.query();
     if (Array.isArray(tools)) {
       return tools.map(toolToConfig);
     }
-    throw new Error(
-      'Async queries not supported in adapter. Call query() first and await it.',
-    );
+    throw new Error('Armorer.query() must return an array.');
   }
 
   // Handle array of tools
@@ -67,7 +61,7 @@ export function normalizeToToolConfigs(
       if (isToolConfig(item)) {
         return item;
       }
-      throw new TypeError('Invalid tool input: expected QuartermasterTool or ToolConfig');
+      throw new TypeError('Invalid tool input: expected ArmorerTool or ToolConfig');
     });
   }
 
@@ -81,29 +75,23 @@ export function normalizeToToolConfigs(
     return [input];
   }
 
-  throw new TypeError(
-    'Invalid input: expected tool, tool array, or Quartermaster registry',
-  );
+  throw new TypeError('Invalid input: expected tool, tool array, or Armorer registry');
 }
 
 /**
  * Determines if the input was a single item (returns true) or array/registry (returns false).
  */
 export function isSingleInput(
-  input:
-    | QuartermasterTool
-    | ToolConfig
-    | (QuartermasterTool | ToolConfig)[]
-    | Quartermaster,
+  input: ArmorerTool | ToolConfig | (ArmorerTool | ToolConfig)[] | Armorer,
 ): boolean {
-  return !Array.isArray(input) && !isQuartermaster(input);
+  return !Array.isArray(input) && !isArmorer(input);
 }
 
 /**
  * Union type for adapter input.
  */
 export type AdapterInput =
-  | QuartermasterTool
+  | ArmorerTool
   | ToolConfig
-  | (QuartermasterTool | ToolConfig)[]
-  | Quartermaster;
+  | (ArmorerTool | ToolConfig)[]
+  | Armorer;

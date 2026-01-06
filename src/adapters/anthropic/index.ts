@@ -1,4 +1,4 @@
-import type { Quartermaster, QuartermasterTool, ToolConfig } from '../../index';
+import type { Armorer, ArmorerTool, ToolConfig } from '../../index';
 import { toJSONSchema } from '../../to-json-schema';
 import { isSingleInput, normalizeToToolConfigs } from '../shared';
 import type { AnthropicTool } from './types';
@@ -6,11 +6,11 @@ import type { AnthropicTool } from './types';
 export type { AnthropicInputSchema, AnthropicTool, JSONSchemaProperty } from './types';
 
 /**
- * Converts Quartermaster tools to Anthropic Messages API format.
+ * Converts Armorer tools to Anthropic Messages API format.
  *
  * @example
  * ```ts
- * import { toAnthropic } from 'quartermaster/anthropic';
+ * import { toAnthropic } from 'armorer/anthropic';
  *
  * // Single tool
  * const tool = toAnthropic(myTool);
@@ -19,25 +19,21 @@ export type { AnthropicInputSchema, AnthropicTool, JSONSchemaProperty } from './
  * const tools = toAnthropic([tool1, tool2]);
  *
  * // From registry
- * const tools = toAnthropic(quartermaster);
+ * const tools = toAnthropic(armorer);
  *
  * // Use with Anthropic SDK
  * const response = await anthropic.messages.create({
  *   model: 'claude-sonnet-4-20250514',
  *   messages,
- *   tools: toAnthropic(quartermaster),
+ *   tools: toAnthropic(armorer),
  * });
  * ```
  */
-export function toAnthropic(tool: QuartermasterTool | ToolConfig): AnthropicTool;
-export function toAnthropic(tools: (QuartermasterTool | ToolConfig)[]): AnthropicTool[];
-export function toAnthropic(registry: Quartermaster): AnthropicTool[];
+export function toAnthropic(tool: ArmorerTool | ToolConfig): AnthropicTool;
+export function toAnthropic(tools: (ArmorerTool | ToolConfig)[]): AnthropicTool[];
+export function toAnthropic(registry: Armorer): AnthropicTool[];
 export function toAnthropic(
-  input:
-    | QuartermasterTool
-    | ToolConfig
-    | (QuartermasterTool | ToolConfig)[]
-    | Quartermaster,
+  input: ArmorerTool | ToolConfig | (ArmorerTool | ToolConfig)[] | Armorer,
 ): AnthropicTool | AnthropicTool[] {
   const configs = normalizeToToolConfigs(input);
   const converted = configs.map(convertToAnthropic);

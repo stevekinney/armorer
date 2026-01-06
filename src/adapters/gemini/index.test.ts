@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createQuartermaster, createTool } from '../../index';
+import { createArmorer, createTool } from '../../index';
 import { toGemini } from './index';
 
 describe('toGemini', () => {
@@ -67,15 +67,15 @@ describe('toGemini', () => {
 
   describe('registry conversion', () => {
     it('returns array for registry input', () => {
-      const qm = createQuartermaster().register(tool.toolConfiguration);
-      const result = toGemini(qm);
+      const armorer = createArmorer().register(tool);
+      const result = toGemini(armorer);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(1);
     });
 
     it('returns empty array for empty registry', () => {
-      const qm = createQuartermaster();
-      const result = toGemini(qm);
+      const armorer = createArmorer();
+      const result = toGemini(armorer);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(0);
     });
@@ -83,7 +83,7 @@ describe('toGemini', () => {
 
   describe('tool config conversion', () => {
     it('works with tool configuration', () => {
-      const result = toGemini(tool.toolConfiguration);
+      const result = toGemini(tool.configuration);
       expect(result.name).toBe('search');
       expect(result.parameters).toHaveProperty('type', 'object');
     });

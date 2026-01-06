@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { compose, pipe, PipelineError } from './compose';
-import { createQuartermaster } from './create-quartermaster';
+import { bind, compose, pipe, PipelineError } from './compose';
+import { createArmorer } from './create-armorer';
 import { createTool } from './create-tool';
+import { isTool } from './is-tool';
 
 describe('pipe()', () => {
   // Setup test tools
@@ -11,28 +12,28 @@ describe('pipe()', () => {
     name: 'parse-number',
     description: 'Parses a string to a number',
     schema: z.object({ str: z.string() }),
-    execute: async ({ str }) => parseInt(str, 10),
+    execute: async ({ str }) => ({ value: parseInt(str, 10) }),
   });
 
   const double = createTool({
     name: 'double',
     description: 'Doubles a number',
-    schema: z.number(),
-    execute: async (n) => n * 2,
+    schema: z.object({ value: z.number() }),
+    execute: async ({ value }) => ({ value: value * 2 }),
   });
 
   const stringify = createTool({
     name: 'stringify',
     description: 'Converts number to formatted string',
-    schema: z.number(),
-    execute: async (n) => `Result: ${n}`,
+    schema: z.object({ value: z.number() }),
+    execute: async ({ value }) => ({ text: `Result: ${value}` }),
   });
 
   const addPrefix = createTool({
     name: 'add-prefix',
     description: 'Adds prefix to string',
-    schema: z.string(),
-    execute: async (s) => `PREFIX: ${s}`,
+    schema: z.object({ text: z.string() }),
+    execute: async ({ text }) => `PREFIX: ${text}`,
   });
 
   describe('basic functionality', () => {
@@ -62,13 +63,13 @@ describe('pipe()', () => {
     it('executes 2 tools in sequence', async () => {
       const pipeline = pipe(parseNumber, double);
       const result = await pipeline({ str: '21' });
-      expect(result).toBe(42);
+      expect(result).toEqual({ value: 42 });
     });
 
     it('executes 3 tools in sequence', async () => {
       const pipeline = pipe(parseNumber, double, stringify);
       const result = await pipeline({ str: '21' });
-      expect(result).toBe('Result: 42');
+      expect(result).toEqual({ text: 'Result: 42' });
     });
 
     it('executes 4 tools in sequence', async () => {
@@ -92,7 +93,7 @@ describe('pipe()', () => {
         name: 'bad-tool',
         description: 'Returns wrong type',
         schema: z.object({ str: z.string() }),
-        execute: async () => 'not a number' as unknown as number,
+        execute: async () => ({ value: 'not a number' as unknown as number }),
       });
 
       const pipeline = pipe(badTool, double);
@@ -126,7 +127,7 @@ describe('pipe()', () => {
       expect(events[1]).toEqual({
         stepIndex: 1,
         stepName: 'double',
-        input: 5,
+        input: { value: 5 },
       });
     });
 
@@ -143,12 +144,12 @@ describe('pipe()', () => {
       expect(events[0]).toEqual({
         stepIndex: 0,
         stepName: 'parse-number',
-        output: 5,
+        output: { value: 5 },
       });
       expect(events[1]).toEqual({
         stepIndex: 1,
         stepName: 'double',
-        output: 10,
+        output: { value: 10 },
       });
     });
 
@@ -156,7 +157,7 @@ describe('pipe()', () => {
       const failing = createTool({
         name: 'failing',
         description: 'Always fails',
-        schema: z.number(),
+        schema: z.object({ value: z.number() }),
         execute: async () => {
           throw new Error('boom');
         },
@@ -183,7 +184,7 @@ describe('pipe()', () => {
       const failing = createTool({
         name: 'failing',
         description: 'Always fails',
-        schema: z.number(),
+        schema: z.object({ value: z.number() }),
         execute: async () => {
           throw new Error('boom');
         },
@@ -201,7 +202,7 @@ describe('pipe()', () => {
       const failing = createTool({
         name: 'failing',
         description: 'Always fails',
-        schema: z.number(),
+        schema: z.object({ value: z.number() }),
         execute: async () => {
           throw new Error('boom');
         },
@@ -216,10 +217,10 @@ describe('pipe()', () => {
   });
 
   describe('composability', () => {
-    it('composed tools can be registered in Quartermaster', () => {
+    it('composed tools can be registered in Armorer', () => {
       const pipeline = pipe(parseNumber, double);
-      const qm = createQuartermaster().register(pipeline.toolConfiguration);
-      const found = qm.getTool('pipe(parse-number, double)');
+      const armorer = createArmorer().register(pipeline);
+      const found = armorer.getTool('pipe(parse-number, double)');
       expect(found).toBeDefined();
       expect(found?.name).toBe('pipe(parse-number, double)');
     });
@@ -229,7 +230,7 @@ describe('pipe()', () => {
       const second = pipe(first, stringify);
 
       const result = await second({ str: '10' });
-      expect(result).toBe('Result: 20');
+      expect(result).toEqual({ text: 'Result: 20' });
     });
 
     it('nested pipelines have combined names', () => {
@@ -240,14 +241,15 @@ describe('pipe()', () => {
     });
   });
 
-  describe('tool interface compatibility', () => {
+  describe('tool interface surface', () => {
     it('has required tool properties', () => {
       const pipeline = pipe(parseNumber, double);
 
+      expect(isTool(pipeline)).toBe(true);
       expect(pipeline.name).toBeDefined();
       expect(pipeline.description).toBeDefined();
       expect(pipeline.schema).toBeDefined();
-      expect(pipeline.toolConfiguration).toBeDefined();
+      expect(pipeline.configuration).toBeDefined();
       expect(typeof pipeline.execute).toBe('function');
       expect(typeof pipeline.addEventListener).toBe('function');
     });
@@ -258,7 +260,7 @@ describe('pipe()', () => {
         params: { str: '21' },
       });
 
-      expect(result.result).toBe(42);
+      expect(result.result).toEqual({ value: 42 });
       expect(result.toolName).toBe('pipe(parse-number, double)');
     });
   });
@@ -268,35 +270,35 @@ describe('compose()', () => {
   const increment = createTool({
     name: 'increment',
     description: 'Adds 1',
-    schema: z.number(),
-    execute: async (n) => n + 1,
+    schema: z.object({ value: z.number() }),
+    execute: async ({ value }) => ({ value: value + 1 }),
   });
 
   const double = createTool({
     name: 'double',
     description: 'Doubles',
-    schema: z.number(),
-    execute: async (n) => n * 2,
+    schema: z.object({ value: z.number() }),
+    execute: async ({ value }) => ({ value: value * 2 }),
   });
 
   const square = createTool({
     name: 'square',
     description: 'Squares',
-    schema: z.number(),
-    execute: async (n) => n * n,
+    schema: z.object({ value: z.number() }),
+    execute: async ({ value }) => ({ value: value * value }),
   });
 
   it('composes right-to-left', async () => {
     // compose(double, increment) means: first increment, then double
     // Input: 5 -> increment -> 6 -> double -> 12
     const composed = compose(double, increment);
-    const result = await composed(5);
-    expect(result).toBe(12);
+    const result = await composed({ value: 5 });
+    expect(result).toEqual({ value: 12 });
   });
 
   it('is equivalent to pipe with reversed order', async () => {
-    const pipeResult = await pipe(increment, double, square)(5);
-    const composeResult = await compose(square, double, increment)(5);
+    const pipeResult = await pipe(increment, double, square)({ value: 5 });
+    const composeResult = await compose(square, double, increment)({ value: 5 });
 
     expect(pipeResult).toEqual(composeResult);
   });
@@ -305,6 +307,69 @@ describe('compose()', () => {
     const composed = compose(double, increment);
     // After reversing: increment, double
     expect(composed.name).toBe('pipe(increment, double)');
+  });
+
+  it('returns a valid tool instance', () => {
+    const composed = compose(double, increment);
+    expect(isTool(composed)).toBe(true);
+    expect(composed.configuration).toBeDefined();
+    expect(typeof composed.execute).toBe('function');
+  });
+});
+
+describe('bind()', () => {
+  const sum = createTool({
+    name: 'sum',
+    description: 'Adds two numbers',
+    schema: z.object({ a: z.number(), b: z.number() }),
+    execute: async ({ a, b }) => a + b,
+  });
+
+  it('binds object parameters and requires remaining inputs', async () => {
+    const addOne = bind(sum, { a: 1 }, { name: 'add-one' });
+    expect(isTool(addOne)).toBe(true);
+    expect(addOne.name).toBe('add-one');
+    expect(addOne.schema.safeParse({ b: 2 }).success).toBe(true);
+    expect(addOne.schema.safeParse({}).success).toBe(false);
+    const result = await addOne({ b: 2 });
+    expect(result).toBe(3);
+  });
+
+  it('throws when binding unknown keys', () => {
+    expect(() => bind(sum, { c: 1 } as any)).toThrow(/unknown keys/);
+  });
+
+  it('throws when binding non-object to object schema', () => {
+    expect(() => bind(sum, 1 as any)).toThrow(/expects an object/);
+  });
+
+  it('throws when binding a tool with a non-object schema', () => {
+    const rawTool = async function rawTool(params: number) {
+      return params;
+    };
+    (rawTool as any).description = 'raw-number';
+    (rawTool as any).schema = z.number();
+    (rawTool as any).tags = [];
+    (rawTool as any).metadata = undefined;
+
+    expect(() => bind(rawTool as any, {} as any)).toThrow(/object schema/);
+  });
+
+  it('throws when schema does not support omit', () => {
+    const schemaWithoutOmit = {
+      shape: { a: z.string(), b: z.number() },
+    };
+    const rawTool = async function rawTool(params: { a: string; b: number }) {
+      return params;
+    };
+    (rawTool as any).description = 'raw';
+    (rawTool as any).schema = schemaWithoutOmit;
+    (rawTool as any).tags = [];
+    (rawTool as any).metadata = undefined;
+
+    expect(() => bind(rawTool as any, { a: 'ok' }, { name: 'raw-bound' })).toThrow(
+      /Zod object schema/,
+    );
   });
 });
 
@@ -343,21 +408,21 @@ describe('type inference', () => {
       name: 'to-number',
       description: 'Parses string to number',
       schema: z.object({ value: z.string() }),
-      execute: async ({ value }) => parseInt(value, 10),
+      execute: async ({ value }) => ({ value: parseInt(value, 10) }),
     });
 
     const add10 = createTool({
       name: 'add-10',
       description: 'Adds 10',
-      schema: z.number(),
-      execute: async (n) => n + 10,
+      schema: z.object({ value: z.number() }),
+      execute: async ({ value }) => ({ value: value + 10 }),
     });
 
     const pipeline = pipe(toNumber, add10);
 
     // TypeScript should know this expects { value: string }
     const result = await pipeline({ value: '5' });
-    expect(result).toBe(15);
+    expect(result).toEqual({ value: 15 });
   });
 
   it('preserves type through multiple steps', async () => {

@@ -1,26 +1,31 @@
 export type {
-  Quartermaster,
-  QuartermasterContext,
-  QuartermasterEvents,
-  QuartermasterOptions,
-  QuartermasterToolRuntimeContext,
-  QueryDescriptor,
-  QueryInput,
+  Armorer,
+  ArmorerContext,
+  ArmorerEvents,
+  ArmorerOptions,
+  ArmorerToolRuntimeContext,
+  MetadataFilter,
   QueryResult,
-  SerializedQuartermaster,
+  SchemaFilter,
+  SerializedArmorer,
+  TagFilter,
+  ToolMatch,
+  ToolQuery,
+  ToolSearchOptions,
+  ToolSearchRank,
   ToolStatusUpdate,
-} from './create-quartermaster';
-export { createQuartermaster } from './create-quartermaster';
+} from './create-armorer';
+export { createArmorer } from './create-armorer';
 export type { CreateToolOptions, WithContext } from './create-tool';
 export { createTool, createToolCall, withContext } from './create-tool';
 export type {
   AddEventListenerOptionsLike,
+  ArmorerTool,
   AsyncIteratorOptions,
   DefaultToolEvents,
   MinimalAbortSignal,
   ObservableLike,
   Observer,
-  QuartermasterTool,
   Subscription,
   ToolCallWithArguments,
   ToolConfig,
@@ -36,14 +41,12 @@ export { isTool } from './is-tool';
 
 // Query predicates and ranking helpers
 export {
-  byForbiddenTags,
-  bySchema,
-  byTag,
-  fuzzyText,
-  matchesIntentTags,
-  rankByIntent,
-  schemaContainsKeys,
-  scoreIntentMatch,
+  schemaHasKeys,
+  schemaMatches,
+  tagsMatchAll,
+  tagsMatchAny,
+  tagsMatchNone,
+  textMatches,
   type ToolPredicate,
 } from './query-predicates';
 
@@ -70,7 +73,7 @@ export {
 export type { ToolCall, ToolConfiguration, ToolResult } from './types';
 
 // Tool composition
-export { compose, pipe, PipelineError } from './compose';
+export { bind, compose, pipe, PipelineError } from './compose';
 export type {
   AnyTool,
   ComposedTool,

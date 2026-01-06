@@ -1,17 +1,16 @@
 import type { z } from 'zod';
 
 import type {
+  ArmorerTool,
   DefaultToolEvents,
-  QuartermasterTool,
   ToolEventsMap,
   ToolMetadata,
   ToolParametersSchema,
 } from './is-tool';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /** Extract input type from a tool's schema */
 export type InferToolInput<T> =
-  T extends QuartermasterTool<infer S, any, any, any>
+  T extends ArmorerTool<infer S, infer _E, infer _R, infer _M>
     ? S extends z.ZodType<infer I>
       ? I
       : never
@@ -19,11 +18,10 @@ export type InferToolInput<T> =
 
 /** Extract output type from a tool */
 export type InferToolOutput<T> =
-  T extends QuartermasterTool<any, any, infer R, any> ? R : never;
-/* eslint-enable @typescript-eslint/no-explicit-any */
+  T extends ArmorerTool<infer _S, infer _E, infer R, infer _M> ? R : never;
 
 /** Any tool (for constraint purposes) */
-export type AnyTool = QuartermasterTool<
+export type AnyTool = ArmorerTool<
   ToolParametersSchema,
   ToolEventsMap,
   unknown,
@@ -31,7 +29,7 @@ export type AnyTool = QuartermasterTool<
 >;
 
 /** Tool that accepts a specific input type */
-export type ToolWithInput<I> = QuartermasterTool<
+export type ToolWithInput<I extends Record<string, unknown>> = ArmorerTool<
   z.ZodType<I>,
   ToolEventsMap,
   unknown,
@@ -65,8 +63,8 @@ export type ComposedToolEvents = DefaultToolEvents & {
   [key: string]: unknown;
 };
 
-/** Composed tool result type - uses DefaultToolEvents for compatibility */
-export type ComposedTool<TInput, TOutput> = QuartermasterTool<
+/** Composed tool result type - uses DefaultToolEvents by default */
+export type ComposedTool<TInput extends Record<string, unknown>, TOutput> = ArmorerTool<
   z.ZodType<TInput>,
   DefaultToolEvents,
   TOutput,

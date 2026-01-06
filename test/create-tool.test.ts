@@ -18,11 +18,11 @@ describe('createTool', () => {
         b: z.number().optional(),
       }),
       execute: async (params, context) => {
-        const { dispatch, toolCall, toolConfiguration } = context;
+        const { dispatch, toolCall, configuration } = context;
         expect(toolCall.arguments).toEqual(params);
         expect(toolCall.name).toBe('example');
-        expect(toolConfiguration.name).toBe('example');
-        expect(toolConfiguration.schema).toBe(tool.schema);
+        expect(configuration.name).toBe('example');
+        expect(configuration.schema).toBe(tool.schema);
         calls.push(params);
         // emit an event to ensure context works
         dispatch({ type: 'called', detail: params });
@@ -52,7 +52,138 @@ describe('createTool', () => {
     expect(calls[1]).toEqual({ a: 'hi' });
   });
 
-  it('exposes toolConfiguration.execute for direct invocation', async () => {
+  it('supports rawExecute and completion', async () => {
+    const tool = createTool({
+      name: 'raw-exec',
+      description: 'executes with raw context',
+      schema: z.object({ value: z.string() }),
+      async execute({ value }) {
+        return value.toUpperCase();
+      },
+    });
+
+    const toolCall = createToolCall('raw-exec', { value: 'ok' });
+    const result = await tool.rawExecute(
+      { value: 'ok' },
+      {
+        dispatch: tool.dispatchEvent,
+        toolCall,
+        configuration: tool.configuration,
+      },
+    );
+    expect(result).toBe('OK');
+
+    expect(tool.completed).toBe(false);
+    tool.complete();
+    expect(tool.completed).toBe(true);
+  });
+
+  it('throws when execute is not a function or promise', () => {
+    expect(() =>
+      createTool({
+        name: 'bad-execute',
+        description: 'invalid execute type',
+        schema: z.object({}),
+        execute: 123 as any,
+      }),
+    ).toThrow('execute must be a function or a promise that resolves to a function');
+  });
+
+  it('executes via execute(params) the same way as direct calls', async () => {
+    const tool = createTool({
+      name: 'execute-params',
+      description: 'execute with params',
+      schema: z.object({ value: z.string() }),
+      async execute({ value }) {
+        return value.toUpperCase();
+      },
+    });
+
+    const direct = await tool({ value: 'ok' });
+    const viaExecute = await tool.execute({ value: 'ok' });
+    expect(viaExecute).toBe(direct);
+  });
+
+  it('throws when execute(params) hits validation errors', async () => {
+    const tool = createTool({
+      name: 'execute-invalid',
+      description: 'invalid params',
+      schema: z.object({ value: z.string() }),
+      async execute({ value }) {
+        return value;
+      },
+    });
+
+    await expect(tool.execute({} as any)).rejects.toThrow();
+  });
+
+  it('defaults schema to an empty object when omitted', async () => {
+    const tool = createTool({
+      name: 'no-schema',
+      description: 'defaults schema',
+      execute: async () => 'ok',
+    });
+
+    expect(tool.schema.safeParse({}).success).toBe(true);
+    const result = await tool({});
+    expect(result).toBe('ok');
+  });
+
+  it('supports lazy execute functions via promise', async () => {
+    let resolvedCount = 0;
+    const executePromise = Promise.resolve().then(() => {
+      resolvedCount += 1;
+      return async ({ value }: { value: string }) => value.toUpperCase();
+    });
+
+    const tool = createTool({
+      name: 'lazy-exec',
+      description: 'loads execute lazily',
+      schema: z.object({ value: z.string() }),
+      execute: executePromise,
+    });
+
+    const result = await tool({ value: 'hi' });
+    expect(result).toBe('HI');
+
+    const execResult = await tool.execute(
+      createToolCall('lazy-exec', { value: 'ok' }),
+    );
+    expect(execResult.result).toBe('OK');
+    expect(resolvedCount).toBe(1);
+  });
+
+  it('returns an error when lazy execute rejects', async () => {
+    const tool = createTool({
+      name: 'lazy-reject',
+      description: 'fails on load',
+      schema: z.object({ value: z.string() }),
+      execute: Promise.resolve().then(() => {
+        throw new Error('lazy load failed');
+      }),
+    });
+
+    const result = await tool.execute(
+      createToolCall('lazy-reject', { value: 'x' }),
+    );
+    expect(result.error).toContain('lazy load failed');
+  });
+
+  it('returns an error when lazy execute resolves to non-function', async () => {
+    const tool = createTool({
+      name: 'lazy-bad',
+      description: 'bad execute',
+      schema: z.object({ value: z.string() }),
+      execute: Promise.resolve(42 as any),
+    });
+
+    const result = await tool.execute(createToolCall('lazy-bad', { value: 'x' }));
+    expect(result.error).toContain(
+      'execute must be a function or a promise that resolves to a function',
+    );
+  });
+
+  it('exposes configuration.execute for direct invocation', async () => {
     const tool = createTool({
       name: 'config-exec',
       description: 'call via config',
@@ -62,7 +193,7 @@ describe('createTool', () => {
       },
     });
 
-    const value = await tool.toolConfiguration.execute({ a: 'ok' });
+    const value = await tool.configuration.execute({ a: 'ok' });
     expect(value).toBe('OK');
   });
 
@@ -315,8 +446,9 @@ describe('createTool', () => {
     expect(meta.type).toBe('function');
     expect(meta.name).toBe('json-meta');
     expect(meta.description).toBe('JSON view');
-    expect(meta.schema).toBe(tool.schema);
     expect(meta.strict).toBe(true);
+    expect(meta).not.toHaveProperty('schema');
+    expect(() => JSON.stringify(meta)).not.toThrow();
 
     // Parameters JSON Schema assertions
     const params = meta.parameters as Record<string, unknown>;
@@ -370,8 +502,7 @@ describe('createTool', () => {
 
   describe('schema normalization', () => {
     it('accepts a plain object of Zod schemas as the schema', async () => {
-      // This tests the normalizeSchema fallback path where schema is not a ZodSchema
-      // but is a plain object containing Zod schemas
+      // This tests the normalization path where schema is a plain object of Zod schemas.
       const schemaAsObject = { name: z.string(), count: z.number() } as any;
 
       const tool = createTool({
@@ -397,7 +528,9 @@ describe('createTool', () => {
             return null;
           },
         }),
-      ).toThrow(/Tool schema must be a Zod schema or an object of Zod schemas/);
+      ).toThrow(
+        /Tool schema must be a Zod object schema or an object of Zod schemas/,
+      );
     });
 
     it('throws when schema is null', () => {
@@ -410,7 +543,9 @@ describe('createTool', () => {
             return null;
           },
         }),
-      ).toThrow(/Tool schema must be a Zod schema or an object of Zod schemas/);
+      ).toThrow(
+        /Tool schema must be a Zod object schema or an object of Zod schemas/,
+      );
     });
 
     it('throws when schema is a number', () => {
@@ -423,7 +558,22 @@ describe('createTool', () => {
             return null;
           },
         }),
-      ).toThrow(/Tool schema must be a Zod schema or an object of Zod schemas/);
+      ).toThrow(
+        /Tool schema must be a Zod object schema or an object of Zod schemas/,
+      );
+    });
+
+    it('throws when schema is a non-object Zod schema', () => {
+      expect(() =>
+        createTool({
+          name: 'primitive-schema',
+          description: 'uses primitive schema',
+          schema: z.number(),
+          async execute() {
+            return null;
+          },
+        }),
+      ).toThrow(/Tool schema must be a Zod object schema/);
     });
   });
 });
@@ -650,7 +800,7 @@ describe('isTool', () => {
     tool.addEventListener('validate-error' as any, (evt) => {
       validateErr++;
       expect(evt.detail.toolCall.name).toBe('valerr');
-      expect(evt.detail.toolConfiguration.name).toBe('valerr');
+      expect(evt.detail.configuration.name).toBe('valerr');
     });
     tool.addEventListener('settled' as any, (evt) => {
       settled++;
@@ -681,7 +831,7 @@ describe('isTool', () => {
     });
     tool.addEventListener('settled' as any, (evt) => {
       settled++;
-      expect(evt.detail.toolConfiguration.name).toBe('throwerr');
+      expect(evt.detail.configuration.name).toBe('throwerr');
     });
 
     await expect(tool({ a: 'x' })).rejects.toBeDefined();
@@ -707,7 +857,7 @@ describe('isTool', () => {
       started++;
       expect(evt.detail.params).toBeDefined();
       expect(evt.detail.toolCall.name).toBe('oktool');
-      expect(evt.detail.toolConfiguration.name).toBe('oktool');
+      expect(evt.detail.configuration.name).toBe('oktool');
     });
     tool.addEventListener('validate-success' as any, (evt) => {
       validated++;
@@ -717,7 +867,7 @@ describe('isTool', () => {
     tool.addEventListener('execute-success' as any, (evt) => {
       succeeded++;
       expect((evt.detail as any).result).toBe('X');
-      expect(evt.detail.toolConfiguration.name).toBe('oktool');
+      expect(evt.detail.configuration.name).toBe('oktool');
     });
     tool.addEventListener('settled' as any, (evt) => {
       settled++;
@@ -802,7 +952,7 @@ describe('isTool', () => {
 
   it('getOwnPropertyDescriptor falls through to callable for non-bag property', () => {
     const tool = createTool({
-      name: 'desc-fallback',
+      name: 'desc-proxy',
       description: 'descriptor',
       schema: z.object({ a: z.string() }),
       async execute() {

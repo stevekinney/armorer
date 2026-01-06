@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import type {
   AnyTool,
   ComposedTool,
@@ -6,7 +8,8 @@ import type {
   ToolWithInput,
 } from './compose-types';
 import { createTool } from './create-tool';
-import type { DefaultToolEvents, ToolContext } from './is-tool';
+import type { DefaultToolEvents, ToolContext, ToolParametersSchema } from './is-tool';
+import { getSchemaShape } from './schema-utilities';
 
 /**
  * Error thrown when a pipeline step fails.
@@ -26,10 +29,13 @@ export class PipelineError extends Error {
   }
 }
 
+type OutputAsInput<TTool extends AnyTool> = InferToolOutput<TTool> &
+  Record<string, unknown>;
+
 // Overloads for 2-9 tools with type inference
 
 /** Pipe 2 tools together */
-export function pipe<A extends AnyTool, B extends ToolWithInput<InferToolOutput<A>>>(
+export function pipe<A extends AnyTool, B extends ToolWithInput<OutputAsInput<A>>>(
   a: A,
   b: B,
 ): ComposedTool<InferToolInput<A>, InferToolOutput<B>>;
@@ -37,35 +43,35 @@ export function pipe<A extends AnyTool, B extends ToolWithInput<InferToolOutput<
 /** Pipe 3 tools together */
 export function pipe<
   A extends AnyTool,
-  B extends ToolWithInput<InferToolOutput<A>>,
-  C extends ToolWithInput<InferToolOutput<B>>,
+  B extends ToolWithInput<OutputAsInput<A>>,
+  C extends ToolWithInput<OutputAsInput<B>>,
 >(a: A, b: B, c: C): ComposedTool<InferToolInput<A>, InferToolOutput<C>>;
 
 /** Pipe 4 tools together */
 export function pipe<
   A extends AnyTool,
-  B extends ToolWithInput<InferToolOutput<A>>,
-  C extends ToolWithInput<InferToolOutput<B>>,
-  D extends ToolWithInput<InferToolOutput<C>>,
+  B extends ToolWithInput<OutputAsInput<A>>,
+  C extends ToolWithInput<OutputAsInput<B>>,
+  D extends ToolWithInput<OutputAsInput<C>>,
 >(a: A, b: B, c: C, d: D): ComposedTool<InferToolInput<A>, InferToolOutput<D>>;
 
 /** Pipe 5 tools together */
 export function pipe<
   A extends AnyTool,
-  B extends ToolWithInput<InferToolOutput<A>>,
-  C extends ToolWithInput<InferToolOutput<B>>,
-  D extends ToolWithInput<InferToolOutput<C>>,
-  E extends ToolWithInput<InferToolOutput<D>>,
+  B extends ToolWithInput<OutputAsInput<A>>,
+  C extends ToolWithInput<OutputAsInput<B>>,
+  D extends ToolWithInput<OutputAsInput<C>>,
+  E extends ToolWithInput<OutputAsInput<D>>,
 >(a: A, b: B, c: C, d: D, e: E): ComposedTool<InferToolInput<A>, InferToolOutput<E>>;
 
 /** Pipe 6 tools together */
 export function pipe<
   A extends AnyTool,
-  B extends ToolWithInput<InferToolOutput<A>>,
-  C extends ToolWithInput<InferToolOutput<B>>,
-  D extends ToolWithInput<InferToolOutput<C>>,
-  E extends ToolWithInput<InferToolOutput<D>>,
-  F extends ToolWithInput<InferToolOutput<E>>,
+  B extends ToolWithInput<OutputAsInput<A>>,
+  C extends ToolWithInput<OutputAsInput<B>>,
+  D extends ToolWithInput<OutputAsInput<C>>,
+  E extends ToolWithInput<OutputAsInput<D>>,
+  F extends ToolWithInput<OutputAsInput<E>>,
 >(
   a: A,
   b: B,
@@ -78,12 +84,12 @@ export function pipe<
 /** Pipe 7 tools together */
 export function pipe<
   A extends AnyTool,
-  B extends ToolWithInput<InferToolOutput<A>>,
-  C extends ToolWithInput<InferToolOutput<B>>,
-  D extends ToolWithInput<InferToolOutput<C>>,
-  E extends ToolWithInput<InferToolOutput<D>>,
-  F extends ToolWithInput<InferToolOutput<E>>,
-  G extends ToolWithInput<InferToolOutput<F>>,
+  B extends ToolWithInput<OutputAsInput<A>>,
+  C extends ToolWithInput<OutputAsInput<B>>,
+  D extends ToolWithInput<OutputAsInput<C>>,
+  E extends ToolWithInput<OutputAsInput<D>>,
+  F extends ToolWithInput<OutputAsInput<E>>,
+  G extends ToolWithInput<OutputAsInput<F>>,
 >(
   a: A,
   b: B,
@@ -97,13 +103,13 @@ export function pipe<
 /** Pipe 8 tools together */
 export function pipe<
   A extends AnyTool,
-  B extends ToolWithInput<InferToolOutput<A>>,
-  C extends ToolWithInput<InferToolOutput<B>>,
-  D extends ToolWithInput<InferToolOutput<C>>,
-  E extends ToolWithInput<InferToolOutput<D>>,
-  F extends ToolWithInput<InferToolOutput<E>>,
-  G extends ToolWithInput<InferToolOutput<F>>,
-  H extends ToolWithInput<InferToolOutput<G>>,
+  B extends ToolWithInput<OutputAsInput<A>>,
+  C extends ToolWithInput<OutputAsInput<B>>,
+  D extends ToolWithInput<OutputAsInput<C>>,
+  E extends ToolWithInput<OutputAsInput<D>>,
+  F extends ToolWithInput<OutputAsInput<E>>,
+  G extends ToolWithInput<OutputAsInput<F>>,
+  H extends ToolWithInput<OutputAsInput<G>>,
 >(
   a: A,
   b: B,
@@ -118,14 +124,14 @@ export function pipe<
 /** Pipe 9 tools together */
 export function pipe<
   A extends AnyTool,
-  B extends ToolWithInput<InferToolOutput<A>>,
-  C extends ToolWithInput<InferToolOutput<B>>,
-  D extends ToolWithInput<InferToolOutput<C>>,
-  E extends ToolWithInput<InferToolOutput<D>>,
-  F extends ToolWithInput<InferToolOutput<E>>,
-  G extends ToolWithInput<InferToolOutput<F>>,
-  H extends ToolWithInput<InferToolOutput<G>>,
-  I extends ToolWithInput<InferToolOutput<H>>,
+  B extends ToolWithInput<OutputAsInput<A>>,
+  C extends ToolWithInput<OutputAsInput<B>>,
+  D extends ToolWithInput<OutputAsInput<C>>,
+  E extends ToolWithInput<OutputAsInput<D>>,
+  F extends ToolWithInput<OutputAsInput<E>>,
+  G extends ToolWithInput<OutputAsInput<F>>,
+  H extends ToolWithInput<OutputAsInput<G>>,
+  I extends ToolWithInput<OutputAsInput<H>>,
 >(
   a: A,
   b: B,
@@ -140,7 +146,7 @@ export function pipe<
 
 /**
  * Chains tools together, passing the output of each tool as input to the next.
- * Returns a new QuartermasterTool that can be used like any other tool.
+ * Returns a new ArmorerTool that can be used like any other tool.
  *
  * @example
  * ```ts
@@ -223,7 +229,7 @@ export function pipe(...tools: AnyTool[]): AnyTool {
 // Compose overloads (right-to-left, like function composition)
 
 /** Compose 2 tools (right-to-left: compose(b, a) === pipe(a, b)) */
-export function compose<A extends AnyTool, B extends ToolWithInput<InferToolOutput<A>>>(
+export function compose<A extends AnyTool, B extends ToolWithInput<OutputAsInput<A>>>(
   b: B,
   a: A,
 ): ComposedTool<InferToolInput<A>, InferToolOutput<B>>;
@@ -231,25 +237,25 @@ export function compose<A extends AnyTool, B extends ToolWithInput<InferToolOutp
 /** Compose 3 tools (right-to-left) */
 export function compose<
   A extends AnyTool,
-  B extends ToolWithInput<InferToolOutput<A>>,
-  C extends ToolWithInput<InferToolOutput<B>>,
+  B extends ToolWithInput<OutputAsInput<A>>,
+  C extends ToolWithInput<OutputAsInput<B>>,
 >(c: C, b: B, a: A): ComposedTool<InferToolInput<A>, InferToolOutput<C>>;
 
 /** Compose 4 tools (right-to-left) */
 export function compose<
   A extends AnyTool,
-  B extends ToolWithInput<InferToolOutput<A>>,
-  C extends ToolWithInput<InferToolOutput<B>>,
-  D extends ToolWithInput<InferToolOutput<C>>,
+  B extends ToolWithInput<OutputAsInput<A>>,
+  C extends ToolWithInput<OutputAsInput<B>>,
+  D extends ToolWithInput<OutputAsInput<C>>,
 >(d: D, c: C, b: B, a: A): ComposedTool<InferToolInput<A>, InferToolOutput<D>>;
 
 /** Compose 5 tools (right-to-left) */
 export function compose<
   A extends AnyTool,
-  B extends ToolWithInput<InferToolOutput<A>>,
-  C extends ToolWithInput<InferToolOutput<B>>,
-  D extends ToolWithInput<InferToolOutput<C>>,
-  E extends ToolWithInput<InferToolOutput<D>>,
+  B extends ToolWithInput<OutputAsInput<A>>,
+  C extends ToolWithInput<OutputAsInput<B>>,
+  D extends ToolWithInput<OutputAsInput<C>>,
+  E extends ToolWithInput<OutputAsInput<D>>,
 >(e: E, d: D, c: C, b: B, a: A): ComposedTool<InferToolInput<A>, InferToolOutput<E>>;
 
 /**
@@ -267,4 +273,89 @@ export function compose(...tools: AnyTool[]): AnyTool {
   const reversed = tools.reverse();
   // We know there are at least 2 tools from the overload signatures
   return (pipe as (...args: AnyTool[]) => AnyTool)(...reversed);
+}
+
+type BindParams<TTool extends AnyTool> =
+  InferToolInput<TTool> extends Record<string, unknown>
+    ? Partial<InferToolInput<TTool>>
+    : InferToolInput<TTool>;
+
+type BindInput<TTool extends AnyTool, TBound extends BindParams<TTool>> =
+  InferToolInput<TTool> extends Record<string, unknown>
+    ? Omit<InferToolInput<TTool>, keyof TBound>
+    : Record<string, never>;
+
+type BindOptions = {
+  name?: string;
+  description?: string;
+};
+
+export function bind<TTool extends AnyTool, TBound extends BindParams<TTool>>(
+  tool: TTool,
+  bound: TBound,
+  options: BindOptions = {},
+): ComposedTool<BindInput<TTool, TBound>, InferToolOutput<TTool>> {
+  const inputSchema = resolveBoundSchema(tool.schema, bound);
+  const name = options.name ?? `bind(${tool.name})`;
+  const description = options.description ?? `Bound tool: ${tool.description}`;
+  const tags = tool.tags && tool.tags.length ? tool.tags : undefined;
+
+  const toolOptions: Parameters<typeof createTool>[0] = {
+    name,
+    description,
+    schema: inputSchema as z.ZodType<BindInput<TTool, TBound>>,
+    async execute(params) {
+      const merged = mergeBoundParams(params, bound);
+      return tool(merged as InferToolInput<TTool>);
+    },
+  };
+  if (tags) {
+    toolOptions.tags = tags;
+  }
+  if (tool.metadata !== undefined) {
+    toolOptions.metadata = tool.metadata;
+  }
+  return createTool(toolOptions) as ComposedTool<
+    BindInput<TTool, TBound>,
+    InferToolOutput<TTool>
+  >;
+}
+
+function resolveBoundSchema(
+  schema: ToolParametersSchema,
+  bound: unknown,
+): ToolParametersSchema {
+  const shape = getSchemaShape(schema);
+  if (!shape) {
+    throw new TypeError('bind() expects a tool with an object schema');
+  }
+  if (!isPlainObject(bound)) {
+    throw new TypeError('bind() expects an object when binding an object-schema tool');
+  }
+  const shapeKeys = new Set(Object.keys(shape));
+  const boundKeys = Object.keys(bound);
+  const unknownKeys = boundKeys.filter((key) => !shapeKeys.has(key));
+  if (unknownKeys.length) {
+    throw new Error(`bind() cannot bind unknown keys: ${unknownKeys.sort().join(', ')}`);
+  }
+  const mask = Object.fromEntries(boundKeys.map((key) => [key, true])) as Record<
+    string,
+    true
+  >;
+  const objectSchema = schema as unknown as {
+    omit: (mask: Record<string, true>) => ToolParametersSchema;
+  };
+  if (typeof objectSchema.omit !== 'function') {
+    throw new TypeError('bind() expects a Zod object schema');
+  }
+  return objectSchema.omit(mask);
+}
+
+function mergeBoundParams(params: unknown, bound: unknown): unknown {
+  const input = isPlainObject(params) ? params : {};
+  return { ...input, ...(bound as Record<string, unknown>) };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

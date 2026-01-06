@@ -1,7 +1,7 @@
 import { describe, expect,it } from 'bun:test';
 import { z } from 'zod';
 
-import { createQuartermaster } from '../src/create-quartermaster';
+import { createArmorer } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
 import {
   extractMetadataFlags,
@@ -104,11 +104,11 @@ describe('inspect', () => {
       expect(summary.shape?.field).toBe('unknown');
     });
 
-    it('handles primitive field values in shape', () => {
-      // Create a mock schema-like object with primitive values
+    it('handles object field values without type info', () => {
+      // Create a mock schema-like object with non-schema object values
       const mockSchema = {
         _def: {
-          shape: () => ({ field: 'not a schema' }),
+          shape: () => ({ field: {} }),
         },
       };
 
@@ -128,105 +128,7 @@ describe('inspect', () => {
       expect(summary.shape?.value).toBeDefined();
     });
 
-    it('handles Zod 3 style schemas with _def.typeName', () => {
-      // Mock a Zod 3 style schema
-      const mockZod3Schema = {
-        _def: {
-          typeName: 'ZodString',
-        },
-      };
-      const mockObjectSchema = {
-        _def: {
-          shape: () => ({ name: mockZod3Schema }),
-        },
-      };
-
-      const summary = extractSchemaSummary(mockObjectSchema as any, true);
-      expect(summary.shape?.name).toBe('string');
-    });
-
-    it('handles Zod 3 style optional types', () => {
-      const innerSchema = {
-        _def: { typeName: 'ZodString' },
-      };
-      const mockZod3Optional = {
-        _def: {
-          typeName: 'ZodOptional',
-          innerType: innerSchema,
-        },
-      };
-      const mockObjectSchema = {
-        _def: {
-          shape: () => ({ field: mockZod3Optional }),
-        },
-      };
-
-      const summary = extractSchemaSummary(mockObjectSchema as any, true);
-      expect(summary.shape?.field).toBe('string?');
-    });
-
-    it('handles Zod 3 style nullable types', () => {
-      const innerSchema = {
-        _def: { typeName: 'ZodNumber' },
-      };
-      const mockZod3Nullable = {
-        _def: {
-          typeName: 'ZodNullable',
-          innerType: innerSchema,
-        },
-      };
-      const mockObjectSchema = {
-        _def: {
-          shape: () => ({ field: mockZod3Nullable }),
-        },
-      };
-
-      const summary = extractSchemaSummary(mockObjectSchema as any, true);
-      expect(summary.shape?.field).toBe('number | null');
-    });
-
-    it('handles Zod 3 style default types', () => {
-      const innerSchema = {
-        _def: { typeName: 'ZodBoolean' },
-      };
-      const mockZod3Default = {
-        _def: {
-          typeName: 'ZodDefault',
-          innerType: innerSchema,
-        },
-      };
-      const mockObjectSchema = {
-        _def: {
-          shape: () => ({ field: mockZod3Default }),
-        },
-      };
-
-      const summary = extractSchemaSummary(mockObjectSchema as any, true);
-      expect(summary.shape?.field).toBe('boolean');
-    });
-
-    it('handles Zod 3 style wrapped types with fallback format', () => {
-      const innerSchema = {
-        _def: { typeName: 'ZodString' },
-      };
-      const mockZod3Transform = {
-        _def: {
-          typeName: 'ZodEffects',
-          innerType: innerSchema,
-        },
-      };
-      const mockObjectSchema = {
-        _def: {
-          shape: () => ({ field: mockZod3Transform }),
-        },
-      };
-
-      const summary = extractSchemaSummary(mockObjectSchema as any, true);
-      // Should return `effects<string>` format
-      expect(summary.shape?.field).toBe('effects<string>');
-    });
-
-    it('handles Zod 4 style wrapped types with fallback format', () => {
+    it('handles Zod 4 style wrapped types with generic format', () => {
       const innerSchema = {
         type: 'string',
         _def: {},
@@ -475,18 +377,18 @@ describe('inspect', () => {
     });
   });
 
-  describe('Quartermaster.inspect()', () => {
+  describe('Armorer.inspect()', () => {
     it('returns inspection of empty registry', () => {
-      const qm = createQuartermaster();
-      const inspection = qm.inspect();
+      const armorer = createArmorer();
+      const inspection = armorer.inspect();
 
       expect(inspection.counts.total).toBe(0);
       expect(inspection.tools).toEqual([]);
     });
 
     it('returns inspection of single-tool registry', () => {
-      const qm = createQuartermaster([makeConfiguration()]);
-      const inspection = qm.inspect();
+      const armorer = createArmorer([makeConfiguration()]);
+      const inspection = armorer.inspect();
 
       expect(inspection.counts.total).toBe(1);
       expect(inspection.tools[0]?.name).toBe('sum');
@@ -496,12 +398,12 @@ describe('inspect', () => {
     });
 
     it('returns inspection of multi-tool registry', () => {
-      const qm = createQuartermaster([
+      const armorer = createArmorer([
         makeConfiguration({ name: 'sum', tags: ['math'] }),
         makeConfiguration({ name: 'greet', description: 'say hello', tags: ['text'] }),
         makeConfiguration({ name: 'plain', tags: undefined }),
       ]);
-      const inspection = qm.inspect();
+      const inspection = armorer.inspect();
 
       expect(inspection.counts.total).toBe(3);
       expect(inspection.counts.withTags).toBe(2);
@@ -509,8 +411,8 @@ describe('inspect', () => {
     });
 
     it('supports summary detail level', () => {
-      const qm = createQuartermaster([makeConfiguration()]);
-      const inspection = qm.inspect('summary');
+      const armorer = createArmorer([makeConfiguration()]);
+      const inspection = armorer.inspect('summary');
 
       expect(inspection.detailLevel).toBe('summary');
       // Summary level excludes schema and metadata entirely
@@ -523,8 +425,8 @@ describe('inspect', () => {
     });
 
     it('supports standard detail level (default)', () => {
-      const qm = createQuartermaster([makeConfiguration()]);
-      const inspection = qm.inspect();
+      const armorer = createArmorer([makeConfiguration()]);
+      const inspection = armorer.inspect();
 
       expect(inspection.detailLevel).toBe('standard');
       // Standard level includes schema.keys and metadata, but not schema.shape
@@ -535,8 +437,8 @@ describe('inspect', () => {
     });
 
     it('supports full detail level', () => {
-      const qm = createQuartermaster([makeConfiguration()]);
-      const inspection = qm.inspect('full');
+      const armorer = createArmorer([makeConfiguration()]);
+      const inspection = armorer.inspect('full');
 
       expect(inspection.detailLevel).toBe('full');
       expect(inspection.tools[0]?.schema?.shape).toBeDefined();
@@ -544,25 +446,25 @@ describe('inspect', () => {
     });
 
     it('is side-effect free (does not modify registry)', () => {
-      const qm = createQuartermaster([makeConfiguration()]);
+      const armorer = createArmorer([makeConfiguration()]);
 
-      const inspection1 = qm.inspect();
-      const inspection2 = qm.inspect();
+      const inspection1 = armorer.inspect();
+      const inspection2 = armorer.inspect();
 
       expect(inspection1).toEqual(inspection2);
-      expect(qm.query().length).toBe(1);
+      expect(armorer.query().length).toBe(1);
     });
 
     it('returns independent copies (mutations do not affect registry)', () => {
-      const qm = createQuartermaster([makeConfiguration()]);
-      const inspection = qm.inspect();
+      const armorer = createArmorer([makeConfiguration()]);
+      const inspection = armorer.inspect();
 
       // Mutate the inspection
       inspection.tools[0]!.name = 'mutated';
       inspection.tools[0]!.tags.push('extra');
 
       // Re-inspect should show original data
-      const freshInspection = qm.inspect();
+      const freshInspection = armorer.inspect();
       expect(freshInspection.tools[0]?.name).toBe('sum');
       expect(freshInspection.tools[0]?.tags).toEqual(['math']);
     });
@@ -585,28 +487,28 @@ describe('inspect', () => {
     });
 
     it('RegistryInspectionSchema validates registry inspection output', () => {
-      const qm = createQuartermaster([
+      const armorer = createArmorer([
         makeConfiguration({ name: 'tool1' }),
         makeConfiguration({ name: 'tool2', tags: ['tag1', 'tag2'] }),
       ]);
 
-      const inspection = qm.inspect();
+      const inspection = armorer.inspect();
       const result = RegistryInspectionSchema.safeParse(inspection);
 
       expect(result.success).toBe(true);
     });
 
     it('RegistryInspectionSchema validates empty registry inspection', () => {
-      const qm = createQuartermaster();
-      const inspection = qm.inspect();
+      const armorer = createArmorer();
+      const inspection = armorer.inspect();
       const result = RegistryInspectionSchema.safeParse(inspection);
 
       expect(result.success).toBe(true);
     });
 
     it('RegistryInspectionSchema validates full detail level inspection', () => {
-      const qm = createQuartermaster([makeConfiguration()]);
-      const inspection = qm.inspect('full');
+      const armorer = createArmorer([makeConfiguration()]);
+      const inspection = armorer.inspect('full');
       const result = RegistryInspectionSchema.safeParse(inspection);
 
       expect(result.success).toBe(true);

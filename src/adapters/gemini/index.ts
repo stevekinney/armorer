@@ -1,4 +1,4 @@
-import type { Quartermaster, QuartermasterTool, ToolConfig } from '../../index';
+import type { Armorer, ArmorerTool, ToolConfig } from '../../index';
 import { toJSONSchema } from '../../to-json-schema';
 import { isSingleInput, normalizeToToolConfigs } from '../shared';
 import type { GeminiFunctionDeclaration, GeminiSchema } from './types';
@@ -6,14 +6,14 @@ import type { GeminiFunctionDeclaration, GeminiSchema } from './types';
 export type { GeminiFunctionDeclaration, GeminiSchema, GeminiTool } from './types';
 
 /**
- * Converts Quartermaster tools to Google Gemini API format.
+ * Converts Armorer tools to Google Gemini API format.
  *
  * Returns function declarations that should be wrapped in a tool object:
  * `{ functionDeclarations: toGemini(tools) }`
  *
  * @example
  * ```ts
- * import { toGemini } from 'quartermaster/gemini';
+ * import { toGemini } from 'armorer/gemini';
  *
  * // Single tool
  * const declaration = toGemini(myTool);
@@ -22,26 +22,22 @@ export type { GeminiFunctionDeclaration, GeminiSchema, GeminiTool } from './type
  * const declarations = toGemini([tool1, tool2]);
  *
  * // From registry
- * const declarations = toGemini(quartermaster);
+ * const declarations = toGemini(armorer);
  *
  * // Use with Gemini SDK
  * const model = genAI.getGenerativeModel({
  *   model: 'gemini-pro',
- *   tools: [{ functionDeclarations: toGemini(quartermaster) }],
+ *   tools: [{ functionDeclarations: toGemini(armorer) }],
  * });
  * ```
  */
-export function toGemini(tool: QuartermasterTool | ToolConfig): GeminiFunctionDeclaration;
+export function toGemini(tool: ArmorerTool | ToolConfig): GeminiFunctionDeclaration;
 export function toGemini(
-  tools: (QuartermasterTool | ToolConfig)[],
+  tools: (ArmorerTool | ToolConfig)[],
 ): GeminiFunctionDeclaration[];
-export function toGemini(registry: Quartermaster): GeminiFunctionDeclaration[];
+export function toGemini(registry: Armorer): GeminiFunctionDeclaration[];
 export function toGemini(
-  input:
-    | QuartermasterTool
-    | ToolConfig
-    | (QuartermasterTool | ToolConfig)[]
-    | Quartermaster,
+  input: ArmorerTool | ToolConfig | (ArmorerTool | ToolConfig)[] | Armorer,
 ): GeminiFunctionDeclaration | GeminiFunctionDeclaration[] {
   const configs = normalizeToToolConfigs(input);
   const converted = configs.map(convertToGemini);

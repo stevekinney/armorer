@@ -1,4 +1,4 @@
-import type { Quartermaster, QuartermasterTool, ToolConfig } from '../../index';
+import type { Armorer, ArmorerTool, ToolConfig } from '../../index';
 import { toJSONSchema } from '../../to-json-schema';
 import { isSingleInput, normalizeToToolConfigs } from '../shared';
 import type { JSONSchema, OpenAITool } from './types';
@@ -6,11 +6,11 @@ import type { JSONSchema, OpenAITool } from './types';
 export type { JSONSchema, OpenAIFunction, OpenAITool } from './types';
 
 /**
- * Converts Quartermaster tools to OpenAI Chat Completions API format.
+ * Converts Armorer tools to OpenAI Chat Completions API format.
  *
  * @example
  * ```ts
- * import { toOpenAI } from 'quartermaster/openai';
+ * import { toOpenAI } from 'armorer/openai';
  *
  * // Single tool
  * const tool = toOpenAI(myTool);
@@ -19,25 +19,21 @@ export type { JSONSchema, OpenAIFunction, OpenAITool } from './types';
  * const tools = toOpenAI([tool1, tool2]);
  *
  * // From registry
- * const tools = toOpenAI(quartermaster);
+ * const tools = toOpenAI(armorer);
  *
  * // Use with OpenAI SDK
  * const response = await openai.chat.completions.create({
  *   model: 'gpt-4',
  *   messages,
- *   tools: toOpenAI(quartermaster),
+ *   tools: toOpenAI(armorer),
  * });
  * ```
  */
-export function toOpenAI(tool: QuartermasterTool | ToolConfig): OpenAITool;
-export function toOpenAI(tools: (QuartermasterTool | ToolConfig)[]): OpenAITool[];
-export function toOpenAI(registry: Quartermaster): OpenAITool[];
+export function toOpenAI(tool: ArmorerTool | ToolConfig): OpenAITool;
+export function toOpenAI(tools: (ArmorerTool | ToolConfig)[]): OpenAITool[];
+export function toOpenAI(registry: Armorer): OpenAITool[];
 export function toOpenAI(
-  input:
-    | QuartermasterTool
-    | ToolConfig
-    | (QuartermasterTool | ToolConfig)[]
-    | Quartermaster,
+  input: ArmorerTool | ToolConfig | (ArmorerTool | ToolConfig)[] | Armorer,
 ): OpenAITool | OpenAITool[] {
   const configs = normalizeToToolConfigs(input);
   const converted = configs.map(convertToOpenAI);

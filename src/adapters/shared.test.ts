@@ -1,13 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createQuartermaster, createTool } from '../index';
-import {
-  isQuartermaster,
-  isSingleInput,
-  isToolConfig,
-  normalizeToToolConfigs,
-} from './shared';
+import { createArmorer, createTool } from '../index';
+import { isArmorer, isSingleInput, isToolConfig, normalizeToToolConfigs } from './shared';
 
 describe('shared adapter utilities', () => {
   const testSchema = z.object({ message: z.string() });
@@ -18,28 +13,28 @@ describe('shared adapter utilities', () => {
     execute: async () => 'result',
   });
 
-  const testConfig = testTool.toolConfiguration;
+  const testConfig = testTool.configuration;
 
-  describe('isQuartermaster', () => {
-    it('returns true for Quartermaster instance', () => {
-      const qm = createQuartermaster();
-      expect(isQuartermaster(qm)).toBe(true);
+  describe('isArmorer', () => {
+    it('returns true for Armorer instance', () => {
+      const armorer = createArmorer();
+      expect(isArmorer(armorer)).toBe(true);
     });
 
     it('returns false for tools', () => {
-      expect(isQuartermaster(testTool)).toBe(false);
+      expect(isArmorer(testTool)).toBe(false);
     });
 
     it('returns false for tool configs', () => {
-      expect(isQuartermaster(testConfig)).toBe(false);
+      expect(isArmorer(testConfig)).toBe(false);
     });
 
     it('returns false for arrays', () => {
-      expect(isQuartermaster([testTool])).toBe(false);
+      expect(isArmorer([testTool])).toBe(false);
     });
 
     it('returns false for null', () => {
-      expect(isQuartermaster(null)).toBe(false);
+      expect(isArmorer(null)).toBe(false);
     });
   });
 
@@ -48,13 +43,13 @@ describe('shared adapter utilities', () => {
       expect(isToolConfig(testConfig)).toBe(true);
     });
 
-    it('returns false for QuartermasterTool', () => {
+    it('returns false for ArmorerTool', () => {
       expect(isToolConfig(testTool)).toBe(false);
     });
 
-    it('returns false for Quartermaster', () => {
-      const qm = createQuartermaster();
-      expect(isToolConfig(qm)).toBe(false);
+    it('returns false for Armorer', () => {
+      const armorer = createArmorer();
+      expect(isToolConfig(armorer)).toBe(false);
     });
   });
 
@@ -86,28 +81,28 @@ describe('shared adapter utilities', () => {
       expect(configs).toHaveLength(2);
     });
 
-    it('handles Quartermaster registry', () => {
-      const qm = createQuartermaster().register(testConfig);
-      const configs = normalizeToToolConfigs(qm);
+    it('handles Armorer registry', () => {
+      const armorer = createArmorer().register(testConfig);
+      const configs = normalizeToToolConfigs(armorer);
       expect(configs).toHaveLength(1);
       expect(configs[0]?.name).toBe('test-tool');
     });
 
     it('handles empty registry', () => {
-      const qm = createQuartermaster();
-      const configs = normalizeToToolConfigs(qm);
+      const armorer = createArmorer();
+      const configs = normalizeToToolConfigs(armorer);
       expect(configs).toHaveLength(0);
     });
 
-    it('throws Error when registry query returns non-array (async query)', () => {
-      // Create a mock object that looks like a Quartermaster but returns a Promise
+    it('throws Error when registry query returns non-array', () => {
+      // Create a mock object that looks like an Armorer but returns a non-array
       const mockQm = {
         query: () => Promise.resolve([]), // Returns Promise, not array
         register: () => mockQm,
         execute: () => Promise.resolve({}),
       };
       expect(() => normalizeToToolConfigs(mockQm as any)).toThrow(
-        'Async queries not supported in adapter. Call query() first and await it.',
+        'Armorer.query() must return an array.',
       );
     });
 
@@ -115,7 +110,7 @@ describe('shared adapter utilities', () => {
       const invalidItem = { notATool: true };
       expect(() => normalizeToToolConfigs([invalidItem] as any)).toThrow(TypeError);
       expect(() => normalizeToToolConfigs([invalidItem] as any)).toThrow(
-        'Invalid tool input: expected QuartermasterTool or ToolConfig',
+        'Invalid tool input: expected ArmorerTool or ToolConfig',
       );
     });
 
@@ -123,7 +118,7 @@ describe('shared adapter utilities', () => {
       const invalidInput = 'not a tool';
       expect(() => normalizeToToolConfigs(invalidInput as any)).toThrow(TypeError);
       expect(() => normalizeToToolConfigs(invalidInput as any)).toThrow(
-        'Invalid input: expected tool, tool array, or Quartermaster registry',
+        'Invalid input: expected tool, tool array, or Armorer registry',
       );
     });
 
@@ -152,8 +147,8 @@ describe('shared adapter utilities', () => {
     });
 
     it('returns false for registry', () => {
-      const qm = createQuartermaster();
-      expect(isSingleInput(qm)).toBe(false);
+      const armorer = createArmorer();
+      expect(isSingleInput(armorer)).toBe(false);
     });
   });
 });

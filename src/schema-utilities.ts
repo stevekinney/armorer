@@ -81,3 +81,8 @@ export function isZodSchema(value: unknown): value is ToolParametersSchema {
     typeof (value as any).safeParse === 'function'
   );
 }
+
+export function isZodObjectSchema(value: unknown): value is ToolParametersSchema {
+  if (!isZodSchema(value)) return false;
+  return getSchemaShape(value) !== undefined;
+}

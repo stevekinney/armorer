@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createQuartermaster, createTool } from '../../index';
+import { createArmorer, createTool } from '../../index';
 import { toOpenAI } from './index';
 
 describe('toOpenAI', () => {
@@ -72,15 +72,15 @@ describe('toOpenAI', () => {
 
   describe('registry conversion', () => {
     it('returns array for registry input', () => {
-      const qm = createQuartermaster().register(tool.toolConfiguration);
-      const result = toOpenAI(qm);
+      const armorer = createArmorer().register(tool);
+      const result = toOpenAI(armorer);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(1);
     });
 
     it('returns empty array for empty registry', () => {
-      const qm = createQuartermaster();
-      const result = toOpenAI(qm);
+      const armorer = createArmorer();
+      const result = toOpenAI(armorer);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(0);
     });
@@ -88,7 +88,7 @@ describe('toOpenAI', () => {
 
   describe('tool config conversion', () => {
     it('works with tool configuration', () => {
-      const result = toOpenAI(tool.toolConfiguration);
+      const result = toOpenAI(tool.configuration);
       expect(result.type).toBe('function');
       expect(result.function.name).toBe('search');
     });

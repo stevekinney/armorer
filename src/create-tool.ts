@@ -3,9 +3,9 @@ import { z } from 'zod';
 
 import { errorString, normalizeError } from './errors';
 import type {
+  ArmorerTool,
   DefaultToolEvents,
   MinimalAbortSignal,
-  QuartermasterTool,
   ToolCallWithArguments,
   ToolConfig,
   ToolContext,
@@ -15,6 +15,7 @@ import type {
   ToolMetadata,
   ToolParametersSchema,
 } from './is-tool';
+import { isZodObjectSchema, isZodSchema } from './schema-utilities';
 import { assertKebabCaseTag, type NormalizeTagsOption, uniqTags } from './tag-utilities';
 import { toJSONSchema } from './to-json-schema';
 import type { ToolCall, ToolResult } from './types';
@@ -28,16 +29,18 @@ import type { ToolCall, ToolResult } from './types';
  * - Only the execute function receives typed params
  */
 export interface CreateToolOptions<
-  TInput,
-  TOutput,
+  TInput extends Record<string, unknown> = Record<string, never>,
+  TOutput = unknown,
   E extends ToolEventsMap = DefaultToolEvents,
   Tags extends readonly string[] = readonly string[],
   M extends ToolMetadata | undefined = undefined,
 > {
   name: string;
   description: string;
-  schema: z.ZodType<TInput>;
-  execute: (params: TInput, context: ToolContext<E>) => Promise<TOutput>;
+  schema?: z.ZodType<TInput> | z.ZodRawShape;
+  execute:
+    | ((params: TInput, context: ToolContext<E>) => Promise<TOutput>)
+    | Promise<(params: TInput, context: ToolContext<E>) => Promise<TOutput>>;
   timeoutMs?: number;
   tags?: NormalizeTagsOption<Tags>;
   metadata?: M;
@@ -67,7 +70,7 @@ export type WithContext<
  * ```
  */
 export function createTool<
-  TInput,
+  TInput extends Record<string, unknown> = Record<string, never>,
   TOutput = unknown,
   E extends ToolEventsMap = DefaultToolEvents,
   Tags extends readonly string[] = readonly string[],
@@ -79,7 +82,7 @@ export function createTool<
   execute: fn,
   tags,
   metadata: customMetadata,
-}: CreateToolOptions<TInput, TOutput, E, Tags, M>): QuartermasterTool {
+}: CreateToolOptions<TInput, TOutput, E, Tags, M>): ArmorerTool {
   const normalizedSchema = normalizeSchema(toolSchema);
   const schema = normalizedSchema as unknown as ToolParametersSchema;
   const typedSchema = normalizedSchema as unknown as z.ZodType<TInput>;
@@ -100,9 +103,11 @@ export function createTool<
   const emit = (type: string, detail: unknown) =>
     dispatchEvent({ type, detail } as Parameters<typeof dispatchEvent>[0]);
 
-  let toolConfiguration!: ToolConfig;
+  let configuration!: ToolConfig;
 
-  const execute = async (
+  const resolveExecute = createLazyExecuteResolver(fn);
+
+  const executeCall = async (
     toolCall: ToolCallWithArguments,
     options?: ToolExecuteOptions,
   ): Promise<ToolResult> => {
@@ -113,11 +118,33 @@ export function createTool<
     return executeInner(toolCall, executeOptions);
   };
 
+  const executeParams = async (
+    params: TInput,
+    options?: ToolExecuteOptions,
+  ): Promise<TOutput> => {
+    const toolCall = createToolCall<TInput>(name, params);
+    const result = await executeCall(toolCall, options);
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    return result.result as TOutput;
+  };
+
+  const execute = (
+    input: ToolCallWithArguments | TInput,
+    options?: ToolExecuteOptions,
+  ): Promise<ToolResult | TOutput> => {
+    if (looksLikeToolCall(input, name)) {
+      return executeCall(input, options);
+    }
+    return executeParams(input, options);
+  };
+
   const executeInner = async (
     toolCall: ToolCall & { arguments: unknown },
     options: { timeoutMs?: number; signal?: MinimalAbortSignal } = {},
   ): Promise<ToolResult> => {
-    const baseDetail = { toolCall, toolConfiguration };
+    const baseDetail = { toolCall, configuration };
 
     const handleCancellation = (reason?: unknown): ToolResult => {
       let message: string;
@@ -155,7 +182,7 @@ export function createTool<
       }
       const parsed = schema.parse(toolCall.arguments) as TInput;
       const typedToolCall = { ...toolCall, arguments: parsed } as ToolCallWithArguments;
-      const parsedDetail = { toolCall: typedToolCall, toolConfiguration };
+      const parsedDetail = { toolCall: typedToolCall, configuration };
       emit('validate-success', { ...parsedDetail, params: toolCall.arguments, parsed });
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
@@ -164,11 +191,15 @@ export function createTool<
       if (typedToolCall.id) {
         meta.callId = typedToolCall.id;
       }
-      const runner = fn(parsed, {
+      const resolvedExecute = await resolveExecute();
+      if (options.signal?.aborted) {
+        return handleCancellation(options.signal.reason);
+      }
+      const runner = resolvedExecute(parsed, {
         dispatch: dispatchEvent,
         meta,
         toolCall: typedToolCall,
-        toolConfiguration,
+        configuration,
       });
       const timed =
         typeof options.timeoutMs === 'number'
@@ -215,27 +246,23 @@ export function createTool<
       )
     : undefined;
 
-  const callable = async (params: unknown) => {
-    const toolCall = createToolCall<TInput>(name, params as TInput);
-    const result = await execute(toolCall);
-    if (result.error) {
-      throw new Error(result.error);
-    }
-    return result.result as TOutput;
-  };
+  const callable = async (params: unknown) => executeParams(params as TInput);
 
-  toolConfiguration = {
+  configuration = {
     name,
     description,
     schema: typedSchema,
-    execute: async (params) => callable(params),
+    execute: async (params) => executeParams(params as TInput),
   };
   if (normalizedTags) {
-    toolConfiguration.tags = normalizedTags;
+    configuration.tags = normalizedTags;
+  }
+  if (customMetadata !== undefined) {
+    configuration.metadata = customMetadata;
   }
 
   const toJSON = (() => {
-    const json = toJSONSchema(toolConfiguration);
+    const json = toJSONSchema(configuration);
     return () => ({ ...json, tags: normalizedTags ?? [] });
   })();
 
@@ -247,8 +274,11 @@ export function createTool<
     description,
     schema: typedSchema,
     execute,
-    rawExecute: fn, // Expose the original user function for testing
-    toolConfiguration,
+    rawExecute: async (params: unknown, context: ToolContext<E>) => {
+      const resolved = await resolveExecute();
+      return resolved(params as TInput, context);
+    },
+    configuration,
     // Event listener methods
     addEventListener,
     dispatchEvent,
@@ -272,7 +302,7 @@ export function createTool<
   };
 
   const tool = new Proxy(
-    callable as unknown as QuartermasterTool<z.ZodType<TInput>, E, TOutput, M>,
+    callable as unknown as ArmorerTool<z.ZodType<TInput>, E, TOutput, M>,
     {
       get(target, prop, receiver) {
         if (prop in bag) return (bag as any)[prop];
@@ -317,7 +347,7 @@ export function createTool<
     return executeInner(toolCall, executeOptions);
   };
 
-  return tool as unknown as QuartermasterTool;
+  return tool as unknown as ArmorerTool;
 
   function withTimeout<TP>(promise: Promise<TP>, timeoutMs: number): Promise<TP> {
     return new Promise<TP>((resolve, reject) => {
@@ -384,18 +414,20 @@ export function createTool<
  */
 type CreateToolWithContextOptions<
   Ctx extends Record<string, unknown>,
-  TInput,
+  TInput extends Record<string, unknown>,
   TOutput,
   E extends ToolEventsMap,
   Tags extends readonly string[],
   M extends ToolMetadata | undefined,
 > = Omit<CreateToolOptions<TInput, TOutput, E, Tags, M>, 'execute'> & {
-  execute: (params: TInput, context: ToolContext<E> & Ctx) => Promise<TOutput>;
+  execute:
+    | ((params: TInput, context: ToolContext<E> & Ctx) => Promise<TOutput>)
+    | Promise<(params: TInput, context: ToolContext<E> & Ctx) => Promise<TOutput>>;
 };
 
 export function withContext<Ctx extends Record<string, unknown>>(
   context: Ctx,
-): <TInput, TOutput = unknown>(
+): <TInput extends Record<string, unknown>, TOutput = unknown>(
   options: CreateToolWithContextOptions<
     Ctx,
     TInput,
@@ -404,10 +436,10 @@ export function withContext<Ctx extends Record<string, unknown>>(
     readonly string[],
     undefined
   >,
-) => QuartermasterTool;
+) => ArmorerTool;
 export function withContext<
   Ctx extends Record<string, unknown>,
-  TInput,
+  TInput extends Record<string, unknown>,
   TOutput = unknown,
 >(
   context: Ctx,
@@ -419,22 +451,24 @@ export function withContext<
     readonly string[],
     undefined
   >,
-): QuartermasterTool;
+): ArmorerTool;
 export function withContext<Ctx extends Record<string, unknown>>(
   context: Ctx,
   options?: CreateToolWithContextOptions<Ctx, any, any, any, any, any>,
 ):
-  | QuartermasterTool
+  | ArmorerTool
   | ((
       options: CreateToolWithContextOptions<Ctx, any, any, any, any, any>,
-    ) => QuartermasterTool) {
+    ) => ArmorerTool) {
   const build = (opts: CreateToolWithContextOptions<Ctx, any, any, any, any, any>) => {
     const { execute, ...rest } = opts;
+    const resolveExecute = createLazyExecuteResolver(execute);
     return createTool({
       ...rest,
       async execute(params, toolContext) {
         const extended = Object.assign({}, toolContext, context);
-        return execute(params, extended);
+        const resolved = await resolveExecute();
+        return resolved(params, extended);
       },
     } as CreateToolOptions<any, any, any, any, any>);
   };
@@ -444,7 +478,7 @@ export function withContext<Ctx extends Record<string, unknown>>(
   return build;
 }
 
-const ABORT_REJECTION_SYMBOL = Symbol('quartermaster.abort');
+const ABORT_REJECTION_SYMBOL = Symbol('armorer.abort');
 
 export function createToolCall<Args>(
   toolName: string,
@@ -458,20 +492,90 @@ export function createToolCall<Args>(
   };
 }
 
-function isZodSchema(value: unknown): value is z.ZodTypeAny {
-  return (
-    !!value &&
-    typeof (value as any)._def === 'object' &&
-    typeof (value as any).parse === 'function'
-  );
+const TOOL_CALL_KEYS = new Set(['id', 'name', 'arguments']);
+
+function looksLikeToolCall(
+  value: unknown,
+  toolName: string,
+): value is ToolCallWithArguments {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate['name'] !== 'string') return false;
+  if (candidate['name'] !== toolName) return false;
+  if (!Object.prototype.hasOwnProperty.call(candidate, 'arguments')) return false;
+  return Object.keys(candidate).every((key) => TOOL_CALL_KEYS.has(key));
 }
 
 function normalizeSchema(schema: unknown): z.ZodTypeAny {
-  if (isZodSchema(schema)) {
+  if (schema === undefined) {
+    return z.object({});
+  }
+  if (isZodObjectSchema(schema)) {
     return schema;
+  }
+  if (isZodSchema(schema)) {
+    throw new Error('Tool schema must be a Zod object schema');
   }
   if (schema && typeof schema === 'object') {
     return z.object(schema as Record<string, z.ZodTypeAny>);
   }
-  throw new Error('Tool schema must be a Zod schema or an object of Zod schemas');
+  throw new Error('Tool schema must be a Zod object schema or an object of Zod schemas');
+}
+
+type ToolExecute<TInput, TOutput, TContext> = (
+  params: TInput,
+  context: TContext,
+) => Promise<TOutput>;
+
+type LazyToolExecute<TInput, TOutput, TContext> =
+  | ToolExecute<TInput, TOutput, TContext>
+  | Promise<ToolExecute<TInput, TOutput, TContext>>;
+
+function createLazyExecuteResolver<TInput, TOutput, TContext>(
+  execute: LazyToolExecute<TInput, TOutput, TContext>,
+): () => Promise<ToolExecute<TInput, TOutput, TContext>> {
+  if (!isExecutable(execute)) {
+    throw new TypeError(
+      'execute must be a function or a promise that resolves to a function',
+    );
+  }
+  if (typeof execute === 'function') {
+    const fn = execute;
+    return () => Promise.resolve(fn);
+  }
+  let resolved: ToolExecute<TInput, TOutput, TContext> | undefined;
+  let pending: Promise<ToolExecute<TInput, TOutput, TContext>> | undefined;
+
+  return async () => {
+    if (resolved) return resolved;
+    if (!pending) {
+      pending = Promise.resolve(execute)
+        .then((value) => {
+          if (typeof value !== 'function') {
+            throw new TypeError(
+              'execute must be a function or a promise that resolves to a function',
+            );
+          }
+          resolved = value;
+          return value;
+        })
+        .catch((error) => {
+          pending = undefined;
+          throw error;
+        });
+    }
+    return pending;
+  };
+}
+
+function isExecutable<TInput, TOutput, TContext>(
+  execute: LazyToolExecute<TInput, TOutput, TContext>,
+): boolean {
+  return (
+    typeof execute === 'function' ||
+    (typeof execute === 'object' &&
+      execute !== null &&
+      'then' in execute &&
+      typeof (execute as PromiseLike<unknown>).then === 'function')
+  );
 }

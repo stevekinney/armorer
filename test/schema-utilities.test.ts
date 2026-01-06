@@ -1,8 +1,10 @@
 import { describe, expect,it } from 'bun:test';
+import { z } from 'zod';
 
 import {
   getSchemaKeys,
   getSchemaShape,
+  isZodObjectSchema,
   isZodSchema,
   schemasLooselyMatch,
   unwrapSchema,
@@ -75,5 +77,10 @@ describe('schema utilities', () => {
       }),
     ).toBe(true);
     expect(isZodSchema(null)).toBe(false);
+  });
+
+  it('identifies Zod object schemas by shape detection', () => {
+    expect(isZodObjectSchema(z.object({ foo: z.string() }))).toBe(true);
+    expect(isZodObjectSchema(z.number())).toBe(false);
   });
 });

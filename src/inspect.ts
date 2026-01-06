@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { QuartermasterTool, ToolMetadata, ToolParametersSchema } from './is-tool';
+import type { ArmorerTool, ToolMetadata, ToolParametersSchema } from './is-tool';
 import { getSchemaKeys, getSchemaShape } from './schema-utilities';
 
 /**
@@ -114,23 +114,6 @@ function getSchemaTypeName(schema: unknown): string {
     return typeName;
   }
 
-  // Fallback for Zod 3 style with _def.typeName (for compatibility)
-  if (def?.typeName) {
-    // Strip 'Zod' prefix for cleaner output
-    const cleanName = def.typeName.replace(/^Zod/, '').toLowerCase();
-
-    // Handle wrapped types (optional, nullable, default, etc.)
-    if (def.innerType) {
-      const innerType = getSchemaTypeName(def.innerType);
-      if (cleanName === 'optional') return `${innerType}?`;
-      if (cleanName === 'nullable') return `${innerType} | null`;
-      if (cleanName === 'default') return innerType;
-      return `${cleanName}<${innerType}>`;
-    }
-
-    return cleanName;
-  }
-
   return 'unknown';
 }
 
@@ -169,7 +152,7 @@ export function extractMetadataFlags(metadata: ToolMetadata | undefined): Metada
  * At 'full' level, schema shape details are also included.
  */
 export function inspectTool(
-  tool: QuartermasterTool,
+  tool: ArmorerTool,
   detailLevel: InspectorDetailLevel = 'standard',
 ): ToolInspection {
   const result: ToolInspection = {
@@ -192,7 +175,7 @@ export function inspectTool(
  * Inspect a collection of tools and return a registry inspection result.
  */
 export function inspectRegistry(
-  tools: QuartermasterTool[],
+  tools: ArmorerTool[],
   detailLevel: InspectorDetailLevel = 'standard',
 ): RegistryInspection {
   const toolInspections = tools.map((tool) => inspectTool(tool, detailLevel));

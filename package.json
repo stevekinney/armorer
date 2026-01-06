@@ -1,7 +1,7 @@
 {
-  "name": "quartermaster",
+  "name": "armorer",
   "version": "0.1.0",
-  "description": "A lightweight registry for validated AI tools. Build tools with Zod schemas and metadata, register them in a quartermaster, and execute/query them with event hooks.",
+  "description": "A lightweight registry for validated AI tools. Build tools with Zod schemas and metadata, register them in an armorer, and execute/query them with event hooks.",
   "keywords": [
     "ai",
     "llm",
@@ -16,13 +16,13 @@
     "anthropic",
     "agents"
   ],
-  "homepage": "https://github.com/stevekinney/quartermaster#readme",
+  "homepage": "https://github.com/stevekinney/armorer#readme",
   "bugs": {
-    "url": "https://github.com/stevekinney/quartermaster/issues"
+    "url": "https://github.com/stevekinney/armorer/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/stevekinney/quartermaster.git"
+    "url": "https://github.com/stevekinney/armorer.git"
   },
   "license": "MIT",
   "author": "Steve Kinney <hello@stevekinney.net>",
@@ -37,16 +37,19 @@
     "./openai": {
       "types": "./dist/adapters/openai/index.d.ts",
       "import": "./dist/adapters/openai/index.js",
+      "require": "./dist/adapters/openai/index.cjs",
       "default": "./dist/adapters/openai/index.js"
     },
     "./anthropic": {
       "types": "./dist/adapters/anthropic/index.d.ts",
       "import": "./dist/adapters/anthropic/index.js",
+      "require": "./dist/adapters/anthropic/index.cjs",
       "default": "./dist/adapters/anthropic/index.js"
     },
     "./gemini": {
       "types": "./dist/adapters/gemini/index.d.ts",
       "import": "./dist/adapters/gemini/index.js",
+      "require": "./dist/adapters/gemini/index.cjs",
       "default": "./dist/adapters/gemini/index.js"
     }
   },
