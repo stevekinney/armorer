@@ -9,11 +9,14 @@ import type {
   ToolCallWithArguments,
   ToolConfig,
   ToolContext,
+  ToolDiagnostics,
   ToolEventsMap,
   ToolExecuteOptions,
   ToolExecuteWithOptions,
   ToolMetadata,
   ToolParametersSchema,
+  ToolRepairHint,
+  ToolValidationReport,
 } from './is-tool';
 import { isZodObjectSchema, isZodSchema } from './schema-utilities';
 import { assertKebabCaseTag, type NormalizeTagsOption, uniqTags } from './tag-utilities';
@@ -44,12 +47,45 @@ export interface CreateToolOptions<
   timeoutMs?: number;
   tags?: NormalizeTagsOption<Tags>;
   metadata?: M;
+  diagnostics?: ToolDiagnostics;
 }
 
 export type WithContext<
   T extends Record<string, unknown> = Record<string, unknown>,
   E extends ToolEventsMap = DefaultToolEvents,
 > = ToolContext<E> & T;
+
+export function lazy<TExecute extends (...args: any[]) => Promise<any>>(
+  loader: () => PromiseLike<TExecute> | TExecute,
+): TExecute {
+  let resolved: TExecute | undefined;
+  let pending: Promise<TExecute> | undefined;
+
+  const load = async () => {
+    if (resolved) return resolved;
+    if (!pending) {
+      pending = Promise.resolve()
+        .then(() => loader())
+        .then((value) => {
+          if (typeof value !== 'function') {
+            throw new TypeError('lazy loader must resolve to a function');
+          }
+          resolved = value;
+          return value;
+        })
+        .catch((error) => {
+          pending = undefined;
+          throw error;
+        });
+    }
+    return pending;
+  };
+
+  return (async (...args: Parameters<TExecute>) => {
+    const execute = await load();
+    return execute(...args);
+  }) as TExecute;
+}
 
 /**
  * Creates a tool with explicit input/output types.
@@ -82,6 +118,7 @@ export function createTool<
   execute: fn,
   tags,
   metadata: customMetadata,
+  diagnostics,
 }: CreateToolOptions<TInput, TOutput, E, Tags, M>): ArmorerTool {
   const normalizedSchema = normalizeSchema(toolSchema);
   const schema = normalizedSchema as unknown as ToolParametersSchema;
@@ -115,7 +152,7 @@ export function createTool<
     if (options?.signal) {
       executeOptions.signal = options.signal;
     }
-    return executeInner(toolCall, executeOptions);
+    return executeInner(normalizeToolCall(toolCall), executeOptions);
   };
 
   const executeParams = async (
@@ -163,8 +200,12 @@ export function createTool<
       const errorObj = new Error(message);
       emit('execute-error', { ...baseDetail, error: errorObj });
       emit('settled', { ...baseDetail, error: errorObj });
+      const callId = toolCall.id;
       return {
-        toolCallId: toolCall.id ?? '',
+        callId,
+        outcome: 'error',
+        content: message,
+        toolCallId: callId,
         toolName: name,
         result: undefined,
         error: message,
@@ -208,8 +249,12 @@ export function createTool<
       const value = await raceWithSignal(timed, options.signal);
       emit('execute-success', { ...parsedDetail, result: value });
       emit('settled', { ...parsedDetail, result: value });
+      const callId = typedToolCall.id;
       return {
-        toolCallId: typedToolCall.id ?? '',
+        callId,
+        outcome: 'success',
+        content: value,
+        toolCallId: callId,
         toolName: name,
         result: value,
       } as ToolResult;
@@ -219,21 +264,67 @@ export function createTool<
       }
       const isZod = (error as any)?.name === 'ZodError';
       if (isZod) {
-        emit('validate-error', { ...baseDetail, params: toolCall.arguments, error });
+        let report: ToolValidationReport | undefined;
+        let repairHints: ToolRepairHint[] | undefined;
+
+        if (diagnostics?.safeParseWithReport) {
+          try {
+            const diagnosticsSchema =
+              (schema as any)?._def?.out ?? (schema as any)?._def?.schema ?? schema;
+            const diagnosticsResult = diagnostics.safeParseWithReport(
+              diagnosticsSchema,
+              toolCall.arguments,
+            );
+            report = diagnosticsResult.report;
+            if (diagnostics?.createRepairHints) {
+              const hintError = diagnosticsResult.success
+                ? error
+                : diagnosticsResult.error;
+              repairHints = diagnostics.createRepairHints(hintError, {
+                rootLabel: 'arguments',
+              });
+            }
+          } catch {
+            // Ignore diagnostics failures
+          }
+        }
+
+        if (!repairHints && diagnostics?.createRepairHints) {
+          try {
+            repairHints = diagnostics.createRepairHints(error, {
+              rootLabel: 'arguments',
+            });
+          } catch {
+            // Ignore diagnostics failures
+          }
+        }
+
+        emit('validate-error', {
+          ...baseDetail,
+          params: toolCall.arguments,
+          error,
+          report,
+          repairHints,
+        });
       } else {
         emit('execute-error', { ...baseDetail, error });
       }
       emit('settled', { ...baseDetail, error });
+      const callId = toolCall.id;
+      const message = errorString(
+        normalizeError(
+          error,
+          (error as any)?.message === 'TIMEOUT' ? { code: 'TIMEOUT' } : undefined,
+        ),
+      );
       return {
-        toolCallId: toolCall.id ?? '',
+        callId,
+        outcome: 'error',
+        content: message,
+        toolCallId: callId,
         toolName: name,
         result: undefined,
-        error: errorString(
-          normalizeError(
-            error,
-            (error as any)?.message === 'TIMEOUT' ? { code: 'TIMEOUT' } : undefined,
-          ),
-        ),
+        error: message,
       } as ToolResult;
     }
   };
@@ -252,6 +343,7 @@ export function createTool<
     name,
     description,
     schema: typedSchema,
+    parameters: typedSchema,
     execute: async (params) => executeParams(params as TInput),
   };
   if (normalizedTags) {
@@ -273,6 +365,7 @@ export function createTool<
     name,
     description,
     schema: typedSchema,
+    parameters: typedSchema,
     execute,
     rawExecute: async (params: unknown, context: ToolContext<E>) => {
       const resolved = await resolveExecute();
@@ -494,6 +587,11 @@ export function createToolCall<Args>(
 
 const TOOL_CALL_KEYS = new Set(['id', 'name', 'arguments']);
 
+function normalizeToolCall<T extends ToolCallWithArguments>(toolCall: T): T {
+  if (toolCall.id) return toolCall;
+  return { ...toolCall, id: crypto.randomUUID() };
+}
+
 function looksLikeToolCall(
   value: unknown,
   toolName: string,
@@ -502,6 +600,7 @@ function looksLikeToolCall(
   const candidate = value as Record<string, unknown>;
   if (typeof candidate['name'] !== 'string') return false;
   if (candidate['name'] !== toolName) return false;
+  if (typeof candidate['id'] !== 'string') return false;
   if (!Object.prototype.hasOwnProperty.call(candidate, 'arguments')) return false;
   return Object.keys(candidate).every((key) => TOOL_CALL_KEYS.has(key));
 }

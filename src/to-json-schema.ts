@@ -4,7 +4,8 @@ import type { ToolParametersSchema } from './is-tool';
 import type { ToolConfiguration } from './types';
 
 export function toJSONSchema<T extends ToolConfiguration<ToolParametersSchema>>(tool: T) {
-  const params = z.toJSONSchema(tool.schema as z.ZodTypeAny, {
+  const schema = (tool.schema ?? tool.parameters) as z.ZodTypeAny;
+  const params = z.toJSONSchema(schema, {
     override: (ctx) => {
       ctx.jsonSchema.additionalProperties = false;
       ctx.jsonSchema.required = Object.keys(ctx.jsonSchema.properties ?? []);

@@ -7,6 +7,15 @@
  * A tool call from an LLM.
  */
 export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: unknown;
+}
+
+/**
+ * Input shape for tool calls (ID/arguments may be missing and normalized).
+ */
+export interface ToolCallInput {
   id?: string;
   name: string;
   arguments?: unknown;
@@ -16,9 +25,12 @@ export interface ToolCall {
  * The result of executing a tool.
  */
 export interface ToolResult {
+  callId: string;
+  outcome: 'success' | 'error';
+  content: unknown;
   toolCallId: string;
   toolName: string;
-  result?: unknown;
+  result: unknown;
   error?: string;
 }
 
@@ -29,4 +41,5 @@ export interface ToolConfiguration<Schema = unknown> {
   name: string;
   description: string;
   schema: Schema;
+  parameters?: Schema;
 }

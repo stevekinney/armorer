@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { bind, compose, pipe, PipelineError } from './compose';
+import type { ComposedTool } from './compose-types';
 import { createArmorer } from './create-armorer';
 import { createTool } from './create-tool';
 import { isTool } from './is-tool';
+import {
+  bind,
+  compose,
+  parallel,
+  pipe,
+  PipelineError,
+  retry,
+  tap,
+  when,
+} from './utilities';
 
 describe('pipe()', () => {
   // Setup test tools
@@ -370,6 +380,125 @@ describe('bind()', () => {
     expect(() => bind(rawTool as any, { a: 'ok' }, { name: 'raw-bound' })).toThrow(
       /Zod object schema/,
     );
+  });
+});
+
+describe('tap()', () => {
+  const increment = createTool({
+    name: 'increment',
+    description: 'Adds 1',
+    schema: z.object({ value: z.number() }),
+    execute: async ({ value }) => ({ value: value + 1 }),
+  }) as ComposedTool<{ value: number }, { value: number }>;
+
+  it('runs the effect and returns the original output', async () => {
+    const seen: number[] = [];
+    const tapped = tap(increment, async (output) => {
+      seen.push(output.value);
+    });
+
+    const result = await tapped({ value: 2 });
+    expect(result).toEqual({ value: 3 });
+    expect(seen).toEqual([3]);
+  });
+});
+
+describe('when()', () => {
+  const increment = createTool({
+    name: 'increment',
+    description: 'Adds 1',
+    schema: z.object({ value: z.number() }),
+    execute: async ({ value }) => ({ value: value + 1 }),
+  }) as ComposedTool<{ value: number }, { value: number }>;
+
+  const double = createTool({
+    name: 'double',
+    description: 'Doubles',
+    schema: z.object({ value: z.number() }),
+    execute: async ({ value }) => ({ value: value * 2 }),
+  }) as ComposedTool<{ value: number }, { value: number }>;
+
+  it('routes to the correct branch', async () => {
+    const conditional = when(({ value }) => value > 5, increment, double);
+
+    const low = await conditional({ value: 3 });
+    const high = await conditional({ value: 6 });
+
+    expect(low).toEqual({ value: 6 });
+    expect(high).toEqual({ value: 7 });
+  });
+
+  it('passes through input when no else tool is provided', async () => {
+    const conditional = when(({ value }) => value > 0, increment);
+
+    const result = await conditional({ value: 0 });
+    expect(result).toEqual({ value: 0 });
+  });
+});
+
+describe('parallel()', () => {
+  const increment = createTool({
+    name: 'increment',
+    description: 'Adds 1',
+    schema: z.object({ value: z.number() }),
+    execute: async ({ value }) => ({ value: value + 1 }),
+  });
+
+  const double = createTool({
+    name: 'double',
+    description: 'Doubles',
+    schema: z.object({ value: z.number() }),
+    execute: async ({ value }) => ({ value: value * 2 }),
+  });
+
+  it('runs tools in parallel and returns results in order', async () => {
+    const combined = parallel(increment, double);
+    const result = await combined({ value: 4 });
+
+    expect(result).toEqual([{ value: 5 }, { value: 8 }]);
+  });
+});
+
+describe('retry()', () => {
+  it('retries until success', async () => {
+    let attempts = 0;
+    const flaky = createTool({
+      name: 'flaky',
+      description: 'Fails twice',
+      schema: z.object({ value: z.number() }),
+      execute: async ({ value }) => {
+        attempts += 1;
+        if (attempts < 3) {
+          throw new Error('boom');
+        }
+        return { value: value + attempts };
+      },
+    });
+
+    const wrapped = retry(flaky, { attempts: 3 });
+    const result = await wrapped({ value: 1 });
+
+    expect(result).toEqual({ value: 4 });
+    expect(attempts).toBe(3);
+  });
+
+  it('throws after exhausting attempts', async () => {
+    let attempts = 0;
+    const failing = createTool({
+      name: 'failing',
+      description: 'Always fails',
+      schema: z.object({ value: z.number() }),
+      execute: async () => {
+        attempts += 1;
+        throw new Error('boom');
+      },
+    });
+
+    const wrapped = retry(failing, { attempts: 2 });
+
+    // eslint-disable-next-line @typescript-eslint/await-thenable
+    await expect(wrapped({ value: 1 })).rejects.toThrow('boom');
+    expect(attempts).toBe(2);
   });
 });
 

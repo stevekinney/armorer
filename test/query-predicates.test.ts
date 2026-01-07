@@ -18,6 +18,10 @@ const baseTool = {
     barValue: z.number().optional(),
   }),
   tags: ['alpha', 'primary'],
+  metadata: {
+    tier: 'premium',
+    owner: 'alpha-team',
+  },
 } as const;
 
 describe('tagsMatchAny', () => {
@@ -61,16 +65,55 @@ describe('tagsMatchNone', () => {
 });
 
 describe('textMatches', () => {
-  it('matches fuzzy text across name, description, tags, and schema keys', () => {
+  it('matches fuzzy text across name, description, tags, schema keys, and metadata keys', () => {
     expect(textMatches('alpha')(baseTool as any)).toBe(true);
     expect(textMatches('handles')(baseTool as any)).toBe(true);
     expect(textMatches('primary')(baseTool as any)).toBe(true);
     expect(textMatches('fooId')(baseTool as any)).toBe(true);
+    expect(textMatches('tier')(baseTool as any)).toBe(true);
     expect(textMatches('missing')(baseTool as any)).toBe(false);
   });
 
   it('returns match-all when query is empty', () => {
     expect(textMatches('   ')(baseTool as any)).toBe(true);
+  });
+
+  it('supports field-restricted text queries', () => {
+    expect(textMatches({ query: 'alpha', fields: ['name'] })(baseTool as any)).toBe(
+      true,
+    );
+    expect(
+      textMatches({ query: 'handles', fields: ['tags'] })(baseTool as any),
+    ).toBe(false);
+  });
+
+  it('tokenizes queries for camelCase schema keys', () => {
+    expect(
+      textMatches({ query: 'foo id', fields: ['schemaKeys'] })(baseTool as any),
+    ).toBe(true);
+  });
+
+  it('matches text without diacritics', () => {
+    const diacriticsTool = {
+      ...baseTool,
+      description: 'Cafe \u00e9lan',
+    };
+    expect(
+      textMatches({ query: 'cafe', fields: ['description'] })(diacriticsTool as any),
+    ).toBe(true);
+  });
+
+  it('supports fuzzy matching with thresholds', () => {
+    expect(
+      textMatches({ query: 'alpa', mode: 'fuzzy', threshold: 0.6 })(
+        baseTool as any,
+      ),
+    ).toBe(true);
+    expect(
+      textMatches({ query: 'alpa', mode: 'fuzzy', threshold: 0.95 })(
+        baseTool as any,
+      ),
+    ).toBe(false);
   });
 });
 

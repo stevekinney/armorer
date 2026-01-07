@@ -4,15 +4,7 @@ export type {
   ArmorerEvents,
   ArmorerOptions,
   ArmorerToolRuntimeContext,
-  MetadataFilter,
-  QueryResult,
-  SchemaFilter,
   SerializedArmorer,
-  TagFilter,
-  ToolMatch,
-  ToolQuery,
-  ToolSearchOptions,
-  ToolSearchRank,
   ToolStatusUpdate,
 } from './create-armorer';
 export { createArmorer } from './create-armorer';
@@ -31,22 +23,34 @@ export type {
   ToolConfig,
   ToolContext,
   ToolCustomEvent,
+  ToolDiagnostics,
+  ToolDiagnosticsAdapter,
   ToolEventsMap,
   ToolExecuteOptions,
   ToolExecuteWithOptions,
   ToolMetadata,
   ToolParametersSchema,
+  ToolRepairHint,
+  ToolValidationReport,
+  ToolValidationWarning,
 } from './is-tool';
 export { isTool } from './is-tool';
 
 // Query predicates and ranking helpers
 export {
+  type NormalizedTextQuery,
   schemaHasKeys,
   schemaMatches,
   tagsMatchAll,
   tagsMatchAny,
   tagsMatchNone,
   textMatches,
+  type TextMatchScore,
+  type TextQuery,
+  type TextQueryField,
+  type TextQueryMode,
+  type TextQueryWeights,
+  type TextSearchIndex,
   type ToolPredicate,
 } from './query-predicates';
 
@@ -70,15 +74,4 @@ export {
 } from './inspect';
 
 // Types
-export type { ToolCall, ToolConfiguration, ToolResult } from './types';
-
-// Tool composition
-export { bind, compose, pipe, PipelineError } from './compose';
-export type {
-  AnyTool,
-  ComposedTool,
-  ComposedToolEvents,
-  InferToolInput,
-  InferToolOutput,
-  ToolWithInput,
-} from './compose-types';
+export type { ToolCall, ToolCallInput, ToolConfiguration, ToolResult } from './types';

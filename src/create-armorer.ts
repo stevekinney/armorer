@@ -10,7 +10,11 @@ import {
 } from 'event-emission';
 import { z } from 'zod';
 
-import { createTool as createToolFactory, type CreateToolOptions } from './create-tool';
+import {
+  createTool as createToolFactory,
+  createToolCall,
+  type CreateToolOptions,
+} from './create-tool';
 import {
   type InspectorDetailLevel,
   inspectRegistry,
@@ -25,18 +29,17 @@ import type {
   ToolParametersSchema,
 } from './is-tool';
 import { isTool } from './is-tool';
-import {
-  schemaHasKeys,
-  schemaMatches,
-  tagsMatchAll,
-  tagsMatchAny,
-  tagsMatchNone,
-  textMatches,
-  type ToolPredicate,
-} from './query-predicates';
-import { getSchemaKeys, isZodObjectSchema, isZodSchema } from './schema-utilities';
+import type {
+  QuerySelectionResult,
+  ToolMatch,
+  ToolQuery,
+  ToolSearchOptions,
+} from './registry';
+import type { Embedder } from './registry/embeddings';
+import { registerRegistryEmbedder, warmToolEmbeddings } from './registry/embeddings';
+import { isZodObjectSchema, isZodSchema } from './schema-utilities';
 import { assertKebabCaseTag, uniqTags } from './tag-utilities';
-import type { ToolCall, ToolResult } from './types';
+import type { ToolCall, ToolCallInput, ToolResult } from './types';
 
 export type ArmorerContext = Record<string, unknown>;
 
@@ -49,84 +52,10 @@ export type ArmorerToolRuntimeContext<Ctx extends ArmorerContext = ArmorerContex
 
 export type SerializedArmorer = readonly ToolConfig[];
 
-/**
- * Tag filtering for tool queries.
- */
-export type TagFilter = {
-  /** Match any of these tags (OR). */
-  any?: readonly string[];
-  /** Require all of these tags (AND). */
-  all?: readonly string[];
-  /** Exclude tools with any of these tags. */
-  none?: readonly string[];
-};
-
-export type SchemaFilter = {
-  /** Require schema to contain these keys. */
-  keys?: readonly string[];
-  /** Loosely match a schema shape. */
-  matches?: ToolParametersSchema;
-};
-
-export type MetadataFilter = {
-  /** Require metadata to include these keys. */
-  has?: readonly string[];
-  /** Require metadata values to equal these fields. */
-  eq?: Record<string, unknown>;
-  /** Custom metadata predicate. */
-  predicate?: (metadata: ToolMetadata | undefined) => boolean;
-};
-
-/**
- * Criteria for querying tools.
- *
- * All criteria are combined with AND logic.
- */
-export type ToolQuery = {
-  /** Tag-based filtering. */
-  tags?: TagFilter;
-  /** Fuzzy text search across name, description, tags, and schema keys. */
-  text?: string;
-  /** Schema filtering by keys or shape. */
-  schema?: SchemaFilter;
-  /** Metadata filtering. */
-  metadata?: MetadataFilter;
-  /** Custom predicate over the full tool. */
-  predicate?: ToolPredicate<ArmorerTool>;
-};
-
-export type QueryResult = ArmorerTool[];
-
-export type ToolSearchRank = {
-  /** Prefer tools with these tags. */
-  tags?: readonly string[];
-  /** Prefer tools that match this text. */
-  text?: string;
-  /** Optional ranking weights. */
-  weights?: {
-    tags?: number;
-    text?: number;
-  };
-};
-
-export type ToolSearchOptions = {
-  /** Filter tools before ranking. */
-  filter?: ToolQuery;
-  /** Ranking preferences. */
-  rank?: ToolSearchRank;
-  /** Limit the number of results returned. */
-  limit?: number;
-};
-
-export type ToolMatch = {
-  tool: ArmorerTool;
-  score: number;
-  reasons: string[];
-};
-
 export interface ArmorerOptions {
   signal?: MinimalAbortSignal;
   context?: ArmorerContext;
+  embed?: Embedder;
   toolFactory?: (
     configuration: ToolConfig,
     context: ArmorerToolFactoryContext,
@@ -158,8 +87,8 @@ export interface ArmorerEvents {
   complete: { tool: ArmorerTool; result: ToolResult };
   error: { tool?: ArmorerTool; result: ToolResult };
   'not-found': ToolCall;
-  query: { criteria?: ToolQuery; results: QueryResult };
-  search: { options: ToolSearchOptions; results: ToolMatch[] };
+  query: { criteria?: ToolQuery; results: QuerySelectionResult };
+  search: { options: ToolSearchOptions; results: ToolMatch<unknown>[] };
   /** Tool status/progress updates for UI display */
   'status:update': ToolStatusUpdate;
 }
@@ -179,10 +108,9 @@ export interface Armorer {
   >(
     options: CreateToolOptions<TInput, TOutput, E, Tags, M>,
   ) => ArmorerTool;
-  execute(call: ToolCall & { name: string }): Promise<ToolResult>;
-  execute(calls: (ToolCall & { name: string })[]): Promise<ToolResult[]>;
-  query: (criteria?: ToolQuery) => QueryResult;
-  search: (options?: ToolSearchOptions) => ToolMatch[];
+  execute(call: ToolCallInput): Promise<ToolResult>;
+  execute(calls: ToolCallInput[]): Promise<ToolResult[]>;
+  tools: () => ArmorerTool[];
   getTool: (name: string) => ArmorerTool | undefined;
   /**
    * Returns names of tools that are not registered.
@@ -267,6 +195,7 @@ export function createArmorer(
     detail: ArmorerEvents[K],
   ) => dispatchEvent({ type, detail } as EmissionEvent<ArmorerEvents[K]>);
   const baseContext = options.context ? { ...options.context } : {};
+  const embedder = options.embed;
   const buildTool =
     typeof options.toolFactory === 'function'
       ? (configuration: ToolConfig) =>
@@ -297,6 +226,9 @@ export function createArmorer(
       emit('registering', tool);
       storedConfigurations.set(configuration.name, configuration);
       registry.set(tool.name, tool);
+      if (embedder) {
+        warmToolEmbeddings(tool, embedder);
+      }
       emit('registered', tool);
     }
     return api;
@@ -326,6 +258,7 @@ export function createArmorer(
       name: options.name,
       description: options.description,
       schema,
+      parameters: schema,
       execute: options.execute as ToolConfig['execute'],
     };
     if (normalizedTags) {
@@ -342,32 +275,33 @@ export function createArmorer(
     return tool;
   }
 
-  async function execute(call: ToolCall & { name: string }): Promise<ToolResult>;
-  async function execute(calls: (ToolCall & { name: string })[]): Promise<ToolResult[]>;
+  async function execute(call: ToolCallInput): Promise<ToolResult>;
+  async function execute(calls: ToolCallInput[]): Promise<ToolResult[]>;
   async function execute(
-    input: (ToolCall & { name: string }) | (ToolCall & { name: string })[],
+    input: ToolCallInput | ToolCallInput[],
   ): Promise<ToolResult | ToolResult[]> {
     const calls = Array.isArray(input) ? input : [input];
     const results: ToolResult[] = [];
     for (const call of calls) {
-      const tool = registry.get(call.name);
+      const toolCall = normalizeToolCall(call);
+      const tool = registry.get(toolCall.name);
       if (!tool) {
         const notFound: ToolResult = {
-          toolCallId: call.id ?? '',
-          toolName: call.name,
+          callId: toolCall.id,
+          outcome: 'error',
+          content: `Tool not found: ${toolCall.name}`,
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
           result: undefined,
-          error: `Tool not found: ${call.name}`,
+          error: `Tool not found: ${toolCall.name}`,
         };
         results.push(notFound);
-        emit('not-found', call);
+        emit('not-found', toolCall);
         continue;
       }
 
-      emit('call', { tool, call });
+      emit('call', { tool, call: toolCall });
       try {
-        const toolCall = Object.prototype.hasOwnProperty.call(call, 'arguments')
-          ? call
-          : { ...call, arguments: undefined };
         const result = (await tool.execute(toolCall as any)) as ToolResult;
         results.push(result);
         if (result.error) {
@@ -376,11 +310,15 @@ export function createArmorer(
           emit('complete', { tool, result });
         }
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         const errResult: ToolResult = {
-          toolCallId: call.id ?? '',
+          callId: toolCall.id,
+          outcome: 'error',
+          content: message,
+          toolCallId: toolCall.id,
           toolName: tool.name,
           result: undefined,
-          error: error instanceof Error ? error.message : String(error),
+          error: message,
         };
         results.push(errResult);
         emit('error', { tool, result: errResult });
@@ -389,33 +327,16 @@ export function createArmorer(
     return Array.isArray(input) ? results : results[0]!;
   }
 
-  function query(criteria?: ToolQuery): QueryResult {
-    const tools = Array.from(registry.values());
-    if (criteria === undefined) {
-      emit('query', { results: tools });
-      return tools;
-    }
-    if (!isPlainObject(criteria)) {
-      throw new TypeError('query expects a ToolQuery object');
-    }
-    const predicates = buildPredicates(criteria);
-    const results = predicates.length
-      ? tools.filter((tool) => evaluatePredicates(tool, predicates))
-      : tools;
-    emit('query', { criteria, results });
-    return results;
+  function normalizeToolCall(call: ToolCallInput): ToolCall {
+    const args = Object.prototype.hasOwnProperty.call(call, 'arguments')
+      ? call.arguments
+      : {};
+    const id = typeof call.id === 'string' && call.id.length ? call.id : undefined;
+    return createToolCall(call.name, args, id);
   }
 
-  function search(options: ToolSearchOptions = {}): ToolMatch[] {
-    if (!isPlainObject(options)) {
-      throw new TypeError('search expects a ToolSearchOptions object');
-    }
-    const filter = options.filter;
-    const tools = filter ? query(filter) : query();
-    const ranked = rankTools(tools, options.rank);
-    const results = applyLimit(ranked, options.limit);
-    emit('search', { options, results });
-    return results;
+  function tools(): ArmorerTool[] {
+    return Array.from(registry.values());
   }
 
   function getTool(name: string): ArmorerTool | undefined {
@@ -457,8 +378,7 @@ export function createArmorer(
     register,
     createTool,
     execute,
-    query,
-    search,
+    tools,
     getTool,
     getMissingTools,
     hasAllTools,
@@ -479,6 +399,10 @@ export function createArmorer(
       return hub.completed;
     },
   };
+
+  if (embedder) {
+    registerRegistryEmbedder(api, embedder);
+  }
 
   if (serialized.length) {
     register(...serialized);
@@ -508,6 +432,9 @@ export function createArmorer(
     if (configuration.metadata) {
       options.metadata = configuration.metadata;
     }
+    if (configuration.diagnostics) {
+      options.diagnostics = configuration.diagnostics;
+    }
     return createToolFactory(options);
   }
 
@@ -521,7 +448,8 @@ export function createArmorer(
     if (typeof configuration.description !== 'string') {
       throw new TypeError('register expects ToolConfig objects');
     }
-    if (!configuration.schema) {
+    const rawSchema = configuration.schema ?? configuration.parameters;
+    if (!rawSchema) {
       throw new TypeError('register expects ToolConfig objects');
     }
     if (
@@ -530,11 +458,12 @@ export function createArmorer(
     ) {
       throw new TypeError('register expects ToolConfig objects');
     }
-    const normalizedSchema = normalizeToolSchema(configuration.schema);
+    const normalizedSchema = normalizeToolSchema(rawSchema);
     const result: ToolConfig = {
       name: configuration.name,
       description: configuration.description,
       schema: normalizedSchema,
+      parameters: normalizedSchema,
       execute: configuration.execute,
     };
     if (configuration.tags) {
@@ -542,6 +471,9 @@ export function createArmorer(
     }
     if (configuration.metadata) {
       result.metadata = configuration.metadata;
+    }
+    if (configuration.diagnostics) {
+      result.diagnostics = configuration.diagnostics;
     }
     return result;
   }
@@ -568,206 +500,6 @@ function normalizeToolSchema(schema: unknown): ToolParametersSchema {
     return z.object(schema as Record<string, z.ZodTypeAny>);
   }
   throw new Error('Tool schema must be a Zod object schema or an object of Zod schemas');
-}
-
-function evaluatePredicates(
-  tool: ArmorerTool,
-  predicates: ToolPredicate<ArmorerTool>[],
-): boolean {
-  for (const predicate of predicates) {
-    try {
-      if (!predicate(tool)) {
-        return false;
-      }
-    } catch {
-      return false;
-    }
-  }
-  return true;
-}
-
-function buildPredicates(criteria: ToolQuery): ToolPredicate<ArmorerTool>[] {
-  const predicates: ToolPredicate<ArmorerTool>[] = [];
-
-  if (criteria.tags) {
-    const { any, all, none } = criteria.tags;
-    if (any?.length) {
-      predicates.push(tagsMatchAny(any));
-    }
-    if (all?.length) {
-      predicates.push(tagsMatchAll(all));
-    }
-    if (none?.length) {
-      predicates.push(tagsMatchNone(none));
-    }
-  }
-
-  if (criteria.text !== undefined) {
-    predicates.push(textMatches(criteria.text));
-  }
-
-  if (criteria.schema) {
-    const { keys, matches } = criteria.schema;
-    if (keys?.length) {
-      predicates.push(schemaHasKeys(keys));
-    }
-    if (matches) {
-      predicates.push(schemaMatches(matches));
-    }
-  }
-
-  if (criteria.metadata) {
-    const { has, eq, predicate } = criteria.metadata;
-    if (has?.length) {
-      predicates.push((tool) => metadataHasKeys(tool.metadata, has));
-    }
-    if (eq && Object.keys(eq).length) {
-      predicates.push((tool) => metadataEquals(tool.metadata, eq));
-    }
-    if (predicate) {
-      predicates.push((tool) => predicate(tool.metadata));
-    }
-  }
-
-  if (criteria.predicate) {
-    predicates.push(criteria.predicate);
-  }
-
-  return predicates;
-}
-
-function applyLimit(matches: ToolMatch[], limit?: number): ToolMatch[] {
-  if (limit === undefined) {
-    return matches;
-  }
-  if (!Number.isFinite(limit)) {
-    return matches;
-  }
-  const capped = Math.max(0, Math.floor(limit));
-  return matches.slice(0, capped);
-}
-
-function rankTools(tools: QueryResult, rank?: ToolSearchRank): ToolMatch[] {
-  const preferredTags = normalizeTags(rank?.tags ?? []);
-  const textQuery = rank?.text ?? '';
-  const tagWeight = normalizeWeight(rank?.weights?.tags);
-  const textWeight = normalizeWeight(rank?.weights?.text);
-
-  const ranked = tools.map((tool) => {
-    let score = 0;
-    const reasons: string[] = [];
-
-    if (preferredTags.length) {
-      const tagMatches = collectTagMatches(tool.tags, preferredTags);
-      if (tagMatches.length) {
-        score += tagMatches.length * tagWeight;
-        reasons.push(...tagMatches.map((tag) => `tag:${tag}`));
-      }
-    }
-
-    if (rank?.text !== undefined) {
-      const { score: textScore, reasons: textReasons } = scoreTextMatch(tool, textQuery);
-      if (textScore) {
-        score += textScore * textWeight;
-        reasons.push(...textReasons.map((reason) => `text:${reason}`));
-      }
-    }
-
-    return { tool, score, reasons };
-  });
-
-  ranked.sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
-    }
-    return a.tool.name.localeCompare(b.tool.name);
-  });
-
-  return ranked;
-}
-
-function collectTagMatches(
-  toolTags: readonly string[] | undefined,
-  preferredTags: readonly string[],
-): string[] {
-  if (!toolTags?.length || !preferredTags.length) {
-    return [];
-  }
-  const preferred = new Set(preferredTags.map((tag) => tag.toLowerCase()));
-  const matches = toolTags.filter((tag) => preferred.has(tag.toLowerCase()));
-  return Array.from(new Set(matches));
-}
-
-function scoreTextMatch(
-  tool: ArmorerTool,
-  query: string,
-): { score: number; reasons: string[] } {
-  const needle = query.trim().toLowerCase();
-  if (!needle) {
-    return { score: 0, reasons: [] };
-  }
-  const reasons: string[] = [];
-  let score = 0;
-
-  if (tool.name.toLowerCase().includes(needle)) {
-    score += 1;
-    reasons.push('name');
-  }
-  if (tool.description?.toLowerCase().includes(needle)) {
-    score += 1;
-    reasons.push('description');
-  }
-
-  const tagMatches = (tool.tags ?? []).filter((tag) =>
-    tag.toLowerCase().includes(needle),
-  );
-  if (tagMatches.length) {
-    score += 1;
-    reasons.push(`tags(${tagMatches.join(', ')})`);
-  }
-
-  const schemaMatches = getSchemaKeys(tool.schema).filter((key) =>
-    key.toLowerCase().includes(needle),
-  );
-  if (schemaMatches.length) {
-    score += 1;
-    reasons.push(`schema-keys(${schemaMatches.join(', ')})`);
-  }
-
-  return { score, reasons };
-}
-
-function metadataHasKeys(metadata: ToolMetadata | undefined, keys: readonly string[]) {
-  if (!metadata || typeof metadata !== 'object') {
-    return false;
-  }
-  return keys.every((key) => key in metadata);
-}
-
-function metadataEquals(
-  metadata: ToolMetadata | undefined,
-  expected: Record<string, unknown>,
-): boolean {
-  if (!metadata || typeof metadata !== 'object') {
-    return false;
-  }
-  const entries = Object.entries(expected);
-  return entries.every(([key, value]) => metadata[key] === value);
-}
-
-function normalizeTags(tags: readonly string[]): string[] {
-  return tags.filter(Boolean).map((tag) => String(tag).toLowerCase());
-}
-
-function normalizeWeight(value: number | undefined): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  return 1;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function createLazyExecuteResolver(

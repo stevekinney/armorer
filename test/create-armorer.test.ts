@@ -1,9 +1,11 @@
-import { describe, expect,it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
 import { createArmorer } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
 import type { ToolConfig } from '../src/is-tool';
+import { lazy } from '../src/lazy';
+import { queryTools, reindexSearchIndex, searchTools } from '../src/registry';
 
 const makeConfiguration = (overrides?: Partial<ToolConfig>): ToolConfig => ({
   name: 'sum',
@@ -30,6 +32,21 @@ describe('createArmorer', () => {
     expect(result.result).toBe(3);
   });
 
+  it('generates a call id when missing', async () => {
+    const armorer = createArmorer([makeConfiguration()]);
+
+    const result = await armorer.execute({
+      name: 'sum',
+      arguments: { a: 1, b: 2 },
+    });
+
+    expect(typeof result.callId).toBe('string');
+    expect(result.callId.length).toBeGreaterThan(0);
+    expect(result.toolCallId).toBe(result.callId);
+    expect(result.outcome).toBe('success');
+    expect(result.content).toBe(3);
+  });
+
   it('supports lazy execute functions in configs', async () => {
     const executePromise = Promise.resolve().then(
       () => async ({ a, b }: { a: number; b: number }) => a + b + 1,
@@ -47,6 +64,36 @@ describe('createArmorer', () => {
       arguments: { a: 1, b: 2 },
     });
     expect(result.result).toBe(4);
+  });
+
+  it('supports lazy helper in configs', async () => {
+    let loads = 0;
+    const armorer = createArmorer([
+      makeConfiguration({
+        name: 'sum-lazy-helper',
+        execute: lazy(async () => {
+          loads += 1;
+          return async ({ a, b }: { a: number; b: number }) => a + b + 1;
+        }),
+      }),
+    ]);
+
+    expect(loads).toBe(0);
+    const result = await armorer.execute({
+      id: 'lazy-helper',
+      name: 'sum-lazy-helper',
+      arguments: { a: 1, b: 2 },
+    });
+    expect(result.result).toBe(4);
+    expect(loads).toBe(1);
+
+    const second = await armorer.execute({
+      id: 'lazy-helper-2',
+      name: 'sum-lazy-helper',
+      arguments: { a: 2, b: 2 },
+    });
+    expect(second.result).toBe(5);
+    expect(loads).toBe(1);
   });
 
   it('returns an error when lazy execute rejects in configs', async () => {
@@ -306,42 +353,89 @@ describe('createArmorer', () => {
       }),
     );
 
-    const tagMatches = armorer.query({ tags: { any: ['math'] } });
+    const tagMatches = queryTools(armorer, { tags: { any: ['math'] } });
     expect(tagMatches.map((tool) => tool.name).sort()).toEqual(['double', 'increment']);
 
-    const descriptorMatches = armorer.query({
+    const descriptorMatches = queryTools(armorer, {
       tags: { any: ['fast'] },
       text: 'double',
     });
     expect(descriptorMatches.map((tool) => tool.name)).toEqual(['double']);
 
-    const argumentMatches = armorer.query({ schema: { keys: ['value'] } });
+    const argumentMatches = queryTools(armorer, { schema: { keys: ['value'] } });
     expect(argumentMatches.map((tool) => tool.name)).toEqual(['describe']);
 
-    const schemaMatches = armorer.query({
+    const schemaMatches = queryTools(armorer, {
       schema: { matches: z.object({ a: z.number() }) },
     });
     expect(schemaMatches.map((tool) => tool.name).sort()).toEqual(['double', 'increment']);
 
-    const predicateMatches = armorer.query({
+    const predicateMatches = queryTools(armorer, {
       predicate: (tool) => tool.tags?.includes('text') ?? false,
     });
     expect(predicateMatches.map((tool) => tool.name)).toEqual(['describe']);
+  });
+
+  it('supports boolean query groups', () => {
+    const armorer = createArmorer();
+    armorer.register(
+      makeConfiguration({
+        name: 'alpha',
+        tags: ['math'],
+        schema: z.object({ a: z.number() }),
+      }),
+      makeConfiguration({
+        name: 'beta',
+        tags: ['text'],
+        schema: z.object({ value: z.string() }),
+      }),
+      makeConfiguration({
+        name: 'gamma',
+        tags: ['math', 'fast'],
+        schema: z.object({ a: z.number(), fast: z.boolean() }),
+      }),
+    );
+
+    const orMatches = queryTools(armorer, {
+      or: [{ tags: { any: ['text'] } }, { tags: { all: ['math', 'fast'] } }],
+    });
+    expect(orMatches.map((tool) => tool.name).sort()).toEqual(['beta', 'gamma']);
+
+    const notMatches = queryTools(armorer, {
+      tags: { any: ['math'] },
+      not: { tags: { any: ['fast'] } },
+    });
+    expect(notMatches.map((tool) => tool.name)).toEqual(['alpha']);
   });
 
   it('returns all tools when no query criteria is provided', () => {
     const armorer = createArmorer();
     armorer.register(makeConfiguration({ name: 'foo' }), makeConfiguration({ name: 'bar' }));
 
-    const allTools = armorer.query();
+    const allTools = queryTools(armorer);
     expect(allTools.map((tool) => tool.name).sort()).toEqual(['bar', 'foo']);
+  });
+
+  it('supports pagination and selection in queries', () => {
+    const armorer = createArmorer();
+    armorer.register(
+      makeConfiguration({ name: 'alpha' }),
+      makeConfiguration({ name: 'beta' }),
+      makeConfiguration({ name: 'gamma' }),
+    );
+
+    const names = queryTools(armorer, { select: 'name', offset: 1, limit: 1 });
+    expect(names).toEqual(['beta']);
+
+    const summaries = queryTools(armorer, { select: 'summary', includeSchema: true });
+    expect(summaries[0]?.schema).toBeDefined();
   });
 
   it('throws when query input is not an object', () => {
     const armorer = createArmorer();
     armorer.register(makeConfiguration({ name: 'alpha' }), makeConfiguration({ name: 'beta' }));
 
-    expect(() => armorer.query(42 as unknown as any)).toThrow(
+    expect(() => queryTools(armorer, 42 as unknown as any)).toThrow(
       'query expects a ToolQuery object',
     );
   });
@@ -360,7 +454,7 @@ describe('createArmorer', () => {
       makeConfiguration({ name: 'mathy', schema: z.object({ a: z.number() }) }),
     );
 
-    const matches = armorer.query({ schema: { matches: schema } });
+    const matches = queryTools(armorer, { schema: { matches: schema } });
     expect(matches.map((tool) => tool.name)).toEqual(['writer']);
   });
 
@@ -368,7 +462,7 @@ describe('createArmorer', () => {
     const armorer = createArmorer();
     armorer.register(makeConfiguration({ name: 'ok' }), makeConfiguration({ name: 'nope' }));
 
-    const matches = armorer.query({
+    const matches = queryTools(armorer, {
       predicate: (tool) => {
         if (tool.name === 'nope') {
           throw new Error('boom');
@@ -688,7 +782,7 @@ describe('createArmorer', () => {
         makeConfiguration({ name: 'another-safe', tags: ['safe'] }),
       );
 
-      const results = armorer.query({ tags: { none: ['destructive'] } });
+      const results = queryTools(armorer, { tags: { none: ['destructive'] } });
       expect(results.map((t) => t.name).sort()).toEqual(['another-safe', 'safe-tool']);
     });
 
@@ -699,7 +793,7 @@ describe('createArmorer', () => {
         makeConfiguration({ name: 'tool-b', tags: ['destructive'] }),
       );
 
-      const results = armorer.query({ tags: { none: ['DESTRUCTIVE'] } });
+      const results = queryTools(armorer, { tags: { none: ['DESTRUCTIVE'] } });
       expect(results.map((t) => t.name)).toEqual(['tool-a']);
     });
 
@@ -710,12 +804,43 @@ describe('createArmorer', () => {
         makeConfiguration({ name: 'math-only', tags: ['math'] }),
       );
 
-      const results = armorer.query({ tags: { all: ['math', 'fast'] } });
+      const results = queryTools(armorer, { tags: { all: ['math', 'fast'] } });
       expect(results.map((t) => t.name)).toEqual(['math-fast']);
     });
   });
 
   describe('search ranking', () => {
+    it('uses embeddings to match query text when configured', () => {
+      const embed = (texts: string[]) =>
+        texts.map((text) => {
+          const normalized = text.toLowerCase();
+          if (normalized.includes('weather') || normalized.includes('forecast')) {
+            return [1, 0];
+          }
+          if (normalized.includes('stocks')) {
+            return [0, 1];
+          }
+          return [0, 0];
+        });
+
+      const armorer = createArmorer([], { embed });
+      armorer.register(
+        makeConfiguration({
+          name: 'forecast-tool',
+          description: 'daily forecast',
+          tags: ['reports'],
+        }),
+        makeConfiguration({
+          name: 'stock-tool',
+          description: 'market summary',
+          tags: ['finance'],
+        }),
+      );
+
+      const results = queryTools(armorer, { text: 'weather' });
+      expect(results.map((tool) => tool.name)).toEqual(['forecast-tool']);
+    });
+
     it('ranks tools by preferred tags', () => {
       const armorer = createArmorer();
       armorer.register(
@@ -725,7 +850,7 @@ describe('createArmorer', () => {
         makeConfiguration({ name: 'zero-tags', tags: undefined }),
       );
 
-      const results = armorer.search({ rank: { tags: ['math', 'fast'] } });
+      const results = searchTools(armorer, { rank: { tags: ['math', 'fast'] } });
       expect(results.map((t) => t.tool.name)).toEqual([
         'two-matches',
         'one-match',
@@ -743,11 +868,42 @@ describe('createArmorer', () => {
         makeConfiguration({ name: 'ok', tags: ['math'] }),
       );
 
-      const results = armorer.search({
+      const results = searchTools(armorer, {
         filter: { tags: { none: ['destructive'] } },
         rank: { tags: ['math', 'fast'] },
       });
       expect(results.map((t) => t.tool.name)).toEqual(['good', 'ok']);
+    });
+
+    it('supports tag boosts', () => {
+      const armorer = createArmorer();
+      armorer.register(
+        makeConfiguration({ name: 'standard', tags: ['misc'] }),
+        makeConfiguration({ name: 'boosted', tags: ['fast'] }),
+      );
+
+      const results = searchTools(armorer, { rank: { tagBoosts: { fast: 4 } } });
+      expect(results[0]?.tool.name).toBe('boosted');
+      expect(results[0]?.reasons).toContain('tag:fast');
+    });
+
+    it('supports custom rankers and tie breakers', () => {
+      const armorer = createArmorer();
+      armorer.register(
+        makeConfiguration({ name: 'alpha', tags: ['misc'] }),
+        makeConfiguration({ name: 'beta', tags: ['misc'] }),
+        makeConfiguration({ name: 'preferred', tags: ['misc'] }),
+      );
+
+      const results = searchTools(armorer, {
+        ranker: (tool) =>
+          tool.name === 'preferred' ? { score: 10, reasons: ['custom'] } : { score: 0 },
+        tieBreaker: (a, b) => b.tool.name.localeCompare(a.tool.name),
+      });
+
+      expect(results[0]?.tool.name).toBe('preferred');
+      expect(results[0]?.reasons).toContain('custom');
+      expect(results[1]?.tool.name).toBe('beta');
     });
 
     it('limits results and includes text reasons', () => {
@@ -757,10 +913,29 @@ describe('createArmorer', () => {
         makeConfiguration({ name: 'increment', description: 'increase by one', tags: ['math'] }),
       );
 
-      const results = armorer.search({ rank: { text: 'double' }, limit: 1 });
+      const results = searchTools(armorer, { rank: { text: 'double' }, limit: 1 });
       expect(results).toHaveLength(1);
       expect(results[0]?.tool.name).toBe('double');
       expect(results[0]?.reasons).toContain('text:name');
+    });
+
+    it('supports selection and pagination in search results', () => {
+      const armorer = createArmorer();
+      armorer.register(
+        makeConfiguration({ name: 'alpha', tags: ['misc'] }),
+        makeConfiguration({ name: 'beta', tags: ['misc'] }),
+        makeConfiguration({ name: 'gamma', tags: ['misc'] }),
+      );
+
+      const results = searchTools(armorer, {
+        select: 'summary',
+        includeSchema: true,
+        offset: 1,
+        limit: 1,
+      });
+      expect(results).toHaveLength(1);
+      expect(results[0]?.tool.name).toBe('beta');
+      expect(results[0]?.tool.schema).toBeDefined();
     });
 
     it('sorts by name when scores tie', () => {
@@ -770,7 +945,7 @@ describe('createArmorer', () => {
         makeConfiguration({ name: 'alpha', tags: ['misc'] }),
       );
 
-      const results = armorer.search();
+      const results = searchTools(armorer);
       expect(results.map((t) => t.tool.name)).toEqual(['alpha', 'beta']);
     });
 
@@ -781,7 +956,7 @@ describe('createArmorer', () => {
         makeConfiguration({ name: 'second', tags: ['misc'] }),
       );
 
-      const results = armorer.search({ limit: Number.POSITIVE_INFINITY });
+      const results = searchTools(armorer, { limit: Number.POSITIVE_INFINITY });
       expect(results).toHaveLength(2);
     });
 
@@ -789,7 +964,7 @@ describe('createArmorer', () => {
       const armorer = createArmorer();
       armorer.register(makeConfiguration({ name: 'alpha', tags: ['misc'] }));
 
-      const results = armorer.search({ rank: { text: '' } });
+      const results = searchTools(armorer, { rank: { text: '' } });
       expect(results[0]?.score).toBe(0);
       expect(results[0]?.reasons).toEqual([]);
     });
@@ -811,10 +986,88 @@ describe('createArmorer', () => {
         }),
       );
 
-      const results = armorer.search({
+      const results = searchTools(armorer, {
         rank: { tags: ['priority'], text: 'double', weights: { tags: 2, text: 1 } },
       });
       expect(results[0]?.tool.name).toBe('b-tagged');
+    });
+
+    it('ranks by number of matched text tokens', () => {
+      const armorer = createArmorer();
+      armorer.register(
+        makeConfiguration({ name: 'one-token', tags: ['alpha'] }),
+        makeConfiguration({ name: 'two-token', tags: ['alpha', 'beta'] }),
+      );
+
+      const results = searchTools(armorer, { rank: { text: 'alpha beta' } });
+      expect(results[0]?.tool.name).toBe('two-token');
+    });
+
+    it('respects text field weights', () => {
+      const armorer = createArmorer();
+      armorer.register(
+        makeConfiguration({
+          name: 'summarize',
+          description: 'misc',
+          tags: [],
+        }),
+        makeConfiguration({
+          name: 'notes',
+          description: 'summarize notes',
+          tags: [],
+        }),
+      );
+
+      const results = searchTools(armorer, {
+        rank: {
+          text: {
+            query: 'summarize',
+            weights: { name: 2, description: 0.5 },
+          },
+        },
+      });
+      expect(results[0]?.tool.name).toBe('summarize');
+    });
+
+    it('uses embeddings to rank text matches when configured', () => {
+      const embed = (texts: string[]) =>
+        texts.map((text) => {
+          const normalized = text.toLowerCase();
+          if (normalized.includes('weather') || normalized.includes('forecast')) {
+            return [1, 0];
+          }
+          if (normalized.includes('stocks')) {
+            return [0, 1];
+          }
+          return [0, 0];
+        });
+
+      const armorer = createArmorer([], { embed });
+      armorer.register(
+        makeConfiguration({
+          name: 'forecast-tool',
+          description: 'daily forecast',
+        }),
+        makeConfiguration({
+          name: 'stock-tool',
+          description: 'market summary',
+        }),
+      );
+
+      const results = searchTools(armorer, {
+        rank: {
+          text: {
+            query: 'weather',
+            weights: { description: 2, name: 0.1 },
+          },
+        },
+        explain: true,
+      });
+      expect(results[0]?.tool.name).toBe('forecast-tool');
+      expect(results[0]?.reasons).toEqual(
+        expect.arrayContaining([expect.stringContaining('embedding:description')]),
+      );
+      expect(results[0]?.matches?.embedding?.field).toBe('description');
     });
 
     it('includes tag and schema key text reasons', () => {
@@ -825,6 +1078,7 @@ describe('createArmorer', () => {
           description: 'writes events',
           tags: ['audit-log'],
           schema: z.object({ logId: z.string() }),
+          metadata: { logId: 'audit' },
         }),
         makeConfiguration({
           name: 'other-tool',
@@ -834,15 +1088,55 @@ describe('createArmorer', () => {
         }),
       );
 
-      const results = armorer.search({ rank: { text: 'log' } });
+      const results = searchTools(armorer, { rank: { text: 'log' }, explain: true });
       expect(results[0]?.tool.name).toBe('audit-tool');
       expect(results[0]?.reasons).toContain('text:tags(audit-log)');
       expect(results[0]?.reasons).toContain('text:schema-keys(logId)');
+      expect(results[0]?.reasons).toContain('text:metadata-keys(logId)');
+      expect(results[0]?.matches?.fields).toEqual(
+        expect.arrayContaining(['tags', 'schemaKeys', 'metadataKeys']),
+      );
+      expect(results[0]?.matches?.tags).toEqual(['audit-log']);
+      expect(results[0]?.matches?.schemaKeys).toEqual(['logId']);
+      expect(results[0]?.matches?.metadataKeys).toEqual(['logId']);
+    });
+
+    it('reindexes cached search data on demand', () => {
+      const armorer = createArmorer();
+      armorer.register(
+        makeConfiguration({
+          name: 'audit-tool',
+          description: 'writes events',
+          tags: ['audit'],
+          schema: z.object({ eventId: z.string() }),
+          metadata: { owner: 'team-a' },
+        }),
+      );
+
+      const tool = armorer.getTool('audit-tool');
+      expect(tool).toBeDefined();
+
+      const initial = searchTools(armorer, { rank: { text: 'trace' }, explain: true });
+      expect(initial[0]?.reasons).toEqual([]);
+      expect(initial[0]?.matches?.metadataKeys).toBeUndefined();
+
+      const metadata = tool?.metadata as Record<string, unknown>;
+      metadata.traceId = 'trace-1';
+
+      const stale = searchTools(armorer, { rank: { text: 'trace' }, explain: true });
+      expect(stale[0]?.reasons).toEqual([]);
+      expect(stale[0]?.matches?.metadataKeys).toBeUndefined();
+
+      reindexSearchIndex(armorer);
+
+      const refreshed = searchTools(armorer, { rank: { text: 'trace' }, explain: true });
+      expect(refreshed[0]?.reasons).toContain('text:metadata-keys(traceId)');
+      expect(refreshed[0]?.matches?.metadataKeys).toEqual(['traceId']);
     });
 
     it('throws when search input is not an object', () => {
       const armorer = createArmorer();
-      expect(() => armorer.search(42 as unknown as any)).toThrow(
+      expect(() => searchTools(armorer, 42 as unknown as any)).toThrow(
         'search expects a ToolSearchOptions object',
       );
     });
@@ -856,12 +1150,12 @@ describe('createArmorer', () => {
         makeConfiguration({ name: 'tool-b', tags: ['test'] }),
       );
 
-      const results = armorer.query({
+      const results = queryTools(armorer, {
         metadata: { predicate: (meta) => meta === undefined },
       });
       expect(results).toHaveLength(2);
 
-      const noResults = armorer.query({
+      const noResults = queryTools(armorer, {
         metadata: {
           predicate: (meta) => meta !== undefined && (meta as any).category === 'special',
         },
@@ -882,7 +1176,7 @@ describe('createArmorer', () => {
         }),
       );
 
-      const results = armorer.query({
+      const results = queryTools(armorer, {
         metadata: {
           predicate: (meta) => {
             if ((meta as any)?.tier === 'silver') {
@@ -914,12 +1208,12 @@ describe('createArmorer', () => {
         }),
       );
 
-      const premiumResults = armorer.query({
+      const premiumResults = queryTools(armorer, {
         metadata: { eq: { category: 'premium' } },
       });
       expect(premiumResults.map((t) => t.name)).toEqual(['premium-tool']);
 
-      const tieredResults = armorer.query({
+      const tieredResults = queryTools(armorer, {
         metadata: { has: ['tier'] },
       });
       expect(tieredResults.map((t) => t.name).sort()).toEqual([
@@ -927,10 +1221,47 @@ describe('createArmorer', () => {
         'premium-tool',
       ]);
 
-      const undefinedResults = armorer.query({
+      const undefinedResults = queryTools(armorer, {
         metadata: { predicate: (meta) => meta === undefined },
       });
       expect(undefinedResults.map((t) => t.name)).toEqual(['no-metadata-tool']);
+    });
+
+    it('supports contains, startsWith, and range metadata filters', () => {
+      const armorer = createArmorer();
+      armorer.register(
+        makeConfiguration({
+          name: 'alpha-tool',
+          metadata: { owner: 'team-alpha', score: 10, labels: ['fast', 'safe'] },
+        }),
+        makeConfiguration({
+          name: 'beta-tool',
+          metadata: { owner: 'team-beta', score: 3, labels: ['safe'] },
+        }),
+      );
+
+      const containsResults = queryTools(armorer, {
+        metadata: { contains: { owner: 'team-' } },
+      });
+      expect(containsResults.map((t) => t.name).sort()).toEqual([
+        'alpha-tool',
+        'beta-tool',
+      ]);
+
+      const labelResults = queryTools(armorer, {
+        metadata: { contains: { labels: 'fast' } },
+      });
+      expect(labelResults.map((t) => t.name)).toEqual(['alpha-tool']);
+
+      const startsWithResults = queryTools(armorer, {
+        metadata: { startsWith: { owner: 'team-a' } },
+      });
+      expect(startsWithResults.map((t) => t.name)).toEqual(['alpha-tool']);
+
+      const rangeResults = queryTools(armorer, {
+        metadata: { range: { score: { min: 5, max: 12 } } },
+      });
+      expect(rangeResults.map((t) => t.name)).toEqual(['alpha-tool']);
     });
 
     it('preserves metadata through serialization and rehydration', () => {
@@ -946,7 +1277,7 @@ describe('createArmorer', () => {
       expect(serialized[0]?.metadata).toEqual({ category: 'special', value: 42 });
 
       const rehydrated = createArmorer(serialized);
-      const results = rehydrated.query({
+      const results = queryTools(rehydrated, {
         metadata: { eq: { category: 'special' } },
       });
       expect(results.map((t) => t.name)).toEqual(['meta-tool']);
@@ -977,7 +1308,7 @@ describe('createArmorer', () => {
         }),
       );
 
-      const matches = armorer.query({
+      const matches = queryTools(armorer, {
         tags: { any: ['math'], none: ['slow'] },
         schema: { keys: ['a'] },
         text: 'double',

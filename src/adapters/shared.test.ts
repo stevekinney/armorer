@@ -94,15 +94,15 @@ describe('shared adapter utilities', () => {
       expect(configs).toHaveLength(0);
     });
 
-    it('throws Error when registry query returns non-array', () => {
+    it('throws Error when registry tools returns non-array', () => {
       // Create a mock object that looks like an Armorer but returns a non-array
       const mockQm = {
-        query: () => Promise.resolve([]), // Returns Promise, not array
+        tools: () => Promise.resolve([]), // Returns Promise, not array
         register: () => mockQm,
         execute: () => Promise.resolve({}),
       };
       expect(() => normalizeToToolConfigs(mockQm as any)).toThrow(
-        'Armorer.query() must return an array.',
+        'Armorer.tools() must return an array.',
       );
     });
 

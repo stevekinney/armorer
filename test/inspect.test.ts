@@ -452,7 +452,7 @@ describe('inspect', () => {
       const inspection2 = armorer.inspect();
 
       expect(inspection1).toEqual(inspection2);
-      expect(armorer.query().length).toBe(1);
+      expect(armorer.tools().length).toBe(1);
     });
 
     it('returns independent copies (mutations do not affect registry)', () => {

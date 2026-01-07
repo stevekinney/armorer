@@ -2,6 +2,9 @@ import { $ } from 'bun';
 
 const entrypoints = [
   './src/index.ts',
+  './src/lazy/index.ts',
+  './src/utilities/index.ts',
+  './src/registry/index.ts',
   './src/adapters/openai/index.ts',
   './src/adapters/anthropic/index.ts',
   './src/adapters/gemini/index.ts',

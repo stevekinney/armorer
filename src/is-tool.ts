@@ -32,14 +32,50 @@ export interface ToolConfig {
   name: string;
   description: string;
   schema: ToolParametersSchema;
+  parameters?: ToolParametersSchema;
   execute:
     | ((params: unknown, context?: unknown) => Promise<unknown>)
     | Promise<(params: unknown, context?: unknown) => Promise<unknown>>;
   tags?: readonly string[];
   metadata?: ToolMetadata;
+  diagnostics?: ToolDiagnostics;
 }
 
 export type ToolEventsMap = Record<string, unknown>;
+
+export type ToolValidationWarning = {
+  path: Array<string | number>;
+  code: string;
+  from: unknown;
+  to: unknown;
+  via: string;
+};
+
+export type ToolValidationReport = {
+  warnings: ToolValidationWarning[];
+  cost: number;
+};
+
+export type ToolRepairHint = {
+  path: string;
+  message: string;
+  suggestion: string;
+};
+
+export type ToolDiagnosticsAdapter = {
+  safeParseWithReport: (
+    schema: unknown,
+    value: unknown,
+  ) =>
+    | { success: true; data: unknown; report: ToolValidationReport }
+    | { success: false; error: unknown; report: ToolValidationReport };
+  createRepairHints: (
+    error: unknown,
+    options?: { rootLabel?: string },
+  ) => ToolRepairHint[];
+};
+
+export type ToolDiagnostics = Partial<ToolDiagnosticsAdapter>;
 
 /**
  * Tool call with parsed arguments.
@@ -61,7 +97,12 @@ export type DefaultToolEvents = {
   'status-update': { status: string };
   'execute-start': { params: unknown } & ToolEventDetailContext;
   'validate-success': { params: unknown; parsed: unknown } & ToolEventDetailContext;
-  'validate-error': { params: unknown; error: unknown } & ToolEventDetailContext;
+  'validate-error': {
+    params: unknown;
+    error: unknown;
+    report?: ToolValidationReport;
+    repairHints?: ToolRepairHint[];
+  } & ToolEventDetailContext;
   'execute-success': { result: unknown } & ToolEventDetailContext;
   'execute-error': { error: unknown } & ToolEventDetailContext;
   settled: { result?: unknown; error?: unknown } & ToolEventDetailContext;
@@ -131,6 +172,7 @@ export type ArmorerTool<
   name: string;
   description: string;
   schema: T;
+  parameters: T;
   configuration: ToolConfig;
   tags?: readonly string[];
   metadata: M;

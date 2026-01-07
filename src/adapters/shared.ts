@@ -8,10 +8,10 @@ export function isArmorer(input: unknown): input is Armorer {
   return (
     input !== null &&
     typeof input === 'object' &&
-    'query' in input &&
+    'tools' in input &&
     'register' in input &&
     'execute' in input &&
-    typeof (input as Armorer).query === 'function'
+    typeof (input as Armorer).tools === 'function'
   );
 }
 
@@ -24,7 +24,7 @@ export function isToolConfig(input: unknown): input is ToolConfig {
     typeof input === 'object' &&
     'name' in input &&
     'description' in input &&
-    'schema' in input &&
+    ('schema' in input || 'parameters' in input) &&
     'execute' in input &&
     !isTool(input)
   );
@@ -45,11 +45,11 @@ export function normalizeToToolConfigs(
 ): ToolConfig[] {
   // Handle Armorer registry
   if (isArmorer(input)) {
-    const tools = input.query();
+    const tools = input.tools();
     if (Array.isArray(tools)) {
       return tools.map(toolToConfig);
     }
-    throw new Error('Armorer.query() must return an array.');
+    throw new Error('Armorer.tools() must return an array.');
   }
 
   // Handle array of tools

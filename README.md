@@ -1,6 +1,6 @@
 # Armorer
 
-A lightweight, type-safe registry for validated AI tools. Build tools with Zod schemas and metadata, register them in an armorer, and execute/query them with event hooks.
+A lightweight, type-safe registry for validated AI tools. Build tools with Zod schemas and metadata, register them in an armorer, execute them, and query/rank them with registry helpers and event hooks.
 
 ## Why Armorer?
 
@@ -11,17 +11,17 @@ AI tool-calling is often the "wild west" of your application. Managing a growing
 - **Zod-Powered Type Safety**: Define your tool's schema once. Armorer handles validation and provides full TypeScript inference, so you never have to guess what's in your `params`.
 - **Provider Agnostic**: Whether you're using OpenAI, Anthropic, Gemini, or a local Llama model, Armorer speaks their language by generating standard JSON Schemas.
 - **Deep Observability**: With a built-in event system, you can hook into every stage of a tool's lifecycle—track progress, log errors, or update UIs in real-time as the LLM works.
-- **Dynamic Discovery**: Don't just hardcode a list of tools. Use the powerful query system to find tools by tags, metadata, or schema shape, allowing your agent to discover the capabilities it needs on the fly.
+- **Dynamic Discovery**: Don't just hardcode a list of tools. Use the registry helpers to find tools by tags, metadata, or schema shape, allowing your agent to discover the capabilities it needs on the fly.
 
 ## Features
 
 - **Type-Safe Tools**: Define tools with Zod schemas for runtime validation and TypeScript inference
-- **Tool Registry**: Register, query, and execute tools from a central registry
+- **Tool Registry**: Register and execute tools from a central registry
 - **Event System**: Listen to tool lifecycle events (start, success, error, progress)
 - **Query + Search**: Filter tools by tags/schema/metadata and rank matches with scores + reasons
 - **Provider Adapters**: One-line export to OpenAI, Anthropic, and Google Gemini formats
-- **Tool Composition**: Chain and specialize tools with `pipe()`, `compose()`, and `bind()`
-- **Pipelines Are Tools**: Composed pipelines are full tools you can register, query, serialize, and export
+- **Tool Composition**: Chain and specialize tools with `pipe()`, `compose()`, `bind()`, `tap()`, `when()`, `parallel()`, and `retry()`
+- **Pipelines Are Tools**: Composed pipelines are full tools you can register, query via registry helpers, serialize, and export
 - **AbortSignal Support**: Cancel tool execution with standard AbortController
 - **Metadata Support**: Attach custom metadata to tools for filtering and categorization
 - **Zero Dependencies on LLM Providers**: Works with any LLM that supports tool calling
@@ -91,18 +91,11 @@ const greetUser = createTool({
 });
 ```
 
-Tools are callable. `await tool(params)` and `await tool.execute(params)` are equivalent.
-If you need a `ToolResult` object instead of throwing on errors, use
-`tool.execute(toolCall)` or `tool.executeWith(...)`.
+Tools are callable. `await tool(params)` and `await tool.execute(params)` are equivalent. If you need a `ToolResult` object instead of throwing on errors, use `tool.execute(toolCall)` or `tool.executeWith(...)`.
 
-`executeWith(...)` lets you supply params plus `callId`, `timeoutMs`, and `signal`
-in a single call, returning a `ToolResult` instead of throwing. `rawExecute(...)`
-invokes the underlying implementation with a full `ToolContext` when you need
-precise control over dispatch/meta or to bypass the `ToolCall` wrapper.
+`executeWith(...)` lets you supply params plus `callId`, `timeoutMs`, and `signal` in a single call, returning a `ToolResult` instead of throwing. `rawExecute(...)` invokes the underlying implementation with a full `ToolContext` when you need precise control over dispatch/meta or to bypass the `ToolCall` wrapper.
 
-Tool schemas must be object schemas (`z.object(...)` or a plain object shape). Tool
-calls always pass a JSON object for `arguments`, so wrap primitives inside an
-object (for example, `z.object({ value: z.number() })`).
+Tool schemas must be object schemas (`z.object(...)` or a plain object shape). Tool calls always pass a JSON object for `arguments`, so wrap primitives inside an object (for example, `z.object({ value: z.number() })`).
 
 ### Tool Without Inputs
 
@@ -119,6 +112,8 @@ const healthCheck = createTool({
 ```
 
 ### Tool with Metadata
+
+Metadata is a lightweight, out-of-band descriptor for things that should not be part of the tool's input schema. It is useful for discovery and routing (filter/query by tier, cost, capabilities, auth requirements), for UI grouping, or for analytics and policy checks without changing the tool signature.
 
 ```typescript
 const fetchWeather = createTool({
@@ -161,21 +156,20 @@ const userTool = createToolWithContext({
 
 ### Lazy-Loaded Execute Functions
 
-You can supply `execute` as a promise that resolves to a function. This is useful for
-lazy-loading tool code with dynamic imports:
+You can supply `execute` as a promise that resolves to a function. To avoid `import()` starting immediately, wrap the dynamic import with `lazy` so it only loads on first execution:
 
 ```typescript
+import { lazy } from 'armorer/lazy';
+
 const heavyTool = createTool({
   name: 'heavy-tool',
   description: 'Runs an expensive workflow',
   schema: z.object({ input: z.string() }),
-  execute: import('./tools/heavy-tool').then((mod) => mod.execute),
+  execute: lazy(() => import('./tools/heavy-tool').then((mod) => mod.execute)),
 });
 ```
 
-If the promise rejects or resolves to a non-function, `tool.execute(toolCall)` returns a
-`ToolResult` with `error` set, and `tool.execute(params)` or calling the tool directly
-throws an `Error` with the same message.
+If the promise rejects or resolves to a non-function, `tool.execute(toolCall)` returns a `ToolResult` with `error` set, and `tool.execute(params)` or calling the tool directly throws an `Error` with the same message.
 
 ### Tool Events
 
@@ -211,9 +205,7 @@ tool.addEventListener('progress', (event) => {
 
 ### Dispatching Progress Events
 
-To report progress from inside a tool, use the `dispatch` function provided in the
-`ToolContext` (second argument to `execute`). Emit a `progress` event with a
-`percent` number (0–100) and an optional `message`:
+To report progress from inside a tool, use the `dispatch` function provided in the `ToolContext` (second argument to `execute`). Emit a `progress` event with a `percent` number (0–100) and an optional `message`:
 
 ```typescript
 const longTask = createTool({
@@ -267,19 +259,20 @@ const registered = armorer.createTool({
 });
 ```
 
-Tool configs also support lazy execute functions:
+Tool configs also support lazy execute functions (import from `armorer/lazy`):
 
 ```typescript
+import { lazy } from 'armorer/lazy';
+
 armorer.register({
   name: 'lazy-config',
   description: 'Loads on first use',
   schema: z.object({ id: z.string() }),
-  execute: import('./tools/lazy-config').then((mod) => mod.execute),
+  execute: lazy(() => import('./tools/lazy-config').then((mod) => mod.execute)),
 });
 ```
 
-Tool configs require an object schema. For a no-params tool config, use
-`schema: z.object({})`. (Only `createTool` defaults the schema when omitted.)
+Tool configs require an object schema. For a no-params tool config, use `schema: z.object({})`. (Only `createTool` defaults the schema when omitted.)
 
 ### Execution
 
@@ -301,43 +294,99 @@ const results = await armorer.execute([
 ### Querying Tools
 
 ```typescript
+import { queryTools } from 'armorer/registry';
+
 // Query by tag (OR match)
-const mathTools = armorer.query({ tags: { any: ['math'] } });
+const mathTools = queryTools(armorer, { tags: { any: ['math'] } });
 
 // Require all tags (AND match)
-const fastMath = armorer.query({ tags: { all: ['math', 'fast'] } });
+const fastMath = queryTools(armorer, { tags: { all: ['math', 'fast'] } });
 
 // Exclude tags
-const safeTools = armorer.query({ tags: { none: ['destructive', 'dangerous'] } });
+const safeTools = queryTools(armorer, { tags: { none: ['destructive', 'dangerous'] } });
 
-// Query by text (searches name, description, tags, schema keys)
-const tools = armorer.query({ text: 'weather' });
+// Query by text (name, description, tags, schema keys, metadata keys)
+const tools = queryTools(armorer, { text: 'weather' });
+
+// Fuzzy text with field scoping
+const fuzzy = queryTools(armorer, {
+  text: {
+    query: 'weathr',
+    mode: 'fuzzy',
+    threshold: 0.7,
+    fields: ['name', 'description'],
+  },
+});
 
 // Query by schema keys or shape
-const toolsByKeys = armorer.query({ schema: { keys: ['city'] } });
-const toolsByShape = armorer.query({
+const toolsByKeys = queryTools(armorer, { schema: { keys: ['city'] } });
+const toolsByShape = queryTools(armorer, {
   schema: { matches: z.object({ city: z.string() }) },
 });
 
 // Query by metadata
-const premiumTools = armorer.query({ metadata: { eq: { tier: 'premium' } } });
-const keyedTools = armorer.query({ metadata: { has: ['capabilities'] } });
+const premiumTools = queryTools(armorer, { metadata: { eq: { tier: 'premium' } } });
+const keyedTools = queryTools(armorer, { metadata: { has: ['capabilities'] } });
+const ranged = queryTools(armorer, { metadata: { range: { score: { min: 5 } } } });
+const owned = queryTools(armorer, { metadata: { contains: { owner: 'team-' } } });
 
 // Custom predicate
-const tools = armorer.query({ predicate: (tool) => tool.tags?.includes('api') });
+const tools = queryTools(armorer, { predicate: (tool) => tool.tags?.includes('api') });
+
+// Boolean groups + pagination + selection
+const summaries = queryTools(armorer, {
+  or: [{ tags: { any: ['fast'] } }, { text: 'priority' }],
+  not: { tags: { any: ['deprecated'] } },
+  select: 'summary',
+  limit: 10,
+  offset: 10,
+});
 ```
+
+#### Query Details
+
+`queryTools(input, criteria?)` filters tools with AND semantics across the provided criteria. It accepts an armorer registry, a single tool, an array of tools, or any iterable of tools. The `criteria` object is optional; if omitted, all tools are returned.
+
+Core criteria:
+
+- `tags`: `{ any?: string[]; all?: string[]; none?: string[] }` (case-insensitive)
+- `text`: `string | { query: string; mode?: 'contains' | 'exact' | 'fuzzy'; fields?: TextQueryField[]; threshold?: number; weights?: Partial<Record<TextQueryField, number>> }`
+- `schema`: `{ keys?: string[]; matches?: ToolParametersSchema }`
+- `metadata`: `{ has?: string[]; eq?: Record<string, unknown>; contains?: Record<string, string | string[] | number | boolean | null>; startsWith?: Record<string, string>; range?: Record<string, { min?: number; max?: number }>; predicate?: (metadata) => boolean }`
+- `predicate`: `(tool) => boolean` for custom filtering
+
+Boolean groups:
+
+- `and`: nested criteria that must all match
+- `or`: nested criteria where at least one must match
+- `not`: criteria or list of criteria to exclude
+
+Selection and paging:
+
+- `select`: `'tool' | 'name' | 'config' | 'summary'` (default: `tool`)
+- `limit` / `offset`: pagination controls
+- `includeSchema` / `includeToolConfig`: when `select: 'summary'`, include schema/config
+
+Text query fields (`TextQueryField`) are `name`, `description`, `tags`, `schemaKeys`, and `metadataKeys`. Text queries are tokenized (camelCase, snake_case, and diacritics are normalized) and scores scale with the number of matched tokens. Fuzzy matching uses `threshold` (default `0.7`) to determine a match score.
+
+If the registry was created with `embed`, text queries also use embeddings for semantic matches. Lexical matches still apply, so embeddings only broaden recall rather than replacing the existing behavior.
 
 ### Selecting Tools (Search)
 
-Use `search` to rank tools and get explanations for why they matched:
+Use `searchTools` to rank tools and optionally include match explanations:
 
 ```typescript
-const matches = armorer.search({
+import { searchTools } from 'armorer/registry';
+
+const matches = searchTools(armorer, {
   filter: { tags: { none: ['dangerous'] } },
   rank: {
     tags: ['summarize', 'fast'],
-    text: 'summarize meeting notes',
+    tagBoosts: { fast: 2 },
+    text: { query: 'summarize meeting notes', mode: 'fuzzy', threshold: 0.6 },
   },
+  explain: true,
+  select: 'summary',
   limit: 5,
 });
 
@@ -345,6 +394,71 @@ for (const match of matches) {
   console.log(match.tool.name, match.score, match.reasons);
 }
 ```
+
+If you mutate tool metadata or schemas after a search has been cached, refresh the index (this also re-embeds when `embed` is configured):
+
+```typescript
+import { reindexSearchIndex } from 'armorer/registry';
+
+reindexSearchIndex(armorer);
+```
+
+#### Search Details
+
+`searchTools(input, options?)` filters tools (via `options.filter`) and then ranks the remaining tools. It accepts the same input shapes as `queryTools`. Results are `ToolMatch` objects: `{ tool, score, reasons, matches? }`.
+
+Ranking options:
+
+- `rank.tags`: preferred tags that add weight to tools with matching tags
+- `rank.tagBoosts`: per-tag weight overrides
+- `rank.text`: text ranking query (same shape as `queryTools` text)
+- `rank.weights`: `{ tags?: number; text?: number }` (default weights are `1`)
+
+Text ranking scores accumulate across matched query tokens; use `text.weights` to emphasize name vs description vs tags.
+
+Explain matches:
+
+- `explain: true` includes `matches` with `fields`, `tags`, `schemaKeys`, `metadataKeys`, and optional `embedding`
+- `reasons` entries are strings like `tag:fast` or `text:schema-keys(logId)`
+
+Custom ranking and tie-breaking:
+
+- `ranker`: `(tool, context) => { score, reasons?, matches?, override?, exclude? } | number` for domain-specific scoring
+- `tieBreaker`: `'name' | 'none' | ((a, b) => number)` to control order when scores tie
+
+Selection and paging (same as query):
+
+- `select`: `'tool' | 'name' | 'config' | 'summary'`
+- `limit` / `offset`
+- `includeSchema` / `includeToolConfig`
+
+Example custom ranker:
+
+```typescript
+const matches = searchTools(armorer, {
+  rank: { text: 'summarize' },
+  ranker: (tool, context) => {
+    if (tool.metadata?.tier === 'premium') {
+      return { score: 5, reasons: ['tier:premium'] };
+    }
+    return { score: 0 };
+  },
+  tieBreaker: 'name',
+  explain: true,
+});
+```
+
+#### Embeddings
+
+Provide an embedder to `createArmorer` to enrich text search with embeddings. The registry batches the searchable fields for each tool (name, description, tags, schema keys, metadata keys) and stores the resulting vectors on registration. Queries and searches then use embeddings alongside lexical matching when `text` is provided.
+
+```typescript
+const armorer = createArmorer([], {
+  embed: async (texts) => embeddingsClient.embed(texts),
+});
+```
+
+If the embedder is asynchronous, the first query may fall back to lexical matching until vectors are available; subsequent calls will use embeddings automatically.
 
 ### Registry Events
 
@@ -400,7 +514,7 @@ armorer.register({
 
 ### Inspection
 
-Inspect the registry for debugging:
+`armorer.inspect()` returns a snapshot of the registry for logging, diagnostics, or UI inventory screens. It reports counts plus a list of tool inspections. Detail levels control how much schema and metadata information is included: `summary` returns only name/description/tags, `standard` (default) adds schema keys and metadata flags, and `full` adds a simplified schema shape for each tool. Inspection is side-effect free and returns copies so you can safely log or mutate the output.
 
 ```typescript
 const inspection = armorer.inspect(); // 'standard' detail level
@@ -409,6 +523,22 @@ const full = armorer.inspect('full'); // Full schema shapes
 
 console.log(inspection.counts.total); // Number of registered tools
 console.log(inspection.tools); // Array of tool inspections
+```
+
+Example shape (standard detail):
+
+```typescript
+const inspection = armorer.inspect();
+
+console.log(inspection.counts); // { total, withTags, withMetadata }
+console.log(inspection.tools[0]);
+// {
+//   name: 'fetch-weather',
+//   description: 'Get current weather for a location',
+//   tags: ['weather', 'api', 'external'],
+//   schema: { keys: ['city', 'units'] },
+//   metadata: { hasCustomMetadata: true, capabilities: ['read'], effort: 'low' }
+// }
 ```
 
 ### Serialization
@@ -536,16 +666,17 @@ const model = genAI.getGenerativeModel({
 
 ## Tool Composition
 
-Chain and specialize tools with `pipe()`, `compose()`, and `bind()`. The output of each tool flows as input to the next, with full TypeScript type inference preserved across the chain.
+Chain and specialize tools with `pipe()`, `compose()`, `bind()`, `tap()`, `when()`, `parallel()`, and `retry()`. The output of each tool flows as input to the next, with full TypeScript type inference preserved across the chain. Composition helpers are exported from `armorer/utilities` to keep the core export small.
 
-Pipelines are first-class tools. The result of `pipe()` or `compose()` is an `ArmorerTool`, so you can register it, query it, serialize it, and export it to provider adapters just like any other tool.
+Pipelines are first-class tools. The result of `pipe()` or `compose()` is an `ArmorerTool`, so you can register it, query it via registry helpers, serialize it, and export it to provider adapters just like any other tool.
 
 ### pipe()
 
 Chains tools left-to-right (data flows forward):
 
 ```typescript
-import { pipe, createTool } from 'armorer';
+import { createTool } from 'armorer';
+import { pipe } from 'armorer/utilities';
 import { z } from 'zod';
 
 const parseNumber = createTool({
@@ -583,7 +714,7 @@ console.log(result); // "Result: 42"
 Chains tools right-to-left (mathematical function composition):
 
 ```typescript
-import { compose } from 'armorer';
+import { compose } from 'armorer/utilities';
 
 // compose(c, b, a) is equivalent to pipe(a, b, c)
 const pipeline = compose(stringify, double, parseNumber);
@@ -594,14 +725,13 @@ console.log(result); // "Result: 42"
 
 ### bind()
 
-Bind some or all parameters of a tool and get back a new tool that only needs the
-remaining inputs. Bound keys are removed from the new tool's schema; any provided
-values for those keys are ignored in favor of the bound values.
+Bind some or all parameters of a tool and get back a new tool that only needs the remaining inputs. Bound keys are removed from the new tool's schema; any provided values for those keys are ignored in favor of the bound values.
 
 Optional third argument: `{ name?: string; description?: string }`.
 
 ```typescript
-import { bind } from 'armorer';
+import { createTool } from 'armorer';
+import { bind } from 'armorer/utilities';
 
 const sendEmail = createTool({
   name: 'send-email',
@@ -623,15 +753,66 @@ await sendAlert({ subject: 'Outage', body: 'Investigating' });
 
 `bind()` operates on object schemas and removes the bound keys from the input shape.
 
+### tap()
+
+Run a side effect after a tool and pass through its output unchanged.
+
+```typescript
+import { tap } from 'armorer/utilities';
+
+const loggedFetch = tap(fetchUser, (user) => {
+  console.log('Fetched user', user.id);
+});
+
+const user = await loggedFetch({ id: 'user-123' });
+```
+
+### when()
+
+Branch between tools based on a predicate. If no else tool is provided, the input is returned unchanged.
+
+```typescript
+import { when } from 'armorer/utilities';
+
+const route = when(({ severity }) => severity === 'high', sendAlert, logTicket);
+
+await route({ severity: 'high' });
+```
+
+### parallel()
+
+Run multiple tools with the same input concurrently and return their outputs in order.
+
+```typescript
+import { parallel } from 'armorer/utilities';
+
+const fanout = parallel(fetchUser, fetchOrders, fetchUsage);
+const [user, orders, usage] = await fanout({ id: 'user-123' });
+```
+
+### retry()
+
+Retry a tool on failure with configurable attempts and backoff.
+
+```typescript
+import { retry } from 'armorer/utilities';
+
+const reliableFetch = retry(fetchUser, {
+  attempts: 3,
+  delayMs: 200,
+  backoff: 'exponential',
+});
+
+const user = await reliableFetch({ id: 'user-123' });
+```
+
 ### Composed Tools are Tools
 
-Pipelines created with `pipe()` or `compose()`, as well as tools created with
-`bind()`, are valid tools in their own right. They implement the full
-`ArmorerTool` interface (and pass `isTool()`), so you can register, query,
-serialize, and adapt them just like any other tool.
+Pipelines created with `pipe()` or `compose()`, as well as tools created with `bind()`, `tap()`, `when()`, `parallel()`, and `retry()`, are valid tools in their own right. They implement the full `ArmorerTool` interface (and pass `isTool()`), so you can register, query via registry helpers, serialize, and adapt them just like any other tool.
 
 ```typescript
 import { isTool } from 'armorer';
+import { pipe } from 'armorer/utilities';
 
 const pipeline = pipe(parseNumber, double);
 console.log(isTool(pipeline)); // true
@@ -660,7 +841,7 @@ const extendedPipeline = pipe(pipeline, stringify);
 Errors are wrapped with step context for debugging:
 
 ```typescript
-import { PipelineError } from 'armorer';
+import { PipelineError } from 'armorer/utilities';
 
 try {
   await pipeline({ str: 'invalid' });
@@ -690,10 +871,8 @@ Options (`CreateToolOptions`):
 
 - `name`: string
 - `description`: string
-- `schema?`: Zod object schema for input validation (`ToolParametersSchema`) or a
-  plain object shape; defaults to `z.object({})`
-- `execute`: async `(params: TInput, context: ToolContext) => TOutput` or a
-  `Promise` that resolves to that function (for lazy imports)
+- `schema?`: Zod object schema for input validation (`ToolParametersSchema`) or a plain object shape; defaults to `z.object({})`
+- `execute`: async `(params: TInput, context: ToolContext) => TOutput`, a `Promise` that resolves to that function, or `lazy(() => import(...))` to defer dynamic imports
 - `tags?`: kebab-case strings, de-duped
 - `metadata?`: `ToolMetadata` bag used for filtering and inspection
 - `timeoutMs?`: number (currently unused; prefer `executeWith({ timeoutMs })`)
@@ -706,14 +885,11 @@ Exposed properties and methods:
 - `name`, `description`, `schema`, `tags`, `metadata`, `configuration`
 - `execute(call, options?)`: returns `ToolResult`
 - `execute(params, options?)`: returns raw output (same as `tool(params)`)
-- `executeWith(options: ToolExecuteWithOptions)`: returns `ToolResult` with `callId`,
-  `timeoutMs`, and `signal` support
+- `executeWith(options: ToolExecuteWithOptions)`: returns `ToolResult` with `callId`, `timeoutMs`, and `signal` support
 - `rawExecute(params, context)`: low-level invoke with full `ToolContext`
 - `addEventListener`, `dispatchEvent`, `on`, `once`, `subscribe`, `toObservable`, `events`
 - `complete()`, `completed`
 - Runtime helpers: `toJSON()` (serializable JSON schema output), `toString()`, `Symbol.toPrimitive`
-
-Signature:
 
 ```typescript
 function createTool<
@@ -725,11 +901,21 @@ function createTool<
 >(options: CreateToolOptions<TInput, TOutput, E, Tags, M>): ArmorerTool;
 ```
 
+#### `lazy(loader)`
+
+Defers loading an async execute function until the first call. Import from `armorer/lazy`. The loader is memoized; if it rejects, the next call retries.
+
+Signature:
+
+```typescript
+function lazy<TExecute extends (...args: any[]) => Promise<any>>(
+  loader: () => PromiseLike<TExecute> | TExecute,
+): TExecute;
+```
+
 #### `createToolCall(toolName, args, id?)`
 
 Creates a `ToolCall` with `arguments` populated and a generated id if omitted.
-
-Signature:
 
 ```typescript
 function createToolCall<Args>(
@@ -748,18 +934,17 @@ Usage forms:
 - Builder: `const build = withContext(ctx); const tool = build(options);`
 - Immediate: `const tool = withContext(ctx, options);`
 
-The `execute` function receives `ToolContext & Ctx`. The helper type `WithContext<Ctx>`
-models that merge.
+The `execute` function receives `ToolContext & Ctx`. The helper type `WithContext<Ctx>` models that merge.
 
 #### `createArmorer(serialized?, options?)`
 
-Creates a registry of tools. `serialized` can be a `SerializedArmorer` created by
-`armorer.toJSON()`.
+Creates a registry of tools. `serialized` can be a `SerializedArmorer` created by `armorer.toJSON()`.
 
 Options (`ArmorerOptions`):
 
 - `signal?`: `MinimalAbortSignal` used to clear listeners on abort
 - `context?`: `ArmorerContext` merged into tool execution context
+- `embed?`: `(texts: string[]) => number[][] | Promise<number[][]>` for semantic search
 - `toolFactory?`: `(configuration, { dispatchEvent, baseContext, buildDefaultTool }) => ArmorerTool`
 
 Registry surface (`Armorer`):
@@ -767,22 +952,16 @@ Registry surface (`Armorer`):
 - `register(...entries: (ToolConfig | ArmorerTool)[])`
 - `createTool(options)`: create and register a tool in one call
 - `execute(call | calls)`
-- `query(criteria?: ToolQuery)` (filter-only)
-- `search(options?: ToolSearchOptions)` (ranked selection with reasons)
+- `tools()` (returns registered `ArmorerTool[]` for registry helpers)
 - `getTool(name)`
 - `getMissingTools(names)`
 - `hasAllTools(names)`
 - `inspect(detailLevel?: InspectorDetailLevel)`
 - `toJSON(): SerializedArmorer`
-- Event methods: `addEventListener`, `dispatchEvent`, `on`, `once`, `subscribe`,
-  `toObservable`, `events`
+- Event methods: `addEventListener`, `dispatchEvent`, `on`, `once`, `subscribe`, `toObservable`, `events`
 - Lifecycle: `complete()`, `completed`
 
-`register()` accepts tool instances or raw configurations. When you register a tool,
-its `configuration` is stored for serialization.
-`createTool()` is a convenience that uses the same options as `createTool(options)`,
-registers the result, and returns the registered instance.
-If `schema` is omitted, it defaults to `z.object({})`.
+`register()` accepts tool instances or raw configurations. When you register a tool, its `configuration` is stored for serialization. `createTool()` is a convenience that uses the same options as `createTool(options)`, registers the result, and returns the registered instance. If `schema` is omitted, it defaults to `z.object({})`.
 
 Signature:
 
@@ -790,10 +969,18 @@ Signature:
 const tool = armorer.createTool(options);
 ```
 
-`ToolConfig.execute` receives `ArmorerToolRuntimeContext`, which includes any base
-context plus `dispatchEvent`, `configuration`, and `toolCall`.
-`ToolConfig.execute` may also be a `Promise` that resolves to an execute function,
-allowing lazy imports.
+`ToolConfig.execute` receives `ArmorerToolRuntimeContext`, which includes any base context plus `dispatchEvent`, `configuration`, and `toolCall`. `ToolConfig.execute` may also be a `Promise` that resolves to an execute function, or use `lazy(() => import(...))` to defer dynamic imports.
+
+#### `getMissingTools(names)`
+
+Returns the subset of tool names that are not registered.
+
+Example:
+
+```typescript
+const missing = armorer.getMissingTools(['toolA', 'toolB', 'toolC']);
+// -> ['toolB', 'toolC']
+```
 
 Signature:
 
@@ -825,8 +1012,7 @@ function isTool(value: unknown): value is ArmorerTool;
 - `cancelled`: `{ reason? }`
 - `status-update`: `{ status }`
 
-Execution and validation events include `toolCall` and `configuration` in their
-detail payload.
+Execution and validation events include `toolCall` and `configuration` in their detail payload.
 
 #### Registry events (`ArmorerEvents`)
 
@@ -840,16 +1026,21 @@ detail payload.
 - `search`: `{ options, results }`
 - `status:update`: `ToolStatusUpdate` for UI progress
 
+`query` and `search` events are emitted by `queryTools`/`searchTools` when you pass the armorer registry as the input.
+
 #### Query helpers and types
 
-`ToolQuery` fields include `tags`, `text`, `schema`, `metadata`, and `predicate`.
-`TagFilter` supports `any`, `all`, and `none`. `SchemaFilter` supports `keys` and
-`matches`. `MetadataFilter` supports `has`, `eq`, and `predicate`. `ToolPredicate`
-is `(tool) => boolean`.
+Registry helpers live in `armorer/registry` and accept an armorer, tool, or iterable.
 
-`ToolSearchOptions` includes `filter`, `rank`, and `limit`. `ToolSearchRank`
-supports `tags`, `text`, and optional `weights`. `ToolMatch` includes
-`tool`, `score`, and `reasons`.
+Functions:
+
+- `queryTools(input, criteria?)`: filter-only query
+- `searchTools(input, options?)`: ranked selection with reasons
+- `reindexSearchIndex(input)`: rebuild cached text indexes on demand
+
+`ToolQuery` fields include `tags`, `text`, `schema`, `metadata`, `predicate`, and boolean groups (`and`, `or`, `not`) plus paging/selection (`limit`, `offset`, `select`). `TagFilter` supports `any`, `all`, and `none`. `SchemaFilter` supports `keys` and `matches`. `MetadataFilter` supports `has`, `eq`, `contains`, `startsWith`, `range`, and `predicate`. `ToolPredicate` is `(tool) => boolean`.
+
+`ToolSearchOptions` includes `filter`, `rank`, `ranker`, `tieBreaker`, `limit`, `offset`, `select`, `includeSchema`, `includeToolConfig`, and `explain`. `ToolSearchRank` supports `tags`, `tagBoosts`, `text`, and optional `weights`. `ToolMatch` includes `tool`, `score`, `reasons`, and optional `matches`.
 
 Functions:
 
@@ -858,7 +1049,7 @@ Functions:
 - `tagsMatchNone(tags)`: exclude tools that contain any tag
 - `schemaMatches(schema)`: loose schema match
 - `schemaHasKeys(keys)`: require schema keys
-- `textMatches(query)`: search name, description, tags, and schema keys
+- `textMatches(query)`: search name, description, tags, schema keys, and metadata keys
 
 #### Inspection helpers and schemas
 
@@ -874,35 +1065,43 @@ Runtime validation schemas:
 - `ToolInspectionSchema`
 - `RegistryInspectionSchema`
 
-#### Composition API
-
-- `pipe(...tools)`: left-to-right composition (2 to 9 tools); returns an `ArmorerTool`
-- `compose(...tools)`: right-to-left composition; returns an `ArmorerTool`
-- `bind(tool, bound, options?)`: bind tool parameters; returns an `ArmorerTool`
-- `PipelineError`: error with `{ stepIndex, stepName, originalError }`
-
-Composed tools emit `ComposedToolEvents` including `step-start`, `step-complete`,
-and `step-error`.
-
 #### Type exports
 
-Registry types:
+Core registry types (main export):
 
 - `Armorer`: registry interface
 - `ArmorerContext`: base context bag for registry execution
 - `ArmorerOptions`: options for `createArmorer`
 - `ArmorerEvents`: registry event map
 - `ArmorerToolRuntimeContext`: context passed to `ToolConfig.execute`
-- `QueryResult`: array of `ArmorerTool`
 - `SerializedArmorer`: serialized `ToolConfig[]`
+- `ToolStatusUpdate`: registry status payload
+
+Registry helper types (`armorer/registry`):
+
+- `QueryResult`: array of `ArmorerTool`
+- `QuerySelectionResult`: query result union for selections
+- `Embedder`: `(texts: string[]) => number[][] | Promise<number[][]>`
+- `EmbeddingVector`: numeric vector returned by `Embedder`
 - `TagFilter`: tag filters (`any`, `all`, `none`)
 - `SchemaFilter`: schema filters (`keys`, `matches`)
-- `MetadataFilter`: metadata filters (`has`, `eq`, `predicate`)
-- `ToolQuery`: filter-only query input
+- `MetadataFilter`: metadata filters (`has`, `eq`, `contains`, `startsWith`, `range`, `predicate`)
+- `MetadataPrimitive`: primitive metadata values
+- `MetadataRange`: numeric range for metadata
+- `ToolQuery`: query input + paging/selection
+- `ToolQueryCriteria`: filter-only query input
+- `ToolQueryOptions`: paging/selection options
+- `ToolQuerySelect`: selection mode (`tool`, `name`, `config`, `summary`)
+- `ToolSummary`: summarized tool shape
 - `ToolSearchOptions`: search options (filter + rank)
 - `ToolSearchRank`: ranking preferences
 - `ToolMatch`: search result with score + reasons
-- `ToolStatusUpdate`: registry status payload
+- `ToolMatchDetails`: optional match metadata
+- `EmbeddingMatch`: embedding match metadata (field + score)
+- `ToolRanker`: custom rank callback
+- `ToolRankContext`: rank context for custom rankers
+- `ToolRankResult`: ranker return shape
+- `ToolTieBreaker`: tie-breaker selector
 
 Tool types:
 
@@ -923,15 +1122,13 @@ Tool types:
 Query types:
 
 - `ToolPredicate`: sync tool predicate
-
-Composition types:
-
-- `AnyTool`: generic tool constraint
-- `ToolWithInput`: tool constrained by input type
-- `InferToolInput`: extract input type from tool
-- `InferToolOutput`: extract output type from tool
-- `ComposedTool`: composed tool type
-- `ComposedToolEvents`: step event map
+- `TextQuery`: text query input (string or object)
+- `TextQueryField`: text query fields
+- `TextQueryMode`: `contains` | `exact` | `fuzzy`
+- `TextQueryWeights`: per-field weights for text queries
+- `NormalizedTextQuery`: normalized text query object
+- `TextMatchScore`: text match scoring result
+- `TextSearchIndex`: cached text index shape
 
 Inspection types:
 
@@ -956,22 +1153,63 @@ Event system types (re-exported from `event-emission`):
 - `Observer`: observable callback set
 - `Subscription`: subscription handle
 
+### Subpath export: `armorer/registry`
+
+Registry query/search helpers and types.
+
+#### Registry API
+
+- `queryTools(input, criteria?)`: filter-only query
+- `searchTools(input, options?)`: ranked selection with reasons
+- `reindexSearchIndex(input)`: rebuild cached text indexes
+
+### Subpath export: `armorer/lazy`
+
+Lazy helper for deferring execute function imports.
+
+#### Lazy API
+
+- `lazy(loader)`: memoized async loader for tool execute functions
+
+### Subpath export: `armorer/utilities`
+
+Composition helpers and types.
+
+#### Composition API
+
+- `pipe(...tools)`: left-to-right composition (2 to 9 tools); returns an `ArmorerTool`
+- `compose(...tools)`: right-to-left composition; returns an `ArmorerTool`
+- `bind(tool, bound, options?)`: bind tool parameters; returns an `ArmorerTool`
+- `tap(tool, effect)`: run a side effect and return the original output
+- `when(predicate, whenTrue, whenFalse?)`: conditional tool routing
+- `parallel(...tools)`: run tools concurrently (2 to 9 tools); returns an array of outputs
+- `retry(tool, options?)`: retry a tool on failure with backoff options
+- `PipelineError`: error with `{ stepIndex, stepName, originalError }`
+
+Pipelines created with `pipe()`/`compose()` and tools created with `parallel()` emit `ComposedToolEvents` including `step-start`, `step-complete`, and `step-error`.
+
+#### Composition types
+
+- `AnyTool`: generic tool constraint
+- `ToolWithInput`: tool constrained by input type
+- `InferToolInput`: extract input type from tool
+- `InferToolOutput`: extract output type from tool
+- `ComposedTool`: composed tool type
+- `ComposedToolEvents`: step event map
+
 ### Subpath export: `armorer/openai`
 
-- `toOpenAI(input)`: converts a tool, tool array, or `Armorer` to OpenAI
-  Chat Completions tools (`OpenAITool` or `OpenAITool[]`)
+- `toOpenAI(input)`: converts a tool, tool array, or `Armorer` to OpenAI Chat Completions tools (`OpenAITool` or `OpenAITool[]`)
 - Types: `JSONSchema`, `OpenAIFunction`, `OpenAITool`
 
 ### Subpath export: `armorer/anthropic`
 
-- `toAnthropic(input)`: converts a tool, tool array, or `Armorer` to
-  Anthropic Messages tools (`AnthropicTool` or `AnthropicTool[]`)
+- `toAnthropic(input)`: converts a tool, tool array, or `Armorer` to Anthropic Messages tools (`AnthropicTool` or `AnthropicTool[]`)
 - Types: `AnthropicInputSchema`, `AnthropicTool`, `JSONSchemaProperty`
 
 ### Subpath export: `armorer/gemini`
 
-- `toGemini(input)`: converts a tool, tool array, or `Armorer` to Gemini
-  function declarations (`GeminiFunctionDeclaration` or array)
+- `toGemini(input)`: converts a tool, tool array, or `Armorer` to Gemini function declarations (`GeminiFunctionDeclaration` or array)
 - Type helper: `GeminiTool` for wrapper objects with `functionDeclarations`
 - Types: `GeminiFunctionDeclaration`, `GeminiSchema`, `GeminiTool`
 

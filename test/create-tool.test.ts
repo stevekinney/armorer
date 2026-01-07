@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { createTool, createToolCall, withContext } from '../src/create-tool';
 import { isTool } from '../src/is-tool';
+import { lazy } from '../src/lazy';
 
 describe('createTool', () => {
   it('creates a callable tool function with metadata and execute()', async () => {
@@ -181,6 +182,28 @@ describe('createTool', () => {
     expect(result.error).toContain(
       'execute must be a function or a promise that resolves to a function',
     );
+  });
+
+  it('defers lazy helper execution until first call', async () => {
+    let loads = 0;
+    const tool = createTool({
+      name: 'lazy-helper',
+      description: 'loads on demand',
+      schema: z.object({ value: z.string() }),
+      execute: lazy(async () => {
+        loads += 1;
+        return async ({ value }: { value: string }) => value.toUpperCase();
+      }),
+    });
+
+    expect(loads).toBe(0);
+    const first = await tool({ value: 'hi' });
+    expect(first).toBe('HI');
+    expect(loads).toBe(1);
+
+    const second = await tool({ value: 'ok' });
+    expect(second).toBe('OK');
+    expect(loads).toBe(1);
   });
 
   it('exposes configuration.execute for direct invocation', async () => {
@@ -786,10 +809,26 @@ describe('isTool', () => {
   });
 
   it('direct call emits validate-error and settled on parse failure', async () => {
+    const diagnostics = {
+      safeParseWithReport: () => ({
+        success: false as const,
+        error: new Error('invalid'),
+        report: { warnings: [], cost: 0 },
+      }),
+      createRepairHints: () => [
+        {
+          path: 'arguments.a',
+          message: 'Invalid input',
+          suggestion: 'Provide a string for arguments.a.',
+        },
+      ],
+    };
+
     const tool = createTool({
       name: 'valerr',
       description: 'validation error path',
       schema: z.object({ a: z.string() }),
+      diagnostics,
       async execute() {
         return 'x';
       },
@@ -801,6 +840,9 @@ describe('isTool', () => {
       validateErr++;
       expect(evt.detail.toolCall.name).toBe('valerr');
       expect(evt.detail.configuration.name).toBe('valerr');
+      expect(evt.detail.report).toBeDefined();
+      expect(Array.isArray(evt.detail.repairHints)).toBe(true);
+      expect(evt.detail.repairHints?.length).toBe(1);
     });
     tool.addEventListener('settled' as any, (evt) => {
       settled++;
