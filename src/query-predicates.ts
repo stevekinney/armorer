@@ -274,6 +274,73 @@ export function scoreTextMatchFromIndex(
   return result;
 }
 
+export function scoreTextMatchValueFromIndex(
+  index: TextSearchIndex,
+  normalized: NormalizedTextQuery,
+): number {
+  let score = 0;
+
+  if (normalized.fields.includes('name')) {
+    const weight = normalized.weights.name;
+    if (weight > 0) {
+      const matchScore = scoreStringMatch(
+        index.name,
+        index.nameTokens ?? tokenize(index.name),
+        normalized,
+      );
+      if (matchScore > 0) {
+        score += matchScore * weight;
+      }
+    }
+  }
+
+  if (normalized.fields.includes('description')) {
+    const weight = normalized.weights.description;
+    if (weight > 0) {
+      const matchScore = scoreStringMatch(
+        index.description,
+        index.descriptionTokens ?? tokenize(index.description),
+        normalized,
+      );
+      if (matchScore > 0) {
+        score += matchScore * weight;
+      }
+    }
+  }
+
+  if (normalized.fields.includes('tags')) {
+    const weight = normalized.weights.tags;
+    if (weight > 0) {
+      const matchScore = scoreTokenMatchValue(index.tags, normalized);
+      if (matchScore > 0) {
+        score += matchScore * weight;
+      }
+    }
+  }
+
+  if (normalized.fields.includes('schemaKeys')) {
+    const weight = normalized.weights.schemaKeys;
+    if (weight > 0) {
+      const matchScore = scoreTokenMatchValue(index.schemaKeys, normalized);
+      if (matchScore > 0) {
+        score += matchScore * weight;
+      }
+    }
+  }
+
+  if (normalized.fields.includes('metadataKeys')) {
+    const weight = normalized.weights.metadataKeys;
+    if (weight > 0) {
+      const matchScore = scoreTokenMatchValue(index.metadataKeys, normalized);
+      if (matchScore > 0) {
+        score += matchScore * weight;
+      }
+    }
+  }
+
+  return score;
+}
+
 export function schemaHasKeys(keys: readonly string[]): ToolPredicate {
   const normalized = keys
     .map((key) => key.toLowerCase())
@@ -382,7 +449,17 @@ function scoreStringMatch(
   for (const token of query.tokens) {
     let best = 0;
     for (const valueToken of tokens) {
-      best = Math.max(best, similarity(valueToken, token));
+      const maxPossible = maxSimilarityPossible(valueToken, token);
+      if (maxPossible < query.threshold) {
+        continue;
+      }
+      const score = similarity(valueToken, token);
+      if (score > best) {
+        best = score;
+        if (best === 1) {
+          break;
+        }
+      }
     }
     if (best >= query.threshold) {
       score += best;
@@ -425,6 +502,37 @@ function scoreTokenMatches(
   return { matches: Array.from(matches), score };
 }
 
+function scoreTokenMatchValue(
+  tokens: readonly TextToken[],
+  query: NormalizedTextQuery,
+): number {
+  if (!tokens.length || !query.tokens.length) {
+    return 0;
+  }
+  let score = 0;
+  for (const queryToken of query.tokens) {
+    let best = 0;
+    for (const token of tokens) {
+      const matchScore = scoreTokenMatch(
+        token.normalized,
+        queryToken,
+        query.mode,
+        query.threshold,
+      );
+      if (matchScore > best) {
+        best = matchScore;
+        if (best === 1) {
+          break;
+        }
+      }
+    }
+    if (best > 0) {
+      score += best;
+    }
+  }
+  return score;
+}
+
 function scoreTokenMatch(
   token: string,
   queryToken: string,
@@ -440,6 +548,10 @@ function scoreTokenMatch(
   }
   if (token === queryToken) {
     return 1;
+  }
+  const maxPossible = maxSimilarityPossible(token, queryToken);
+  if (maxPossible < threshold) {
+    return 0;
   }
   const score = similarity(token, queryToken);
   return score >= threshold ? score : 0;
@@ -472,6 +584,15 @@ function similarity(a: string, b: string): number {
   const maxLength = Math.max(a.length, b.length);
   if (!maxLength) return 1;
   return 1 - levenshteinDistance(a, b) / maxLength;
+}
+
+function maxSimilarityPossible(a: string, b: string): number {
+  const maxLength = Math.max(a.length, b.length);
+  if (!maxLength) {
+    return 1;
+  }
+  const minDistance = Math.abs(a.length - b.length);
+  return 1 - minDistance / maxLength;
 }
 
 function levenshteinDistance(a: string, b: string): number {

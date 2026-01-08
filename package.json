@@ -79,6 +79,7 @@
     "src"
   ],
   "scripts": {
+    "bench": "bun run scripts/bench.ts",
     "build": "bun run scripts/build.ts",
     "clean": "rm -rf dist coverage tsconfig.tsbuildinfo",
     "dev": "bun --watch run src/index.ts",

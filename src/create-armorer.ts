@@ -35,6 +35,7 @@ import type {
   ToolQuery,
   ToolSearchOptions,
 } from './registry';
+import { registerToolIndexes, unregisterToolIndexes } from './registry';
 import type { Embedder } from './registry/embeddings';
 import { registerRegistryEmbedder, warmToolEmbeddings } from './registry/embeddings';
 import { isZodObjectSchema, isZodSchema } from './schema-utilities';
@@ -223,11 +224,21 @@ export function createArmorer(
     for (const entry of entries) {
       const configuration = normalizeRegistration(entry);
       const tool = buildTool(configuration);
+      const existing = registry.get(tool.name);
       emit('registering', tool);
       storedConfigurations.set(configuration.name, configuration);
+      if (existing) {
+        unregisterToolIndexes(api, existing, registry.size);
+      }
       registry.set(tool.name, tool);
+      registerToolIndexes(api, tool, registry.size);
       if (embedder) {
-        warmToolEmbeddings(tool, embedder);
+        warmToolEmbeddings(tool, embedder, (resolvedTool) => {
+          if (registry.get(resolvedTool.name) !== resolvedTool) {
+            return;
+          }
+          registerToolIndexes(api, resolvedTool, registry.size);
+        });
       }
       emit('registered', tool);
     }

@@ -7,10 +7,16 @@ export type Embedder = (
   texts: string[],
 ) => EmbeddingVector[] | Promise<EmbeddingVector[]>;
 
+export type EmbeddingInfo = {
+  vector: EmbeddingVector;
+  magnitude: number;
+};
+
 export type EmbeddingEntry = {
   field: TextQueryField;
   text: string;
   vector: EmbeddingVector;
+  magnitude: number;
 };
 
 type EmbeddingInput = {
@@ -25,7 +31,7 @@ const toolEmbeddings = new WeakMap<
 >();
 const queryEmbeddings = new WeakMap<
   Embedder,
-  Map<string, EmbeddingVector | Promise<EmbeddingVector>>
+  Map<string, EmbeddingInfo | Promise<EmbeddingInfo>>
 >();
 
 export function registerRegistryEmbedder(registry: object, embedder: Embedder): void {
@@ -39,10 +45,15 @@ export function getRegistryEmbedder(registry: object): Embedder | undefined {
   return registryEmbedders.get(registry);
 }
 
-export function warmToolEmbeddings(tool: ArmorerTool, embedder: Embedder): void {
+export function warmToolEmbeddings(
+  tool: ArmorerTool,
+  embedder: Embedder,
+  onResolved?: (tool: ArmorerTool, entries: EmbeddingEntry[]) => void,
+): void {
   const inputs = buildEmbeddingInputs(tool);
   if (!inputs.length) {
     toolEmbeddings.set(tool, []);
+    onResolved?.(tool, []);
     return;
   }
   const texts = inputs.map((input) => input.text);
@@ -52,16 +63,20 @@ export function warmToolEmbeddings(tool: ArmorerTool, embedder: Embedder): void 
       .then((vectors) => normalizeEmbeddingEntries(inputs, vectors))
       .then((entries) => {
         toolEmbeddings.set(tool, entries);
+        onResolved?.(tool, entries);
         return entries;
       })
       .catch(() => {
         toolEmbeddings.delete(tool);
+        onResolved?.(tool, []);
         return [] as EmbeddingEntry[];
       });
     toolEmbeddings.set(tool, pending);
     return;
   }
-  toolEmbeddings.set(tool, normalizeEmbeddingEntries(inputs, result));
+  const entries = normalizeEmbeddingEntries(inputs, result);
+  toolEmbeddings.set(tool, entries);
+  onResolved?.(tool, entries);
 }
 
 export function getToolEmbeddings(tool: ArmorerTool): EmbeddingEntry[] | undefined {
@@ -72,20 +87,20 @@ export function getToolEmbeddings(tool: ArmorerTool): EmbeddingEntry[] | undefin
   return undefined;
 }
 
-export function getQueryEmbedding(
+export function getQueryEmbeddingInfo(
   embedder: Embedder,
   query: string,
-): EmbeddingVector | undefined {
+): EmbeddingInfo | undefined {
   const key = query.trim();
   if (!key) return undefined;
   const cache =
     queryEmbeddings.get(embedder) ??
-    new Map<string, EmbeddingVector | Promise<EmbeddingVector>>();
+    new Map<string, EmbeddingInfo | Promise<EmbeddingInfo>>();
   if (!queryEmbeddings.has(embedder)) {
     queryEmbeddings.set(embedder, cache);
   }
   const cached = cache.get(key);
-  if (Array.isArray(cached)) {
+  if (cached && !isPromise(cached)) {
     return cached;
   }
   if (cached) {
@@ -93,29 +108,37 @@ export function getQueryEmbedding(
   }
   const result = embedder([key]);
   if (isPromise(result)) {
-    const emptyVector: EmbeddingVector = [];
+    const emptyInfo: EmbeddingInfo = { vector: [], magnitude: 0 };
     const pending = Promise.resolve(result)
       .then((vectors) => normalizeQueryEmbedding(vectors))
-      .then((vector) => {
-        if (vector) {
-          cache.set(key, vector);
+      .then((info) => {
+        if (info) {
+          cache.set(key, info);
         } else {
           cache.delete(key);
         }
-        return vector ?? emptyVector;
+        return info ?? emptyInfo;
       })
       .catch(() => {
         cache.delete(key);
-        return emptyVector;
+        return emptyInfo;
       });
     cache.set(key, pending);
     return undefined;
   }
-  const vector = normalizeQueryEmbedding(result);
-  if (vector) {
-    cache.set(key, vector);
+  const info = normalizeQueryEmbedding(result);
+  if (info) {
+    cache.set(key, info);
   }
-  return vector ?? undefined;
+  return info ?? undefined;
+}
+
+export function getQueryEmbedding(
+  embedder: Embedder,
+  query: string,
+): EmbeddingVector | undefined {
+  const info = getQueryEmbeddingInfo(embedder, query);
+  return info?.vector;
 }
 
 function buildEmbeddingInputs(tool: ArmorerTool): EmbeddingInput[] {
@@ -156,23 +179,29 @@ function normalizeEmbeddingEntries(
   for (let index = 0; index < inputs.length; index += 1) {
     const input = inputs[index];
     const vector = vectors[index];
-    if (!input || !isVector(vector)) {
+    if (!input || !vector) {
       return [];
     }
-    entries.push({ field: input.field, text: input.text, vector });
+    const info = toEmbeddingInfo(vector);
+    if (!info) {
+      return [];
+    }
+    entries.push({
+      field: input.field,
+      text: input.text,
+      vector: info.vector,
+      magnitude: info.magnitude,
+    });
   }
   return entries;
 }
 
-function normalizeQueryEmbedding(
-  vectors: EmbeddingVector[],
-): EmbeddingVector | undefined {
+function normalizeQueryEmbedding(vectors: EmbeddingVector[]): EmbeddingInfo | undefined {
   if (!Array.isArray(vectors) || vectors.length === 0) {
     return undefined;
   }
   const vector = vectors[0];
-  if (!isVector(vector)) return undefined;
-  return vector;
+  return vector ? toEmbeddingInfo(vector) : undefined;
 }
 
 function isVector(value: unknown): value is EmbeddingVector {
@@ -181,6 +210,21 @@ function isVector(value: unknown): value is EmbeddingVector {
     value.length > 0 &&
     value.every((entry) => typeof entry === 'number' && Number.isFinite(entry))
   );
+}
+
+function toEmbeddingInfo(vector: EmbeddingVector): EmbeddingInfo | undefined {
+  if (!isVector(vector)) {
+    return undefined;
+  }
+  return { vector, magnitude: vectorMagnitude(vector) };
+}
+
+function vectorMagnitude(vector: EmbeddingVector): number {
+  let sum = 0;
+  for (const entry of vector) {
+    sum += entry * entry;
+  }
+  return Math.sqrt(sum);
 }
 
 function isPromise<T>(value: unknown): value is PromiseLike<T> {
