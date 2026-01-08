@@ -59,6 +59,7 @@ export function retry<TTool extends AnyTool>(
       const input = params as InferToolInput<TTool>;
       let attempt = 0;
       let lastError: unknown;
+      let rethrowOriginal = false;
 
       while (attempt < attempts) {
         attempt += 1;
@@ -71,7 +72,8 @@ export function retry<TTool extends AnyTool>(
           if (shouldRetry) {
             const allowed = await shouldRetry({ attempt, error, context });
             if (!allowed) {
-              throw error;
+              rethrowOriginal = true;
+              break;
             }
           }
 
@@ -86,10 +88,10 @@ export function retry<TTool extends AnyTool>(
         }
       }
 
-      if (lastError !== undefined) {
-        throw toError(lastError);
+      if (rethrowOriginal) {
+        throw lastError;
       }
-      throw new Error('retry() failed without an error');
+      throw toError(lastError ?? new Error('retry() failed without an error'));
     },
   };
   if (tags) {

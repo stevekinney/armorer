@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   schemaHasKeys,
   schemaMatches,
+  scoreTextMatch,
   tagsMatchAll,
   tagsMatchAny,
   tagsMatchNone,
@@ -114,6 +115,36 @@ describe('textMatches', () => {
         baseTool as any,
       ),
     ).toBe(false);
+  });
+
+  it('supports exact matching for name and tag tokens', () => {
+    const nameScore = scoreTextMatch(baseTool as any, {
+      query: 'alpha-sum',
+      mode: 'exact',
+      fields: ['name'],
+    });
+    expect(nameScore.fields).toContain('name');
+    expect(nameScore.score).toBeGreaterThan(0);
+
+    const tagScore = scoreTextMatch(baseTool as any, {
+      query: 'alpha',
+      mode: 'exact',
+      fields: ['tags'],
+    });
+    expect(tagScore.tagMatches).toContain('alpha');
+    expect(tagScore.score).toBeGreaterThan(0);
+  });
+
+  it('returns an empty score for empty queries', () => {
+    const result = scoreTextMatch(baseTool as any, '   ');
+    expect(result).toEqual({
+      score: 0,
+      fields: [],
+      tagMatches: [],
+      schemaMatches: [],
+      metadataMatches: [],
+      reasons: [],
+    });
   });
 });
 

@@ -401,6 +401,21 @@ describe('tap()', () => {
     expect(result).toEqual({ value: 3 });
     expect(seen).toEqual([3]);
   });
+
+  it('preserves tags and metadata on the tapped tool', () => {
+    const tagged = createTool({
+      name: 'tagged',
+      description: 'Has tags',
+      schema: z.object({ value: z.number() }),
+      tags: ['fast'],
+      metadata: { tier: 'premium' },
+      execute: async ({ value }) => ({ value: value + 1 }),
+    });
+
+    const tapped = tap(tagged, () => {});
+    expect(tapped.tags).toEqual(['fast']);
+    expect((tapped as any).metadata).toEqual({ tier: 'premium' });
+  });
 });
 
 describe('when()', () => {
@@ -457,9 +472,45 @@ describe('parallel()', () => {
 
     expect(result).toEqual([{ value: 5 }, { value: 8 }]);
   });
+
+  it('throws when fewer than 2 tools are provided', () => {
+    const parallelAny = parallel as (...tools: any[]) => any;
+    expect(() => parallelAny(increment)).toThrow('parallel() requires at least 2 tools');
+  });
+
+  it('emits step-error when a tool fails', async () => {
+    const fail = createTool({
+      name: 'fail',
+      description: 'Fails',
+      schema: z.object({ value: z.number() }),
+      execute: async () => {
+        throw new Error('boom');
+      },
+    });
+
+    const combined = parallel(increment, fail);
+    const errors: Array<{ stepIndex: number; stepName: string }> = [];
+    (combined as any).addEventListener('step-error', (event: any) => {
+      errors.push({
+        stepIndex: event.detail.stepIndex,
+        stepName: event.detail.stepName,
+      });
+    });
+
+    // eslint-disable-next-line @typescript-eslint/await-thenable
+    await expect(combined({ value: 1 })).rejects.toThrow('boom');
+    expect(errors).toEqual([{ stepIndex: 1, stepName: 'fail' }]);
+  });
 });
 
 describe('retry()', () => {
+  const increment = createTool({
+    name: 'increment',
+    description: 'Adds 1',
+    schema: z.object({ value: z.number() }),
+    execute: async ({ value }) => ({ value: value + 1 }),
+  });
+
   it('retries until success', async () => {
     let attempts = 0;
     const flaky = createTool({
@@ -499,6 +550,126 @@ describe('retry()', () => {
     // eslint-disable-next-line @typescript-eslint/await-thenable
     await expect(wrapped({ value: 1 })).rejects.toThrow('boom');
     expect(attempts).toBe(2);
+  });
+
+  it('validates retry options', () => {
+    expect(() => retry(increment, { attempts: 0 })).toThrow(
+      'retry() expects attempts to be a positive integer',
+    );
+    expect(() => retry(increment, { delayMs: -1 })).toThrow(
+      'retry() expects delayMs to be at least 0',
+    );
+    expect(() => retry(increment, { maxDelayMs: -1 })).toThrow(
+      'retry() expects maxDelayMs to be at least 0',
+    );
+  });
+
+  it('stops retrying when shouldRetry returns false', async () => {
+    let attempts = 0;
+    const failing = createTool({
+      name: 'fail-fast',
+      description: 'fails',
+      schema: z.object({ value: z.number() }),
+      execute: async () => {
+        attempts += 1;
+        throw new Error('stop');
+      },
+    });
+
+    const wrapped = retry(failing, {
+      attempts: 3,
+      shouldRetry: async () => false,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/await-thenable
+    await expect(wrapped({ value: 1 })).rejects.toThrow('stop');
+    expect(attempts).toBe(1);
+  });
+
+  it('invokes onRetry and honors backoff with maxDelayMs', async () => {
+    let attempts = 0;
+    const flaky = createTool({
+      name: 'flaky',
+      description: 'fails once',
+      schema: z.object({ value: z.number() }),
+      execute: async ({ value }) => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error('retry me');
+        }
+        return { value };
+      },
+    });
+
+    const retries: number[] = [];
+    const wrapped = retry(flaky, {
+      attempts: 2,
+      delayMs: 5,
+      backoff: 'exponential',
+      maxDelayMs: 1,
+      onRetry: async ({ attempt }) => {
+        retries.push(attempt);
+      },
+    });
+
+    const result = await wrapped({ value: 5 });
+    expect(result).toEqual({ value: 5 });
+    expect(retries).toEqual([1]);
+  });
+
+  it('normalizes non-Error throws and preserves tags/metadata', async () => {
+    const unstable = createTool({
+      name: 'unstable',
+      description: 'throws string',
+      schema: z.object({ value: z.number() }),
+      tags: ['unstable'],
+      metadata: { tier: 'dev' },
+      execute: async () => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw 'nope';
+      },
+    });
+
+    const wrapped = retry(unstable, { attempts: 2 });
+    expect(wrapped.tags).toEqual(['unstable']);
+    expect((wrapped as any).metadata).toEqual({ tier: 'dev' });
+    // eslint-disable-next-line @typescript-eslint/await-thenable
+    await expect(wrapped({ value: 1 })).rejects.toThrow('nope');
+  });
+
+  it('stringifies thrown objects when retrying', async () => {
+    const unstable = createTool({
+      name: 'object-throw',
+      description: 'throws object',
+      schema: z.object({ value: z.number() }),
+      execute: async () => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw { code: 'OBJECT_FAIL' };
+      },
+    });
+
+    const wrapped = retry(unstable, { attempts: 1 });
+    // eslint-disable-next-line @typescript-eslint/await-thenable
+    await expect(wrapped({ value: 1 })).rejects.toThrow(
+      JSON.stringify({ code: 'OBJECT_FAIL' }),
+    );
+  });
+
+  it('falls back when thrown objects are not serializable', async () => {
+    const circular: any = { code: 'CYCLE' };
+    circular.self = circular;
+    const unstable = createTool({
+      name: 'circular-throw',
+      description: 'throws circular object',
+      schema: z.object({ value: z.number() }),
+      execute: async () => {
+        throw circular;
+      },
+    });
+
+    const wrapped = retry(unstable, { attempts: 1 });
+    // eslint-disable-next-line @typescript-eslint/await-thenable
+    await expect(wrapped({ value: 1 })).rejects.toThrow('[object Object]');
   });
 });
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
 import { createArmorer } from '../src/create-armorer';
-import { createTool } from '../src/create-tool';
+import { createTool, createToolCall } from '../src/create-tool';
 import type { ToolConfig } from '../src/is-tool';
 import { lazy } from '../src/lazy';
 import { queryTools, reindexSearchIndex, searchTools } from '../src/registry';
@@ -112,6 +112,51 @@ describe('createArmorer', () => {
       arguments: { a: 1, b: 2 },
     });
     expect(result.error).toContain('config lazy load failed');
+  });
+
+  it('passes diagnostics through tool configs', async () => {
+    const report = { warnings: [], cost: 1 };
+    const hints = [
+      {
+        path: 'arguments.value',
+        message: 'Value must be a string',
+        suggestion: 'Provide a string value',
+      },
+    ];
+    const diagnostics = {
+      safeParseWithReport: () => ({
+        success: false as const,
+        error: new Error('bad input'),
+        report,
+      }),
+      createRepairHints: () => hints,
+    };
+
+    const armorer = createArmorer([
+      makeConfiguration({
+        name: 'diagnostic-tool',
+        description: 'diagnostics',
+        schema: z.object({ value: z.string() }),
+        async execute({ value }) {
+          return value;
+        },
+        diagnostics,
+      }),
+    ]);
+
+    const tool = armorer.getTool('diagnostic-tool')!;
+    let captured: any;
+    tool.addEventListener('validate-error', (event) => {
+      captured = event.detail;
+    });
+
+    const result = await tool.execute(
+      createToolCall('diagnostic-tool', { value: 123 } as any),
+    );
+
+    expect(result.error).toBeDefined();
+    expect(captured.report).toEqual(report);
+    expect(captured.repairHints).toEqual(hints);
   });
 
   it('serializes registered configs and rehydrates clean copies', async () => {

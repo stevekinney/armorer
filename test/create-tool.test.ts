@@ -1,4 +1,4 @@
-import { describe, expect,it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
 import { createTool, createToolCall, withContext } from '../src/create-tool';
@@ -204,6 +204,42 @@ describe('createTool', () => {
     const second = await tool({ value: 'ok' });
     expect(second).toBe('OK');
     expect(loads).toBe(1);
+  });
+
+  it('retries lazy loader after non-function resolution', async () => {
+    let attempts = 0;
+    const loader = lazy(async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return 'nope' as any;
+      }
+      return async ({ value }: { value: string }) => value.toUpperCase();
+    });
+
+    await expect(loader({ value: 'x' })).rejects.toThrow(
+      'lazy loader must resolve to a function',
+    );
+    const result = await loader({ value: 'ok' });
+    expect(result).toBe('OK');
+  });
+
+  it('swallows diagnostic repair hint failures', async () => {
+    const tool = createTool({
+      name: 'diagnostic-failure',
+      description: 'diagnostic test',
+      schema: z.object({ value: z.string() }),
+      execute: async ({ value }) => value,
+      diagnostics: {
+        createRepairHints: () => {
+          throw new Error('diagnostic failed');
+        },
+      },
+    });
+
+    const result = await tool.execute(
+      createToolCall('diagnostic-failure', { value: 123 } as any),
+    );
+    expect(result.error).toBeDefined();
   });
 
   it('exposes configuration.execute for direct invocation', async () => {

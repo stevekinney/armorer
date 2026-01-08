@@ -371,6 +371,8 @@ Text query fields (`TextQueryField`) are `name`, `description`, `tags`, `schemaK
 
 If the registry was created with `embed`, text queries also use embeddings for semantic matches. Lexical matches still apply, so embeddings only broaden recall rather than replacing the existing behavior.
 
+Embedding matches use cosine similarity over the returned vectors. Queries only consult embeddings when lexical matching fails, and `threshold` applies to the similarity score. You can also disable specific fields by setting their `text.weights` to `0`.
+
 ### Selecting Tools (Search)
 
 Use `searchTools` to rank tools and optionally include match explanations:
@@ -416,6 +418,8 @@ Ranking options:
 
 Text ranking scores accumulate across matched query tokens; use `text.weights` to emphasize name vs description vs tags.
 
+When `embed` is configured, search also adds a semantic score from the best-matching text field using cosine similarity. The best field is chosen by highest weighted similarity (`text.weights`), with ties broken by the order of `text.fields`. `matches.embedding` reports the field and raw similarity, while `reasons` include `embedding:<field>:<score>`. Embeddings are treated as a soft ranking signal; use `filter.text` with a `threshold` if you want hard gating.
+
 Explain matches:
 
 - `explain: true` includes `matches` with `fields`, `tags`, `schemaKeys`, `metadataKeys`, and optional `embedding`
@@ -451,6 +455,8 @@ const matches = searchTools(armorer, {
 #### Embeddings
 
 Provide an embedder to `createArmorer` to enrich text search with embeddings. The registry batches the searchable fields for each tool (name, description, tags, schema keys, metadata keys) and stores the resulting vectors on registration. Queries and searches then use embeddings alongside lexical matching when `text` is provided.
+
+The embedder is called with a list of texts and must return a same-length list of numeric vectors; mismatched or invalid vectors are ignored. Embeddings are cached per tool and can be recomputed with `reindexSearchIndex`.
 
 ```typescript
 const armorer = createArmorer([], {
@@ -550,6 +556,8 @@ const serialized = armorer.toJSON();
 // Rehydrate from serialized state
 const restored = createArmorer(serialized);
 ```
+
+`SerializedArmorer` is a `ToolConfig[]` that includes execute functions, so it is meant for in-process cloning. Functions are not JSON-serializable, so `JSON.stringify(armorer.toJSON())` will drop them. If you need cross-process persistence, store your own manifest (name, schema, metadata, module path) and rebuild configs at startup, typically using `lazy(() => import(...))` for the execute function.
 
 ## AbortSignal Support
 
