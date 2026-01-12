@@ -2,7 +2,7 @@ import type {
   AddEventListenerOptionsLike,
   AsyncIteratorOptions,
   EmissionEvent,
-  MinimalAbortSignal,
+  MinimalAbortSignal as EventMinimalAbortSignal,
   ObservableLike,
   Observer,
   Subscription,
@@ -15,11 +15,12 @@ export type ToolParametersSchema = z.ZodType<Record<string, unknown>>;
 export type {
   AddEventListenerOptionsLike,
   AsyncIteratorOptions,
-  MinimalAbortSignal,
   ObservableLike,
   Observer,
   Subscription,
 } from 'event-emission';
+
+export type MinimalAbortSignal = EventMinimalAbortSignal | AbortSignal;
 
 /**
  * Unified tool configuration type.

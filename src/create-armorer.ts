@@ -3,7 +3,6 @@ import {
   type AsyncIteratorOptions,
   createEventTarget,
   type EmissionEvent,
-  type MinimalAbortSignal,
   type ObservableLike,
   type Observer,
   type Subscription,
@@ -23,6 +22,7 @@ import {
 import type {
   ArmorerTool,
   DefaultToolEvents,
+  MinimalAbortSignal,
   ToolCallWithArguments,
   ToolConfig,
   ToolEventsMap,

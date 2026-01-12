@@ -52,6 +52,12 @@
       "require": "./dist/registry/index.cjs",
       "default": "./dist/registry/index.js"
     },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "import": "./dist/mcp/index.js",
+      "require": "./dist/mcp/index.cjs",
+      "default": "./dist/mcp/index.js"
+    },
     "./openai": {
       "types": "./dist/adapters/openai/index.d.ts",
       "import": "./dist/adapters/openai/index.js",
@@ -113,6 +119,7 @@
     ]
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "event-emission": "0.2.0"
   },
   "devDependencies": {
