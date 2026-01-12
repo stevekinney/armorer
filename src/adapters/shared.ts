@@ -1,19 +1,6 @@
+import { isArmorer } from '../create-armorer';
 import type { Armorer, ArmorerTool, ToolConfig } from '../index';
 import { isTool } from '../is-tool';
-
-/**
- * Type guard to check if input is an Armorer registry.
- */
-export function isArmorer(input: unknown): input is Armorer {
-  return (
-    input !== null &&
-    typeof input === 'object' &&
-    'tools' in input &&
-    'register' in input &&
-    'execute' in input &&
-    typeof (input as Armorer).tools === 'function'
-  );
-}
 
 /**
  * Type guard to check if input is a ToolConfig (not an ArmorerTool).

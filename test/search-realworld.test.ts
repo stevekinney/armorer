@@ -50,7 +50,7 @@ describe('search real-world scenarios', () => {
   it('honors tag boosts for risk investigations', () => {
     const armorer = makeRegistry();
     const results = searchTools(armorer, {
-      rank: { tags: ['fraud', 'risk'], tagBoosts: { fraud: 3 } },
+      rank: { tags: ['fraud', 'risk'], tagWeights: { fraud: 3 } },
       limit: 3,
     });
 

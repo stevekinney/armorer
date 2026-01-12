@@ -39,9 +39,17 @@ describe('registry helpers', () => {
     const armorer = createArmorer([], { embed });
     armorer.register(makeTool('reindex'));
 
-    const before = calls;
+    // Initial registration should have called the embedder
+    expect(calls).toBe(1);
+
+    // Reindexing with cached embeddings should not make additional calls
+    // because the cached embedder returns stored results for the same texts
     reindexSearchIndex(armorer);
-    expect(calls).toBeGreaterThan(before);
+    expect(calls).toBe(1);
+
+    // Register a new tool and verify embedder is called again for new content
+    armorer.register(makeTool('new-tool'));
+    expect(calls).toBe(2);
   });
 
   it('treats empty text queries as match-all', () => {

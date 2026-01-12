@@ -1,0 +1,25 @@
+- [x] Confirm that we're using `event-emission` for all eventing.
+- [x] Confirm that our "Lazy-Loaded Execute Functions" actually do what they say that they're going to do and that they aid in code-splitting and/or tree-shaking for consumers.
+- [x] Make sure the "Tool Events" section of the README.md has a list of all of the events.
+- [x] Make sure we're exporting types for all of the tool events.
+- [x] When using `dispatch` inside of a tool's `execute()`, make sure `percentage` is optional.
+- [x] For the "Execution": make sure that if `armorer.execute` receives multiple tool calls that those are executed in parallel.
+  - [x] Make it clear what the return value is when executing multiple tools.
+  - [x] Show how we can use `armorer.addEventListener` to listen for events on the multiple tools in order to track their progress.
+  - [x] Make sure that `armorer.addEventListener` also bubbles up all events from the individual tools and then remove any of it's own event types that are now rendered duplicative.
+- [x] With `queryTools`, if the registry of an armorer hasn't changed, it should return a cached value—use a `WeakMap` if possible so that we don't balloon in memory.
+- [x] Rename `tagBoosts` to `tagWeights` and explain how it works in a bit more detail in the README.md.
+- [x] `s/includeToolConfig/includeToolConfiguration` and `s/ToolConfig/ToolConfiguration`.
+- [x] Make sure we export a `ToolSearchRanker` type for the `ranker` method on the options passed to `searchTools`.
+- [x] For `embed` with `createArmorer`, use a `WeakMap` to cache results for `texts`.
+- [x] Add an optional section to the README about using an `embeddings` or `embedding` property on the tool's `metadata` to a `ToolConfiguration` so that we can also just store the embeddings on the tool configuration itself. And then include an example about how to use that with `createArmorer` to skip getting embeddings for tools that already have them.
+- [x] `createTool` should also be able to take an optional `armorer` as a second argument.
+  - [x] If an `armorer` is passed in, then `createTool` should register that tool with the armorer.
+  - [x] If that `armorer` has `context` set, then the `execute` in the `ToolConfiguration` should include that context in the `execute()`'s `context` object.
+- [x] `createTool` should take an optional `ToolContext` generic that will then be used with the `context` in `execute()`.
+- [x] `createTool` should take an optional `ToolParameters` generic and it will then enforce that `schema` satisfies that schema.
+- [x] `createTool` should take an optional `ToolReturn` genetic that will enforce that `execute` returns `Promise<ToolReturn>`.
+- [x] `createArmorer`'s options should include a `getTool()` method that is invoked whenever a configuration does not have an `execute` method (the _only_ time this should happen is when `createArmorer` is called with a serialized armorer). `getTool()` should receive `Omit<ToolConfigution>` and returns either a function that would be a valid `execute` or a promsie that would resolve to one.
+- [x] `armorer.execute` should also support taking an `AbortSignal`, just like `tool.execute`.
+- [x] `createArmorer`'s options should take a `middleware` property that is an array of `(toolConfiguration: ToolConfiguration) => ToolConfiguration | Promise<ToolConfiguration>` functions and sends the tool configuration through each. Expose a `createMiddleware` that is just a type-safe middleware for creating this functions. Middleware is applied as the tool is registered.
+- [x] Create two new composition utilities: `preprocess` and `postprocess` for mapping inputs and outputs respectively.

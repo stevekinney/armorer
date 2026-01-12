@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer, createTool } from '../index';
-import { isArmorer, isSingleInput, isToolConfig, normalizeToToolConfigs } from './shared';
+import { createArmorer, createTool, isArmorer } from '../index';
+import { isSingleInput, isToolConfig, normalizeToToolConfigs } from './shared';
 
 describe('shared adapter utilities', () => {
   const testSchema = z.object({ message: z.string() });
@@ -96,10 +96,12 @@ describe('shared adapter utilities', () => {
 
     it('throws Error when registry tools returns non-array', () => {
       // Create a mock object that looks like an Armorer but returns a non-array
-      const mockQm = {
+      const mockQm: Record<string, unknown> = {
         tools: () => Promise.resolve([]), // Returns Promise, not array
         register: () => mockQm,
         execute: () => Promise.resolve({}),
+        getTool: () => undefined,
+        toJSON: () => [],
       };
       expect(() => normalizeToToolConfigs(mockQm as any)).toThrow(
         'Armorer.tools() must return an array.',

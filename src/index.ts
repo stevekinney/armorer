@@ -1,3 +1,4 @@
+export { combineArmorers } from './combine-armorers';
 export type {
   Armorer,
   ArmorerContext,
@@ -5,9 +6,10 @@ export type {
   ArmorerOptions,
   ArmorerToolRuntimeContext,
   SerializedArmorer,
+  ToolMiddleware,
   ToolStatusUpdate,
 } from './create-armorer';
-export { createArmorer } from './create-armorer';
+export { createArmorer, createMiddleware, isArmorer } from './create-armorer';
 export type { CreateToolOptions, WithContext } from './create-tool';
 export { createTool, createToolCall, withContext } from './create-tool';
 export type {
