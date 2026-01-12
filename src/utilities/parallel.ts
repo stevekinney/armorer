@@ -213,6 +213,15 @@ export function parallel(...tools: AnyTool[]): AnyTool {
     description: `Parallel tools: ${toolNames.join(' | ')}`,
     schema: first.schema,
     async execute(input: unknown, context: ToolContext<DefaultToolEvents>) {
+      const executeOptions =
+        context.signal || context.timeoutMs !== undefined
+          ? {
+              ...(context.signal ? { signal: context.signal } : {}),
+              ...(context.timeoutMs !== undefined
+                ? { timeoutMs: context.timeoutMs }
+                : {}),
+            }
+          : undefined;
       const results = await Promise.all(
         tools.map(async (tool, index) => {
           emit(context.dispatch, 'step-start', {
@@ -222,7 +231,7 @@ export function parallel(...tools: AnyTool[]): AnyTool {
           });
 
           try {
-            const result = await tool(input);
+            const result = await tool.execute(input, executeOptions);
             emit(context.dispatch, 'step-complete', {
               stepIndex: index,
               stepName: tool.name,

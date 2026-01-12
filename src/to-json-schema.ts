@@ -8,7 +8,6 @@ export function toJSONSchema<T extends ToolConfiguration<ToolParametersSchema>>(
   const params = z.toJSONSchema(schema, {
     override: (ctx) => {
       ctx.jsonSchema.additionalProperties = false;
-      ctx.jsonSchema.required = Object.keys(ctx.jsonSchema.properties ?? []);
       delete (ctx.jsonSchema as Record<string, unknown>)['$schema'];
     },
   }) as Record<string, unknown>;

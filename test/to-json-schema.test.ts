@@ -15,6 +15,7 @@ describe('toJSONSchema', () => {
     };
 
     const result = toJSONSchema(tool);
+    const required = (result.parameters as any).required as string[] | undefined;
 
     expect(result.type).toBe('function');
     expect(result.name).toBe('greet');
@@ -22,6 +23,7 @@ describe('toJSONSchema', () => {
     expect(result.strict).toBe(true);
     expect(result.parameters).toBeDefined();
     expect((result.parameters as any).type).toBe('object');
+    expect(required).toEqual(['name']);
   });
 
   it('removes $schema from the output', () => {

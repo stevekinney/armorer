@@ -183,9 +183,21 @@ export function pipe(...tools: AnyTool[]): AnyTool {
 
     async execute(input: unknown, context: ToolContext<DefaultToolEvents>) {
       let result: unknown = input;
+      const executeOptions =
+        context.signal || context.timeoutMs !== undefined
+          ? {
+              ...(context.signal ? { signal: context.signal } : {}),
+              ...(context.timeoutMs !== undefined
+                ? { timeoutMs: context.timeoutMs }
+                : {}),
+            }
+          : undefined;
 
       for (let i = 0; i < tools.length; i++) {
         const tool = tools[i]!;
+        if (context.signal?.aborted) {
+          throw toError(context.signal.reason ?? new Error('Cancelled'));
+        }
 
         // Emit step-start event
         emit(context.dispatch, 'step-start', {
@@ -196,7 +208,7 @@ export function pipe(...tools: AnyTool[]): AnyTool {
 
         try {
           // Execute step - tool validates its own input via its schema
-          result = await tool(result);
+          result = await tool.execute(result, executeOptions);
 
           // Emit step-complete event
           emit(context.dispatch, 'step-complete', {
@@ -224,6 +236,20 @@ export function pipe(...tools: AnyTool[]): AnyTool {
       return result;
     },
   }) as AnyTool;
+}
+
+function toError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  if (typeof error === 'string') {
+    return new Error(error);
+  }
+  try {
+    return new Error(JSON.stringify(error));
+  } catch {
+    return new Error(String(error));
+  }
 }
 
 // Compose overloads (right-to-left, like function composition)

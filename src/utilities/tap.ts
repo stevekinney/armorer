@@ -27,7 +27,16 @@ export function tap<TTool extends AnyTool>(
     description,
     schema: tool.schema as z.ZodType<InferToolInput<TTool>>,
     async execute(params, context) {
-      const result = await tool(params as InferToolInput<TTool>);
+      const executeOptions =
+        context.signal || context.timeoutMs !== undefined
+          ? {
+              ...(context.signal ? { signal: context.signal } : {}),
+              ...(context.timeoutMs !== undefined
+                ? { timeoutMs: context.timeoutMs }
+                : {}),
+            }
+          : undefined;
+      const result = await tool.execute(params as InferToolInput<TTool>, executeOptions);
       await effect(result as InferToolOutput<TTool>, context);
       return result;
     },

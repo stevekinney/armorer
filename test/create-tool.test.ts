@@ -517,13 +517,15 @@ describe('createTool', () => {
     // additionalProperties is forced to false by the override
     expect(params['additionalProperties']).toBe(false);
 
-    // required is set to all property keys (even optionals)
+    // required includes only required properties
     const properties = (params['properties'] ?? {}) as Record<string, unknown>;
     const required = new Set((params['required'] as string[]) ?? []);
     const keys = Object.keys(properties);
     expect(keys.length).toBeGreaterThan(0);
     for (const k of keys) {
-      expect(required.has(k)).toBe(true);
+      if (k !== 'b') {
+        expect(required.has(k)).toBe(true);
+      }
     }
 
     // $schema is removed by the override

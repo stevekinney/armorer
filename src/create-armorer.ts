@@ -23,8 +23,10 @@ import {
 import type {
   ArmorerTool,
   DefaultToolEvents,
+  ToolCallWithArguments,
   ToolConfig,
   ToolEventsMap,
+  ToolExecuteOptions,
   ToolMetadata,
   ToolParametersSchema,
 } from './is-tool';
@@ -36,7 +38,7 @@ import type {
   ToolSearchOptions,
 } from './registry';
 import { registerToolIndexes, unregisterToolIndexes } from './registry';
-import type { Embedder } from './registry/embeddings';
+import type { Embedder, EmbeddingVector } from './registry/embeddings';
 import { registerRegistryEmbedder, warmToolEmbeddings } from './registry/embeddings';
 import { isZodObjectSchema, isZodSchema } from './schema-utilities';
 import { assertKebabCaseTag, uniqTags } from './tag-utilities';
@@ -49,9 +51,34 @@ export type ArmorerToolRuntimeContext<Ctx extends ArmorerContext = ArmorerContex
     dispatchEvent: ArmorerEventDispatcher;
     configuration: ToolConfig;
     toolCall: ToolCall;
+    signal?: MinimalAbortSignal;
+    timeoutMs?: number;
   };
 
 export type SerializedArmorer = readonly ToolConfig[];
+
+export type ToolMiddleware = (configuration: ToolConfig) => ToolConfig;
+
+/**
+ * Type-safe helper for creating middleware functions.
+ *
+ * @example
+ * ```ts
+ * const addMetadata = createMiddleware((config) => ({
+ *   ...config,
+ *   metadata: { ...config.metadata, source: 'middleware' },
+ * }));
+ *
+ * const armorer = createArmorer([], {
+ *   middleware: [addMetadata],
+ * });
+ * ```
+ */
+export function createMiddleware(
+  fn: (configuration: ToolConfig) => ToolConfig,
+): ToolMiddleware {
+  return fn;
+}
 
 export interface ArmorerOptions {
   signal?: MinimalAbortSignal;
@@ -61,6 +88,17 @@ export interface ArmorerOptions {
     configuration: ToolConfig,
     context: ArmorerToolFactoryContext,
   ) => ArmorerTool;
+  /**
+   * Called when a tool configuration doesn't have an execute method.
+   * This typically happens when deserializing an armorer.
+   * Should return an execute function or a promise that resolves to one.
+   */
+  getTool?: (configuration: Omit<ToolConfig, 'execute'>) => ToolConfig['execute'];
+  /**
+   * Array of middleware functions to transform tool configurations during registration.
+   * Middleware is applied in order before the tool is built.
+   */
+  middleware?: ToolMiddleware[];
 }
 
 export interface ArmorerToolFactoryContext {
@@ -92,6 +130,33 @@ export interface ArmorerEvents {
   search: { options: ToolSearchOptions; results: ToolMatch<unknown>[] };
   /** Tool status/progress updates for UI display */
   'status:update': ToolStatusUpdate;
+  // Bubbled tool events (when executing multiple tools in parallel)
+  'execute-start': { tool: ArmorerTool; call: ToolCall; params: unknown };
+  'validate-success': {
+    tool: ArmorerTool;
+    call: ToolCall;
+    params: unknown;
+    parsed: unknown;
+  };
+  'validate-error': {
+    tool: ArmorerTool;
+    call: ToolCall;
+    params: unknown;
+    error: unknown;
+  };
+  'execute-success': { tool: ArmorerTool; call: ToolCall; result: unknown };
+  'execute-error': { tool: ArmorerTool; call: ToolCall; error: unknown };
+  settled: { tool: ArmorerTool; call: ToolCall; result?: unknown; error?: unknown };
+  progress: { tool: ArmorerTool; call: ToolCall; percent?: number; message?: string };
+  'output-chunk': { tool: ArmorerTool; call: ToolCall; chunk: unknown };
+  log: {
+    tool: ArmorerTool;
+    call: ToolCall;
+    level: 'debug' | 'info' | 'warn' | 'error';
+    message: string;
+    data?: unknown;
+  };
+  cancelled: { tool: ArmorerTool; call: ToolCall; reason?: string };
 }
 
 export type ArmorerEventDispatcher = <K extends keyof ArmorerEvents & string>(
@@ -109,8 +174,8 @@ export interface Armorer {
   >(
     options: CreateToolOptions<TInput, TOutput, E, Tags, M>,
   ) => ArmorerTool;
-  execute(call: ToolCallInput): Promise<ToolResult>;
-  execute(calls: ToolCallInput[]): Promise<ToolResult[]>;
+  execute(call: ToolCallInput, options?: ToolExecuteOptions): Promise<ToolResult>;
+  execute(calls: ToolCallInput[], options?: ToolExecuteOptions): Promise<ToolResult[]>;
   tools: () => ArmorerTool[];
   getTool: (name: string) => ArmorerTool | undefined;
   /**
@@ -169,6 +234,9 @@ export interface Armorer {
   // Lifecycle methods
   complete: () => void;
   readonly completed: boolean;
+
+  // Internal method to get armorer context (for use by createTool)
+  getContext?: () => ArmorerContext;
 }
 
 export function createArmorer(
@@ -196,7 +264,7 @@ export function createArmorer(
     detail: ArmorerEvents[K],
   ) => dispatchEvent({ type, detail } as EmissionEvent<ArmorerEvents[K]>);
   const baseContext = options.context ? { ...options.context } : {};
-  const embedder = options.embed;
+  const embedder = options.embed ? createCachedEmbedder(options.embed) : undefined;
   const buildTool =
     typeof options.toolFactory === 'function'
       ? (configuration: ToolConfig) =>
@@ -222,25 +290,37 @@ export function createArmorer(
 
   function register(...entries: (ToolConfig | ArmorerTool)[]): Armorer {
     for (const entry of entries) {
-      const configuration = normalizeRegistration(entry);
-      const tool = buildTool(configuration);
-      const existing = registry.get(tool.name);
-      emit('registering', tool);
-      storedConfigurations.set(configuration.name, configuration);
-      if (existing) {
-        unregisterToolIndexes(api, existing, registry.size);
-      }
-      registry.set(tool.name, tool);
-      registerToolIndexes(api, tool, registry.size);
-      if (embedder) {
-        warmToolEmbeddings(tool, embedder, (resolvedTool) => {
-          if (registry.get(resolvedTool.name) !== resolvedTool) {
-            return;
+      let configuration = normalizeRegistration(entry);
+
+      // Apply middleware if provided (synchronously if possible, otherwise queue)
+      if (options.middleware && options.middleware.length > 0) {
+        for (const middleware of options.middleware) {
+          const result = middleware(configuration);
+          if (isPromise(result)) {
+            throw new Error(
+              'Async middleware is not supported. Provide synchronous middleware only.',
+            );
           }
-          registerToolIndexes(api, resolvedTool, registry.size);
-        });
+          configuration = result;
+        }
       }
-      emit('registered', tool);
+
+      // If configuration doesn't have execute and getTool is provided, use it
+      if (
+        typeof configuration.execute !== 'function' &&
+        !isPromise(configuration.execute) &&
+        options.getTool
+      ) {
+        const execute = options.getTool(configuration as Omit<ToolConfig, 'execute'>);
+        if (isPromise(execute)) {
+          throw new Error(
+            'Async getTool is not supported. Provide a synchronous execute resolver.',
+          );
+        }
+        configuration = { ...configuration, execute };
+      }
+
+      registerConfiguration(configuration);
     }
     return api;
   }
@@ -290,10 +370,13 @@ export function createArmorer(
   async function execute(calls: ToolCallInput[]): Promise<ToolResult[]>;
   async function execute(
     input: ToolCallInput | ToolCallInput[],
+    options?: ToolExecuteOptions,
   ): Promise<ToolResult | ToolResult[]> {
     const calls = Array.isArray(input) ? input : [input];
-    const results: ToolResult[] = [];
-    for (const call of calls) {
+    const isMultiple = Array.isArray(input);
+
+    // Execute all calls in parallel
+    const promises = calls.map(async (call) => {
       const toolCall = normalizeToolCall(call);
       const tool = registry.get(toolCall.name);
       if (!tool) {
@@ -306,21 +389,71 @@ export function createArmorer(
           result: undefined,
           error: `Tool not found: ${toolCall.name}`,
         };
-        results.push(notFound);
         emit('not-found', toolCall);
-        continue;
+        return notFound;
       }
 
       emit('call', { tool, call: toolCall });
+
+      // Set up event listeners to bubble up tool events when executing multiple tools
+      const cleanup: (() => void)[] = [];
+      if (isMultiple) {
+        const toolEventTypes: (keyof DefaultToolEvents)[] = [
+          'execute-start',
+          'validate-success',
+          'validate-error',
+          'execute-success',
+          'execute-error',
+          'settled',
+          'progress',
+          'output-chunk',
+          'log',
+          'cancelled',
+          'status-update',
+        ];
+        for (const eventType of toolEventTypes) {
+          const unsubscribe = tool.addEventListener(eventType, (toolEvent) => {
+            // Bubble up the event with tool and call context
+            const bubbledDetail = {
+              ...toolEvent.detail,
+              tool,
+              call: toolCall,
+            };
+            // Use emit helper which handles the type conversion
+            emit(
+              eventType as keyof ArmorerEvents,
+              bubbledDetail as ArmorerEvents[keyof ArmorerEvents],
+            );
+          });
+          cleanup.push(unsubscribe);
+        }
+      }
+
       try {
-        const result = (await tool.execute(toolCall as any)) as ToolResult;
-        results.push(result);
+        const executeOptions =
+          options?.signal || options?.timeoutMs !== undefined
+            ? {
+                ...(options?.signal ? { signal: options.signal } : {}),
+                ...(options?.timeoutMs !== undefined
+                  ? { timeoutMs: options.timeoutMs }
+                  : {}),
+              }
+            : undefined;
+        // tool.execute accepts ToolCallWithArguments, but we have ToolCall
+        // The execute method will handle the conversion internally
+        const result = await tool.execute(
+          toolCall as ToolCallWithArguments,
+          executeOptions,
+        );
         if (result.error) {
           emit('error', { tool, result });
         } else {
           emit('complete', { tool, result });
         }
+        cleanup.forEach((fn) => fn());
+        return result;
       } catch (error) {
+        cleanup.forEach((fn) => fn());
         const message = error instanceof Error ? error.message : String(error);
         const errResult: ToolResult = {
           callId: toolCall.id,
@@ -331,11 +464,13 @@ export function createArmorer(
           result: undefined,
           error: message,
         };
-        results.push(errResult);
         emit('error', { tool, result: errResult });
+        return errResult;
       }
-    }
-    return Array.isArray(input) ? results : results[0]!;
+    });
+
+    const results = await Promise.all(promises);
+    return isMultiple ? results : results[0]!;
   }
 
   function normalizeToolCall(call: ToolCallInput): ToolCall {
@@ -409,6 +544,8 @@ export function createArmorer(
     get completed() {
       return hub.completed;
     },
+    // Internal method to get armorer context
+    getContext: () => baseContext,
   };
 
   if (embedder) {
@@ -416,7 +553,7 @@ export function createArmorer(
   }
 
   if (serialized.length) {
-    register(...serialized);
+    registerSerialized(serialized);
   }
 
   return api;
@@ -434,6 +571,8 @@ export function createArmorer(
           dispatchEvent,
           configuration: toolContext.configuration,
           toolCall: toolContext.toolCall,
+          signal: toolContext.signal,
+          timeoutMs: toolContext.timeoutMs,
         });
       },
     };
@@ -495,6 +634,62 @@ export function createArmorer(
     }
     return normalizeConfiguration(entry);
   }
+
+  function registerConfiguration(configuration: ToolConfig): void {
+    const tool = buildTool(configuration);
+    const existing = registry.get(tool.name);
+    emit('registering', tool);
+    storedConfigurations.set(configuration.name, configuration);
+    if (existing) {
+      unregisterToolIndexes(api, existing, registry.size);
+    }
+    registry.set(tool.name, tool);
+    registerToolIndexes(api, tool, registry.size);
+    if (embedder) {
+      warmToolEmbeddings(tool, embedder, (resolvedTool) => {
+        if (registry.get(resolvedTool.name) !== resolvedTool) {
+          return;
+        }
+        registerToolIndexes(api, resolvedTool, registry.size);
+      });
+    }
+    emit('registered', tool);
+  }
+
+  function registerSerialized(configs: SerializedArmorer): void {
+    for (let index = 0; index < configs.length; index += 1) {
+      const config = configs[index]!;
+      let configuration = normalizeConfiguration(config);
+
+      if (options.middleware && options.middleware.length > 0) {
+        for (const middleware of options.middleware) {
+          const result = middleware(configuration);
+          if (isPromise(result)) {
+            throw new Error(
+              'Async middleware is not supported when deserializing. Provide synchronous middleware only.',
+            );
+          }
+          configuration = result;
+        }
+      }
+
+      if (
+        typeof configuration.execute !== 'function' &&
+        !isPromise(configuration.execute) &&
+        options.getTool
+      ) {
+        const execute = options.getTool(configuration as Omit<ToolConfig, 'execute'>);
+        if (isPromise(execute)) {
+          throw new Error(
+            'Async getTool is not supported when deserializing. Provide a synchronous execute resolver.',
+          );
+        }
+        configuration = { ...configuration, execute };
+      }
+
+      registerConfiguration(configuration);
+    }
+  }
 }
 
 function normalizeToolSchema(schema: unknown): ToolParametersSchema {
@@ -553,5 +748,59 @@ function isPromise<T>(value: unknown): value is PromiseLike<T> {
     value !== null &&
     'then' in value &&
     typeof (value as any).then === 'function'
+  );
+}
+
+const embedderCache = new WeakMap<
+  Embedder,
+  Map<string, EmbeddingVector[] | Promise<EmbeddingVector[]>>
+>();
+
+function createCachedEmbedder(embedder: Embedder): Embedder {
+  return (texts: string[]): EmbeddingVector[] | Promise<EmbeddingVector[]> => {
+    // Create a cache key from the texts array
+    const cacheKey = JSON.stringify(texts);
+
+    // Get or create cache for this embedder
+    let cache = embedderCache.get(embedder);
+    if (!cache) {
+      cache = new Map();
+      embedderCache.set(embedder, cache);
+    }
+
+    // Check cache
+    const cached = cache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    // Call embedder and cache result
+    const result = embedder(texts);
+    cache.set(cacheKey, result);
+
+    // If result is a promise, handle rejection to avoid caching errors
+    if (isPromise(result)) {
+      result.catch(() => {
+        // Remove from cache on error so we can retry
+        cache.delete(cacheKey);
+      });
+    }
+
+    return result;
+  };
+}
+
+/**
+ * Type guard to check if a value is an Armorer instance.
+ */
+export function isArmorer(value: unknown): value is Armorer {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Armorer).register === 'function' &&
+    typeof (value as Armorer).tools === 'function' &&
+    typeof (value as Armorer).getTool === 'function' &&
+    typeof (value as Armorer).execute === 'function' &&
+    typeof (value as Armorer).toJSON === 'function'
   );
 }

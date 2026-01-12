@@ -43,12 +43,21 @@ export function when(
     schema: whenTrue.schema,
     async execute(params, context) {
       const input = params;
+      const executeOptions =
+        context.signal || context.timeoutMs !== undefined
+          ? {
+              ...(context.signal ? { signal: context.signal } : {}),
+              ...(context.timeoutMs !== undefined
+                ? { timeoutMs: context.timeoutMs }
+                : {}),
+            }
+          : undefined;
       const shouldRun = await predicate(input, context);
       if (shouldRun) {
-        return whenTrue(input);
+        return whenTrue.execute(input, executeOptions);
       }
       if (whenFalse) {
-        return whenFalse(input);
+        return whenFalse.execute(input, executeOptions);
       }
       return input;
     },

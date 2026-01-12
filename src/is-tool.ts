@@ -106,7 +106,7 @@ export type DefaultToolEvents = {
   'execute-success': { result: unknown } & ToolEventDetailContext;
   'execute-error': { error: unknown } & ToolEventDetailContext;
   settled: { result?: unknown; error?: unknown } & ToolEventDetailContext;
-  progress: { percent: number; message?: string };
+  progress: { percent?: number; message?: string };
   'output-chunk': { chunk: unknown };
   log: { level: 'debug' | 'info' | 'warn' | 'error'; message: string; data?: unknown };
   cancelled: { reason?: string };
@@ -124,10 +124,13 @@ export interface ToolContext<E extends ToolEventsMap = DefaultToolEvents> {
   meta?: { toolName: string; callId?: string };
   toolCall: ToolCallWithArguments;
   configuration: ToolConfig;
+  signal?: MinimalAbortSignal;
+  timeoutMs?: number;
 }
 
 export interface ToolExecuteOptions {
   signal?: MinimalAbortSignal;
+  timeoutMs?: number;
 }
 
 /**

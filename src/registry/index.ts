@@ -1,5 +1,6 @@
 import type { EmissionEvent } from 'event-emission';
 
+import { isArmorer } from '../create-armorer';
 import type {
   ArmorerTool,
   ToolConfig,
@@ -114,6 +115,8 @@ export type ToolQueryOptions = {
   /** Select a lighter result shape. */
   select?: ToolQuerySelect;
   /** Include the tool configuration on summary results. */
+  includeToolConfiguration?: boolean;
+  /** @deprecated Use includeToolConfiguration instead */
   includeToolConfig?: boolean;
   /** Include the tool schema on summary results. */
   includeSchema?: boolean;
@@ -132,8 +135,8 @@ export type QuerySelectionResult =
 export type ToolSearchRank = {
   /** Prefer tools with these tags. */
   tags?: readonly string[];
-  /** Boost scores for specific tags. */
-  tagBoosts?: Record<string, number>;
+  /** Weight multipliers for specific tags. Higher values increase the score contribution of matching tags. */
+  tagWeights?: Record<string, number>;
   /** Prefer tools that match this text. */
   text?: TextQuery;
   /** Optional ranking weights. */
@@ -167,7 +170,7 @@ export type ToolRankResult = {
 export type ToolRankContext = {
   text?: NormalizedTextQuery | null;
   preferredTags: string[];
-  tagBoosts: Record<string, number>;
+  tagWeights: Record<string, number>;
   weights: {
     tags: number;
     text: number;
@@ -179,6 +182,9 @@ export type ToolRanker = (
   tool: ArmorerTool,
   context: ToolRankContext,
 ) => ToolRankResult | number | null | undefined;
+
+/** Alias for ToolRanker for clarity when used with searchTools. */
+export type ToolSearchRanker = ToolRanker;
 
 export type ToolTieBreaker =
   | 'name'
@@ -201,6 +207,8 @@ export type ToolSearchOptions = {
   /** Select a lighter result shape. */
   select?: ToolQuerySelect;
   /** Include the tool configuration on summary results. */
+  includeToolConfiguration?: boolean;
+  /** @deprecated Use includeToolConfiguration instead */
   includeToolConfig?: boolean;
   /** Include the tool schema on summary results. */
   includeSchema?: boolean;
@@ -236,6 +244,7 @@ const toolLookupCache = new WeakMap<ArmorerTool, ToolLookupCache>();
 const registryInvertedIndex = new WeakMap<object, InvertedIndex>();
 const registryTextIndex = new WeakMap<object, TextInvertedIndex>();
 const registryEmbeddingIndex = new WeakMap<object, EmbeddingIndex>();
+const queryCache = new WeakMap<object, Map<string, QuerySelectionResult>>();
 const BIGRAM_SIZE = 2;
 const GRAM_SIZE = 3;
 const EMBEDDING_SEED = 0x1a2b3c4d;
@@ -307,6 +316,25 @@ export function queryTools(
   criteria?: ToolQuery,
 ): QuerySelectionResult {
   const resolved = resolveTools(input);
+
+  // Compute cache key once to ensure consistency between lookup and storage
+  const cacheKey = resolved.registry
+    ? createQueryCacheKey(criteria, resolved.tools.length)
+    : null;
+  const shouldCache = cacheKey && !cacheKey.startsWith('no-cache:');
+
+  // Use cache if registry is available and hasn't changed
+  if (shouldCache) {
+    const registryCache = queryCache.get(resolved.registry!);
+    if (registryCache) {
+      const cached = registryCache.get(cacheKey);
+      if (cached !== undefined) {
+        emitQuery(resolved.dispatchEvent, criteria, cached);
+        return cached;
+      }
+    }
+  }
+
   const tools = filterTools(
     resolved.tools,
     criteria,
@@ -317,6 +345,17 @@ export function queryTools(
   );
   const paged = applyPagination(tools, criteria?.limit, criteria?.offset);
   const results = selectQueryResults(paged, criteria);
+
+  // Cache results if registry is available and query is cacheable
+  if (shouldCache) {
+    let registryCache = queryCache.get(resolved.registry!);
+    if (!registryCache) {
+      registryCache = new Map();
+      queryCache.set(resolved.registry!, registryCache);
+    }
+    registryCache.set(cacheKey, results);
+  }
+
   emitQuery(resolved.dispatchEvent, criteria, results);
   return results;
 }
@@ -411,6 +450,9 @@ export function registerToolIndexes(
   searchIndex.set(tool, textIndex);
   toolLookupCache.set(tool, buildToolLookup(tool));
 
+  // Clear query cache when registry changes
+  queryCache.delete(registry);
+
   const inverted = registryInvertedIndex.get(registry);
   if (inverted) {
     addToolToInvertedIndex(inverted, tool);
@@ -447,6 +489,8 @@ export function unregisterToolIndexes(
   tool: ArmorerTool,
   toolsCount?: number,
 ): void {
+  // Clear query cache when registry changes
+  queryCache.delete(registry);
   const cachedText = searchIndex.get(tool) ?? buildTextSearchIndex(tool);
 
   const inverted = registryInvertedIndex.get(registry);
@@ -497,6 +541,29 @@ function resolveTools(input: ToolQueryInput): {
     searchIndex.set(tool, index);
     return index;
   };
+
+  // Check if input is an Armorer first (more specific check)
+  if (isArmorer(input)) {
+    const embedder = getRegistryEmbedder(input as object);
+    const tools = input.tools();
+    const registry = input as object;
+    const dispatchEvent = input.dispatchEvent
+      ? (input.dispatchEvent.bind(input) as unknown as ToolRegistryLike['dispatchEvent'])
+      : undefined;
+    const result = {
+      tools,
+      registry,
+      dispatchEvent,
+      getIndex,
+      getInvertedIndex: () => getRegistryInvertedIndex(registry, tools),
+      getTextIndex: () => getRegistryTextIndex(registry, tools, getIndex),
+      getEmbeddingIndex: () => getRegistryEmbeddingIndex(registry, tools),
+    };
+    if (embedder) {
+      return { ...result, embedder };
+    }
+    return result;
+  }
 
   if (isToolRegistry(input)) {
     const embedder = getRegistryEmbedder(input as object);
@@ -1709,7 +1776,7 @@ function rankTools(
 ): ToolMatch[] {
   const rank = options.rank;
   const preferredTags = normalizeTags(rank?.tags ?? []);
-  const tagBoosts = normalizeTagBoosts(rank?.tagBoosts);
+  const tagWeights = normalizeTagWeights(rank?.tagWeights);
   const tagWeight = normalizeWeight(rank?.weights?.tags);
   const textWeight = normalizeWeight(rank?.weights?.text);
   const normalizedText = rank?.text !== undefined ? normalizeTextQuery(rank.text) : null;
@@ -1721,7 +1788,7 @@ function rankTools(
     queryEmbedding && normalizedText && getEmbeddingIndex
       ? selectEmbeddingCandidates(getEmbeddingIndex(), queryEmbedding, normalizedText)
       : null;
-  const tagSet = buildTagSet(preferredTags, tagBoosts);
+  const tagSet = buildTagSet(preferredTags, tagWeights);
   const explain = Boolean(options.explain);
   const ranker = options.ranker;
   const tieBreaker = options.tieBreaker ?? 'name';
@@ -1743,7 +1810,7 @@ function rankTools(
       tool,
       score: scoreToolMatchValue(tool, {
         tagSet,
-        tagBoosts,
+        tagWeights,
         tagWeight,
         textWeight,
         normalizedText,
@@ -1761,7 +1828,7 @@ function rankTools(
       .map((match) =>
         buildToolMatch(match.tool, {
           tagSet,
-          tagBoosts,
+          tagWeights,
           tagWeight,
           textWeight,
           normalizedText,
@@ -1782,7 +1849,7 @@ function rankTools(
     .map((tool) =>
       buildToolMatch(tool, {
         tagSet,
-        tagBoosts,
+        tagWeights,
         tagWeight,
         textWeight,
         normalizedText,
@@ -1810,7 +1877,7 @@ function scoreToolMatchValue(
   tool: ArmorerTool,
   context: {
     tagSet: Set<string>;
-    tagBoosts: Record<string, number>;
+    tagWeights: Record<string, number>;
     tagWeight: number;
     textWeight: number;
     normalizedText: NormalizedTextQuery | null;
@@ -1821,7 +1888,7 @@ function scoreToolMatchValue(
 ): number {
   const {
     tagSet,
-    tagBoosts,
+    tagWeights,
     tagWeight,
     textWeight,
     normalizedText,
@@ -1831,7 +1898,7 @@ function scoreToolMatchValue(
   } = context;
   let score = 0;
   if (tagSet.size) {
-    score += scoreTagMatchesValue(tool, tagSet, tagWeight, tagBoosts);
+    score += scoreTagMatchesValue(tool, tagSet, tagWeight, tagWeights);
   }
   if (normalizedText && textWeight !== 0) {
     const textScore = scoreTextMatchValueFromIndex(resolveIndex(tool), normalizedText);
@@ -1857,7 +1924,7 @@ function buildToolMatch(
   tool: ArmorerTool,
   context: {
     tagSet: Set<string>;
-    tagBoosts: Record<string, number>;
+    tagWeights: Record<string, number>;
     tagWeight: number;
     textWeight: number;
     normalizedText: NormalizedTextQuery | null;
@@ -1871,7 +1938,7 @@ function buildToolMatch(
 ): ToolMatch<ArmorerTool> | null {
   const {
     tagSet,
-    tagBoosts,
+    tagWeights,
     tagWeight,
     textWeight,
     normalizedText,
@@ -1896,7 +1963,7 @@ function buildToolMatch(
   if (tagSet.size) {
     const tagMatches = collectTagMatches(tool, tagSet);
     if (tagMatches.length) {
-      score += scoreTagMatches(tagMatches, tagWeight, tagBoosts);
+      score += scoreTagMatches(tagMatches, tagWeight, tagWeights);
       reasons.push(...tagMatches.map((tag) => `tag:${tag}`));
       if (matches) {
         matches.tags = mergeUnique(matches.tags, tagMatches);
@@ -1945,7 +2012,7 @@ function buildToolMatch(
     const rankResult = ranker(tool, {
       text: normalizedText,
       preferredTags,
-      tagBoosts,
+      tagWeights,
       weights: { tags: tagWeight, text: textWeight },
       index: ensureIndex(),
     });
@@ -2130,21 +2197,21 @@ function collectTagMatches(tool: ArmorerTool, tagSet: Set<string>): string[] {
 
 function buildTagSet(
   preferredTags: readonly string[],
-  tagBoosts: Record<string, number>,
+  tagWeights: Record<string, number>,
 ): Set<string> {
   const set = new Set(preferredTags);
-  for (const tag of Object.keys(tagBoosts)) {
+  for (const tag of Object.keys(tagWeights)) {
     set.add(tag);
   }
   return set;
 }
 
-function normalizeTagBoosts(
-  boosts: Record<string, number> | undefined,
+function normalizeTagWeights(
+  weights: Record<string, number> | undefined,
 ): Record<string, number> {
-  if (!boosts) return {};
+  if (!weights) return {};
   const normalized: Record<string, number> = {};
-  for (const [tag, weight] of Object.entries(boosts)) {
+  for (const [tag, weight] of Object.entries(weights)) {
     if (!Number.isFinite(weight)) continue;
     const key = String(tag).toLowerCase();
     normalized[key] = weight;
@@ -2155,11 +2222,11 @@ function normalizeTagBoosts(
 function scoreTagMatches(
   matches: string[],
   baseWeight: number,
-  tagBoosts: Record<string, number>,
+  tagWeights: Record<string, number>,
 ): number {
   return matches.reduce((total, tag) => {
-    const boost = tagBoosts[tag.toLowerCase()] ?? 0;
-    return total + baseWeight + boost;
+    const weight = tagWeights[tag.toLowerCase()] ?? 0;
+    return total + baseWeight + weight;
   }, 0);
 }
 
@@ -2167,7 +2234,7 @@ function scoreTagMatchesValue(
   tool: ArmorerTool,
   tagSet: Set<string>,
   baseWeight: number,
-  tagBoosts: Record<string, number>,
+  tagWeights: Record<string, number>,
 ): number {
   if (!tagSet.size) {
     return 0;
@@ -2183,7 +2250,7 @@ function scoreTagMatchesValue(
       continue;
     }
     seen.add(tag);
-    score += baseWeight + (tagBoosts[tag] ?? 0);
+    score += baseWeight + (tagWeights[tag] ?? 0);
   }
   return score;
 }
@@ -2346,7 +2413,11 @@ function normalizeLimit(value: number | undefined): number | undefined {
 
 function createToolSummary(
   tool: ArmorerTool,
-  options?: { includeToolConfig?: boolean; includeSchema?: boolean },
+  options?: {
+    includeToolConfiguration?: boolean;
+    includeToolConfig?: boolean;
+    includeSchema?: boolean;
+  },
 ): ToolSummary {
   const summary: ToolSummary = {
     name: tool.name,
@@ -2365,7 +2436,7 @@ function createToolSummary(
   if (options?.includeSchema) {
     summary.schema = tool.schema;
   }
-  if (options?.includeToolConfig) {
+  if (options?.includeToolConfiguration || options?.includeToolConfig) {
     summary.configuration = tool.configuration;
   }
   return summary;
@@ -2471,6 +2542,76 @@ function isIterable(value: unknown): value is Iterable<ArmorerTool> {
     value !== null &&
     Symbol.iterator in (value as Record<string, unknown>)
   );
+}
+
+function createQueryCacheKey(
+  criteria: ToolQuery | undefined,
+  toolsCount: number,
+): string {
+  const parts: string[] = [`count:${toolsCount}`];
+  if (!criteria) {
+    return parts.join('|');
+  }
+  if (!isCacheableCriteria(criteria)) {
+    return `no-cache:${Date.now()}`;
+  }
+  parts.push(`criteria:${stableStringify(criteria)}`);
+  return parts.join('|');
+}
+
+function isCacheableCriteria(criteria: ToolQuery): boolean {
+  if (criteria.metadata?.predicate) {
+    return false;
+  }
+  if (criteria.predicate) {
+    return false;
+  }
+  if (criteria.schema?.matches) {
+    return false;
+  }
+  return isCacheableValue(criteria);
+}
+
+function isCacheableValue(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  const valueType = typeof value;
+  if (valueType === 'string' || valueType === 'number' || valueType === 'boolean') {
+    return true;
+  }
+  if (valueType === 'function' || valueType === 'symbol' || valueType === 'bigint') {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.every((entry) => isCacheableValue(entry));
+  }
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  return Object.values(value).every((entry) => isCacheableValue(entry));
+}
+
+function stableStringify(value: unknown): string {
+  if (value === undefined) return 'null';
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(',')}]`;
+  }
+  if (!isPlainObject(value)) {
+    return JSON.stringify(value);
+  }
+  const obj = value;
+  const keys = Object.keys(obj).sort();
+  const entries: string[] = [];
+  for (const key of keys) {
+    const entryValue = obj[key];
+    if (entryValue === undefined) {
+      continue;
+    }
+    entries.push(`${JSON.stringify(key)}:${stableStringify(entryValue)}`);
+  }
+  return `{${entries.join(',')}}`;
 }
 
 function isToolRegistered(registry: ToolRegistryLike, tool: ArmorerTool): boolean {

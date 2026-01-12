@@ -1,6 +1,7 @@
 import { createEventTarget } from 'event-emission';
 import { z } from 'zod';
 
+import type { Armorer } from './create-armorer';
 import { errorString, normalizeError } from './errors';
 import type {
   ArmorerTool,
@@ -37,13 +38,16 @@ export interface CreateToolOptions<
   E extends ToolEventsMap = DefaultToolEvents,
   Tags extends readonly string[] = readonly string[],
   M extends ToolMetadata | undefined = undefined,
+  TContext extends ToolContext<E> = ToolContext<E>,
+  TParameters extends Record<string, unknown> = TInput,
+  TReturn = TOutput,
 > {
   name: string;
   description: string;
-  schema?: z.ZodType<TInput> | z.ZodRawShape;
+  schema?: z.ZodType<TParameters> | z.ZodRawShape;
   execute:
-    | ((params: TInput, context: ToolContext<E>) => Promise<TOutput>)
-    | Promise<(params: TInput, context: ToolContext<E>) => Promise<TOutput>>;
+    | ((params: TParameters, context: TContext) => Promise<TReturn>)
+    | Promise<(params: TParameters, context: TContext) => Promise<TReturn>>;
   timeoutMs?: number;
   tags?: NormalizeTagsOption<Tags>;
   metadata?: M;
@@ -111,18 +115,38 @@ export function createTool<
   E extends ToolEventsMap = DefaultToolEvents,
   Tags extends readonly string[] = readonly string[],
   M extends ToolMetadata | undefined = undefined,
->({
-  name,
-  description,
-  schema: toolSchema,
-  execute: fn,
-  tags,
-  metadata: customMetadata,
-  diagnostics,
-}: CreateToolOptions<TInput, TOutput, E, Tags, M>): ArmorerTool {
+  TContext extends ToolContext<E> = ToolContext<E>,
+  TParameters extends Record<string, unknown> = TInput,
+  TReturn = TOutput,
+>(
+  options: CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
+  armorer?: Armorer,
+): ArmorerTool;
+export function createTool<
+  TInput extends Record<string, unknown> = Record<string, never>,
+  TOutput = unknown,
+  E extends ToolEventsMap = DefaultToolEvents,
+  Tags extends readonly string[] = readonly string[],
+  M extends ToolMetadata | undefined = undefined,
+  TContext extends ToolContext<E> = ToolContext<E>,
+  TParameters extends Record<string, unknown> = TInput,
+  TReturn = TOutput,
+>(
+  {
+    name,
+    description,
+    schema: toolSchema,
+    execute: fn,
+    timeoutMs,
+    tags,
+    metadata: customMetadata,
+    diagnostics,
+  }: CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
+  armorer?: Armorer,
+): ArmorerTool {
   const normalizedSchema = normalizeSchema(toolSchema);
   const schema = normalizedSchema as unknown as ToolParametersSchema;
-  const typedSchema = normalizedSchema as unknown as z.ZodType<TInput>;
+  const typedSchema = normalizedSchema as unknown as z.ZodType<TParameters>;
 
   const hub = createEventTarget<E>();
   const {
@@ -148,29 +172,33 @@ export function createTool<
     toolCall: ToolCallWithArguments,
     options?: ToolExecuteOptions,
   ): Promise<ToolResult> => {
-    const executeOptions: { timeoutMs?: number; signal?: MinimalAbortSignal } = {};
-    if (options?.signal) {
-      executeOptions.signal = options.signal;
-    }
+    const resolvedTimeoutMs = options?.timeoutMs ?? timeoutMs;
+    const executeOptions =
+      options?.signal || resolvedTimeoutMs !== undefined
+        ? {
+            ...(options?.signal ? { signal: options.signal } : {}),
+            ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
+          }
+        : undefined;
     return executeInner(normalizeToolCall(toolCall), executeOptions);
   };
 
   const executeParams = async (
-    params: TInput,
+    params: TParameters,
     options?: ToolExecuteOptions,
-  ): Promise<TOutput> => {
-    const toolCall = createToolCall<TInput>(name, params);
+  ): Promise<TReturn> => {
+    const toolCall = createToolCall<TParameters>(name, params);
     const result = await executeCall(toolCall, options);
     if (result.error) {
       throw new Error(result.error);
     }
-    return result.result as TOutput;
+    return result.result as TReturn;
   };
 
   const execute = (
-    input: ToolCallWithArguments | TInput,
+    input: ToolCallWithArguments | TParameters,
     options?: ToolExecuteOptions,
-  ): Promise<ToolResult | TOutput> => {
+  ): Promise<ToolResult | TReturn> => {
     if (looksLikeToolCall(input, name)) {
       return executeCall(input, options);
     }
@@ -221,7 +249,7 @@ export function createTool<
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
       }
-      const parsed = schema.parse(toolCall.arguments) as TInput;
+      const parsed = schema.parse(toolCall.arguments) as TParameters;
       const typedToolCall = { ...toolCall, arguments: parsed } as ToolCallWithArguments;
       const parsedDetail = { toolCall: typedToolCall, configuration };
       emit('validate-success', { ...parsedDetail, params: toolCall.arguments, parsed });
@@ -236,12 +264,23 @@ export function createTool<
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
       }
-      const runner = resolvedExecute(parsed, {
+      // Merge armorer context if tool was created with an armorer that has context
+      const armorerContext = armorer?.getContext?.();
+
+      const toolContext: ToolContext<E> = {
         dispatch: dispatchEvent,
         meta,
         toolCall: typedToolCall,
         configuration,
-      });
+        ...(options.signal ? { signal: options.signal } : {}),
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+        ...(armorerContext || {}),
+      };
+
+      // `TContext` may be a subtype of `ToolContext<E>` (e.g. with extra fields).
+      // At runtime we can only guarantee the base ToolContext shape plus any armorer context,
+      // so we cast to avoid `exactOptionalPropertyTypes` assignability issues.
+      const runner = resolvedExecute(parsed, toolContext as unknown as TContext);
       const timed =
         typeof options.timeoutMs === 'number'
           ? withTimeout(runner, options.timeoutMs)
@@ -337,14 +376,14 @@ export function createTool<
       )
     : undefined;
 
-  const callable = async (params: unknown) => executeParams(params as TInput);
+  const callable = async (params: unknown) => executeParams(params as TParameters);
 
   configuration = {
     name,
     description,
     schema: typedSchema,
     parameters: typedSchema,
-    execute: async (params) => executeParams(params as TInput),
+    execute: async (params) => executeParams(params as TParameters),
   };
   if (normalizedTags) {
     configuration.tags = normalizedTags;
@@ -367,9 +406,9 @@ export function createTool<
     schema: typedSchema,
     parameters: typedSchema,
     execute,
-    rawExecute: async (params: unknown, context: ToolContext<E>) => {
+    rawExecute: async (params: unknown, context: TContext) => {
       const resolved = await resolveExecute();
-      return resolved(params as TInput, context);
+      return resolved(params as TParameters, context);
     },
     configuration,
     // Event listener methods
@@ -430,17 +469,25 @@ export function createTool<
 
   (bag as any).executeWith = (options: ToolExecuteWithOptions) => {
     const toolCall = createToolCall(name, options.params, options.callId);
-    const executeOptions: { timeoutMs?: number; signal?: MinimalAbortSignal } = {};
-    if (typeof options.timeoutMs === 'number') {
-      executeOptions.timeoutMs = options.timeoutMs;
-    }
-    if (options.signal) {
-      executeOptions.signal = options.signal;
-    }
+    const resolvedTimeoutMs = options.timeoutMs ?? timeoutMs;
+    const executeOptions =
+      options.signal || resolvedTimeoutMs !== undefined
+        ? {
+            ...(options.signal ? { signal: options.signal } : {}),
+            ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
+          }
+        : undefined;
     return executeInner(toolCall, executeOptions);
   };
 
-  return tool as unknown as ArmorerTool;
+  const finalTool = tool as unknown as ArmorerTool;
+
+  // Register with armorer if provided
+  if (armorer) {
+    armorer.register(finalTool);
+  }
+
+  return finalTool;
 
   function withTimeout<TP>(promise: Promise<TP>, timeoutMs: number): Promise<TP> {
     return new Promise<TP>((resolve, reject) => {

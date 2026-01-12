@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer } from '../src/create-armorer';
+import { createArmorer, createMiddleware } from '../src/create-armorer';
 import { createTool, createToolCall } from '../src/create-tool';
 import type { ToolConfig } from '../src/is-tool';
 import { lazy } from '../src/lazy';
@@ -927,7 +927,7 @@ describe('createArmorer', () => {
         makeConfiguration({ name: 'boosted', tags: ['fast'] }),
       );
 
-      const results = searchTools(armorer, { rank: { tagBoosts: { fast: 4 } } });
+      const results = searchTools(armorer, { rank: { tagWeights: { fast: 4 } } });
       expect(results[0]?.tool.name).toBe('boosted');
       expect(results[0]?.reasons).toContain('tag:fast');
     });
@@ -1359,6 +1359,86 @@ describe('createArmorer', () => {
         text: 'double',
       });
       expect(matches.map((t) => t.name)).toEqual(['double']);
+    });
+  });
+
+  describe('middleware', () => {
+    it('applies synchronous middleware during registration', () => {
+      const middleware = (config: ToolConfig) => ({
+        ...config,
+        description: `[Enhanced] ${config.description}`,
+      });
+
+      const armorer = createArmorer([], { middleware: [middleware] });
+      armorer.register(makeConfiguration({ name: 'test-tool' }));
+
+      const tool = armorer.getTool('test-tool');
+      expect(tool?.description).toBe('[Enhanced] add two numbers');
+    });
+
+    it('throws error for async middleware', () => {
+      const asyncMiddleware = async (config: ToolConfig) => ({
+        ...config,
+        description: `[Async] ${config.description}`,
+      });
+
+      const armorer = createArmorer([], { middleware: [asyncMiddleware as any] });
+      expect(() => armorer.register(makeConfiguration())).toThrow(
+        'Async middleware is not supported. Provide synchronous middleware only.',
+      );
+    });
+  });
+
+  describe('tool replacement', () => {
+    it('replaces an existing tool when re-registering with same name', () => {
+      const armorer = createArmorer();
+
+      armorer.register(
+        makeConfiguration({ name: 'calc', execute: async ({ a, b }) => a + b }),
+      );
+      expect(armorer.getTool('calc')).toBeDefined();
+
+      // Register a replacement tool with the same name
+      armorer.register(
+        makeConfiguration({ name: 'calc', execute: async ({ a, b }) => a * b }),
+      );
+
+      // Should still have exactly one tool
+      expect(armorer.tools()).toHaveLength(1);
+    });
+  });
+
+  describe('createMiddleware helper', () => {
+    it('creates a typed middleware function', () => {
+      const middleware = createMiddleware((config) => ({
+        ...config,
+        metadata: { ...config.metadata, enhanced: true },
+      }));
+
+      const armorer = createArmorer([], { middleware: [middleware] });
+      armorer.register(makeConfiguration({ name: 'test' }));
+
+      const tool = armorer.getTool('test');
+      expect(tool?.metadata).toEqual({ enhanced: true });
+    });
+  });
+
+  describe('multi-tool execution', () => {
+    it('executes multiple tools and returns results in order', async () => {
+      const armorer = createArmorer();
+      armorer.register(
+        makeConfiguration({ name: 'add', execute: async ({ a, b }) => a + b }),
+        makeConfiguration({ name: 'subtract', execute: async ({ a, b }) => a - b }),
+      );
+
+      const results = await armorer.execute([
+        { name: 'add', arguments: { a: 10, b: 5 } },
+        { name: 'subtract', arguments: { a: 10, b: 5 } },
+      ]);
+
+      expect(results).toHaveLength(2);
+      expect(results[0]?.result).toBe(15);
+      expect(results[1]?.result).toBe(5);
     });
   });
 });

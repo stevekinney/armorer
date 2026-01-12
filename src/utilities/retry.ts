@@ -57,15 +57,42 @@ export function retry<TTool extends AnyTool>(
     schema: tool.schema as z.ZodType<InferToolInput<TTool>>,
     async execute(params, context) {
       const input = params as InferToolInput<TTool>;
+      const executeOptions =
+        context.signal || context.timeoutMs !== undefined
+          ? {
+              ...(context.signal ? { signal: context.signal } : {}),
+              ...(context.timeoutMs !== undefined
+                ? { timeoutMs: context.timeoutMs }
+                : {}),
+            }
+          : undefined;
+      const runTool =
+        typeof (tool as { execute?: unknown }).execute === 'function'
+          ? (value: InferToolInput<TTool>) =>
+              (
+                tool as {
+                  execute: (
+                    value: InferToolInput<TTool>,
+                    options?: typeof executeOptions,
+                  ) => Promise<InferToolOutput<TTool>>;
+                }
+              ).execute(value, executeOptions)
+          : (value: InferToolInput<TTool>) => tool(value);
       let attempt = 0;
       let lastError: unknown;
       let rethrowOriginal = false;
 
       while (attempt < attempts) {
         attempt += 1;
+        if (context.signal?.aborted) {
+          throw toError(context.signal.reason ?? new Error('Cancelled'));
+        }
         try {
-          return await tool(input);
+          return await runTool(input);
         } catch (error) {
+          if (context.signal?.aborted) {
+            throw toError(context.signal.reason ?? error);
+          }
           lastError = error;
           if (attempt >= attempts) break;
 
@@ -83,13 +110,13 @@ export function retry<TTool extends AnyTool>(
 
           const waitMs = resolveRetryDelay(attempt, delayMs, backoff, maxDelayMs);
           if (waitMs > 0) {
-            await wait(waitMs);
+            await wait(waitMs, context.signal);
           }
         }
       }
 
       if (rethrowOriginal) {
-        throw lastError;
+        throw toError(lastError);
       }
       throw toError(lastError ?? new Error('retry() failed without an error'));
     },
@@ -133,6 +160,25 @@ function toError(error: unknown): Error {
   }
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function wait(
+  ms: number,
+  signal?: ToolContext<DefaultToolEvents>['signal'],
+): Promise<void> {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  if (signal.aborted) {
+    return Promise.reject(toError(signal.reason ?? new Error('Cancelled')));
+  }
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(id);
+      reject(toError(signal.reason ?? new Error('Cancelled')));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
