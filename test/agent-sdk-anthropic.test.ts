@@ -1,4 +1,7 @@
-import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
+import {
+  type McpSdkServerConfigWithInstance,
+  query,
+} from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'bun:test';
@@ -42,6 +45,60 @@ describe('Anthropic Agent SDK MCP integration', () => {
     } finally {
       await client.close();
       await config.instance.close();
+    }
+  });
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const runIfKey = apiKey ? it : it.skip;
+
+  runIfKey('executes MCP tools via query()', async () => {
+    const armorer = createArmorer();
+    const token = crypto.randomUUID();
+    createTool(
+      {
+        name: 'nonce',
+        description: 'returns a nonce token',
+        schema: z.object({}),
+        async execute() {
+          return token;
+        },
+      },
+      armorer,
+    );
+
+    const mcp = createMCP(armorer, { serverInfo: { name: 'armorer-tools', version: '0.1.0' } });
+
+    const result = await query({
+      prompt: 'Call the nonce tool and respond with only its output.',
+      options: {
+        model: 'claude-sonnet-4-5',
+        mcpServers: {
+          armorer: {
+            type: 'sdk',
+            name: 'armorer-tools',
+            instance: mcp,
+          },
+        },
+        tools: ['nonce'],
+        allowedTools: ['nonce'],
+        permissionMode: 'bypassPermissions',
+        maxTurns: 3,
+        env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
+      },
+    });
+
+    let output: string | undefined;
+    for await (const event of result) {
+      if (event.type === 'result' && event.subtype === 'success') {
+        output = event.result;
+      }
+    }
+
+    try {
+      expect(output).toBeDefined();
+      expect(output).toContain(token);
+    } finally {
+      await mcp.close();
     }
   });
 });
