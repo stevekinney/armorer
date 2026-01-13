@@ -1,13 +1,14 @@
+import { dirname,join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { MCPServerStdio, MCPServerStreamableHttp } from '@openai/agents';
 import { describe, expect, it } from 'bun:test';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 
 import { createArmorer } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
 import { createMCP } from '../src/mcp';
-import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { z } from 'zod';
 
 const fixturePath = () => {
   const currentDir = dirname(fileURLToPath(import.meta.url));
