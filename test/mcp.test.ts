@@ -1,5 +1,9 @@
+import { PassThrough } from 'node:stream';
+
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/stdio.js';
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
@@ -11,6 +15,65 @@ type ConnectedMcp = {
   client: Client;
   server: ReturnType<typeof createMCP>;
 };
+
+class LoopbackTransport {
+  private readonly readBuffer = new ReadBuffer();
+  private readonly onData: (chunk: Buffer) => void;
+  private readonly onError: (error: unknown) => void;
+  private started = false;
+
+  onmessage?: (message: unknown) => void;
+  onclose?: () => void;
+  onerror?: (error: unknown) => void;
+
+  constructor(
+    private readonly readable: PassThrough,
+    private readonly writable: PassThrough,
+  ) {
+    this.onData = (chunk: Buffer) => {
+      this.readBuffer.append(chunk);
+      while (true) {
+        try {
+          const message = this.readBuffer.readMessage();
+          if (message === null) break;
+          this.onmessage?.(message);
+        } catch (error) {
+          this.onerror?.(error);
+        }
+      }
+    };
+    this.onError = (error: unknown) => {
+      this.onerror?.(error);
+    };
+  }
+
+  async start() {
+    if (this.started) {
+      throw new Error('LoopbackTransport already started');
+    }
+    this.started = true;
+    this.readable.on('data', this.onData);
+    this.readable.on('error', this.onError);
+  }
+
+  async close() {
+    this.readable.off('data', this.onData);
+    this.readable.off('error', this.onError);
+    this.readBuffer.clear();
+    this.onclose?.();
+  }
+
+  send(message: unknown) {
+    return new Promise<void>((resolve) => {
+      const json = serializeMessage(message);
+      if (this.writable.write(json)) {
+        resolve();
+      } else {
+        this.writable.once('drain', resolve);
+      }
+    });
+  }
+}
 
 const connect = async (armorer: ReturnType<typeof createArmorer>, options = {}) => {
   const server = createMCP(armorer, options);
@@ -95,6 +158,139 @@ describe('createMCP', () => {
     }
   });
 
+  it('uses tool metadata as _meta when not overridden', async () => {
+    const armorer = createArmorer();
+    createTool(
+      {
+        name: 'meta-default',
+        description: 'uses metadata by default',
+        schema: z.object({}),
+        metadata: { owner: 'armorer', scope: 'test' },
+        async execute() {
+          return { ok: true };
+        },
+      },
+      armorer,
+    );
+
+    const { client, server } = await connect(armorer);
+
+    try {
+      const tools = await client.listTools();
+      const tool = tools.tools.find((entry) => entry.name === 'meta-default');
+      expect(tool?._meta).toEqual({ owner: 'armorer', scope: 'test' });
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('ignores non-object metadata for _meta', async () => {
+    const armorer = createArmorer();
+    createTool(
+      {
+        name: 'meta-invalid',
+        description: 'metadata is an array',
+        schema: z.object({}),
+        metadata: [] as unknown as Record<string, unknown>,
+        async execute() {
+          return { ok: true };
+        },
+      },
+      armorer,
+    );
+
+    const { client, server } = await connect(armorer);
+
+    try {
+      const tools = await client.listTools();
+      const tool = tools.tools.find((entry) => entry.name === 'meta-invalid');
+      expect(tool?._meta).toBeUndefined();
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('prefers toolConfig over metadata mcp settings', async () => {
+    const armorer = createArmorer();
+    createTool(
+      {
+        name: 'override-config',
+        description: 'should be overridden',
+        schema: z.object({}),
+        metadata: {
+          mcp: {
+            title: 'meta-title',
+            description: 'meta-description',
+            inputSchema: z.object({ fromMeta: z.boolean() }),
+            outputSchema: z.object({ meta: z.boolean() }),
+            meta: { source: 'metadata' },
+          },
+        },
+        async execute() {
+          return { ok: true };
+        },
+      },
+      armorer,
+    );
+
+    const { client, server } = await connect(armorer, {
+      toolConfig: () => ({
+        title: 'override-title',
+        description: 'override-description',
+        inputSchema: z.object({ fromConfig: z.string() }),
+        outputSchema: z.object({ config: z.boolean() }),
+        meta: { source: 'config' },
+      }),
+    });
+
+    try {
+      const tools = await client.listTools();
+      const tool = tools.tools.find((entry) => entry.name === 'override-config');
+      expect(tool?.title).toBe('override-title');
+      expect(tool?.description).toBe('override-description');
+      expect(tool?._meta).toEqual({ source: 'config' });
+      expect(tool?.inputSchema?.type).toBe('object');
+      expect(tool?.inputSchema?.properties).toHaveProperty('fromConfig');
+      expect(tool?.outputSchema?.properties).toHaveProperty('config');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('accepts non-object input schemas via toolConfig without falling back', async () => {
+    const armorer = createArmorer();
+    createTool(
+      {
+        name: 'string-input',
+        description: 'accepts string input',
+        schema: z.object({ fromTool: z.boolean() }),
+        async execute() {
+          return { ok: true };
+        },
+      },
+      armorer,
+    );
+
+    const { client, server } = await connect(armorer, {
+      toolConfig: () => ({
+        inputSchema: z.string(),
+      }),
+    });
+
+    try {
+      const tools = await client.listTools();
+      const tool = tools.tools.find((entry) => entry.name === 'string-input');
+      expect(tool?.inputSchema?.type).toBe('object');
+      expect(tool?.inputSchema?.properties).not.toHaveProperty('fromTool');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it('executes tools and returns structured content when output is an object', async () => {
     const armorer = createArmorer();
     createTool(
@@ -116,6 +312,39 @@ describe('createMCP', () => {
       expect(result.structuredContent).toEqual({ ok: true });
       expect(result.content?.[0]?.type).toBe('text');
       expect(result.content?.[0]?.text).toContain('"ok": true');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('handles parallel tool calls', async () => {
+    const armorer = createArmorer();
+    let calls = 0;
+    createTool(
+      {
+        name: 'echo',
+        description: 'echoes the id after a delay',
+        schema: z.object({ id: z.number() }),
+        async execute({ id }) {
+          calls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return { id };
+        },
+      },
+      armorer,
+    );
+
+    const { client, server } = await connect(armorer);
+
+    try {
+      const [first, second] = await Promise.all([
+        client.callTool({ name: 'echo', arguments: { id: 1 } }),
+        client.callTool({ name: 'echo', arguments: { id: 2 } }),
+      ]);
+      expect(first.structuredContent).toEqual({ id: 1 });
+      expect(second.structuredContent).toEqual({ id: 2 });
+      expect(calls).toBe(2);
     } finally {
       await client.close();
       await server.close();
@@ -155,6 +384,40 @@ describe('createMCP', () => {
       expect(tools.tools.find((entry) => entry.name === 'swap')?.description).toBe(
         'second description',
       );
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('supports stdio transports via a loopback pair', async () => {
+    const armorer = createArmorer();
+    createTool(
+      {
+        name: 'ping',
+        description: 'ping tool',
+        schema: z.object({}),
+        async execute() {
+          return { ok: true };
+        },
+      },
+      armorer,
+    );
+
+    const server = createMCP(armorer);
+    const client = new Client({ name: 'armorer-test-client', version: '0.0.0' });
+
+    const clientToServer = new PassThrough();
+    const serverToClient = new PassThrough();
+    const serverTransport = new StdioServerTransport(clientToServer, serverToClient);
+    const clientTransport = new LoopbackTransport(serverToClient, clientToServer);
+
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    try {
+      const tools = await client.listTools();
+      expect(tools.tools.some((entry) => entry.name === 'ping')).toBe(true);
     } finally {
       await client.close();
       await server.close();
