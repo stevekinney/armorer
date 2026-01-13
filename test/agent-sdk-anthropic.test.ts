@@ -49,7 +49,9 @@ describe('Anthropic Agent SDK MCP integration', () => {
   });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const runIfKey = apiKey ? it : it.skip;
+  const runIfKey = apiKey
+    ? (name: string, fn: Parameters<typeof it>[1]) => it(name, fn, 30_000)
+    : it.skip;
 
   runIfKey('executes MCP tools via query()', async () => {
     const armorer = createArmorer();
@@ -68,6 +70,7 @@ describe('Anthropic Agent SDK MCP integration', () => {
 
     const mcp = createMCP(armorer, { serverInfo: { name: 'armorer-tools', version: '0.1.0' } });
 
+    let stderrOutput = '';
     const result = await query({
       prompt: 'Call the nonce tool and respond with only its output.',
       options: {
@@ -82,7 +85,11 @@ describe('Anthropic Agent SDK MCP integration', () => {
         tools: ['nonce'],
         allowedTools: ['nonce'],
         permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
         maxTurns: 3,
+        stderr: (data) => {
+          stderrOutput += data;
+        },
         env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
       },
     });
@@ -97,6 +104,11 @@ describe('Anthropic Agent SDK MCP integration', () => {
     try {
       expect(output).toBeDefined();
       expect(output).toContain(token);
+    } catch (error) {
+      if (stderrOutput.trim()) {
+        throw new Error(`Claude Code stderr:\n${stderrOutput}`);
+      }
+      throw error;
     } finally {
       await mcp.close();
     }
