@@ -216,15 +216,12 @@ await mcp.connect(new StdioServerTransport());
 
 ```typescript
 // agent.ts
-import { Agent, Runner } from '@openai/agents';
-import { MCPServerStdio } from '@openai/agents/mcp';
+import { Agent, MCPServerStdio, run } from '@openai/agents';
 
 const server = new MCPServerStdio({
   name: 'armorer-tools',
-  params: {
-    command: 'node',
-    args: ['dist/mcp-server.js'],
-  },
+  command: 'node',
+  args: ['dist/mcp-server.js'],
 });
 
 const agent = new Agent({
@@ -233,8 +230,8 @@ const agent = new Agent({
   mcpServers: [server],
 });
 
-const result = await Runner.run(agent, 'Add 7 and 22.');
-console.log(result.final_output);
+const result = await run(agent, 'Add 7 and 22.');
+console.log(result.finalOutput);
 ```
 
 #### Streamable HTTP
@@ -242,16 +239,15 @@ console.log(result.final_output);
 Expose Armorer over HTTP and connect via the Streamable HTTP MCP server.
 
 ```typescript
-import { Agent, Runner } from '@openai/agents';
-import { MCPServerStreamableHttp } from '@openai/agents/mcp';
+import { Agent, MCPServerStreamableHttp, run } from '@openai/agents';
 
 const server = new MCPServerStreamableHttp({
+  url: 'http://localhost:8000/mcp',
   name: 'armorer-tools',
-  params: {
-    url: 'http://localhost:8000/mcp',
+  requestInit: {
     headers: { Authorization: `Bearer ${process.env.MCP_SERVER_TOKEN}` },
   },
-  cache_tools_list: true,
+  cacheToolsList: true,
 });
 
 const agent = new Agent({
@@ -260,8 +256,8 @@ const agent = new Agent({
   mcpServers: [server],
 });
 
-const result = await Runner.run(agent, 'Add 7 and 22.');
-console.log(result.final_output);
+const result = await run(agent, 'Add 7 and 22.');
+console.log(result.finalOutput);
 ```
 
 ### Anthropic Agent SDK (`@anthropic-ai/claude-agent-sdk`)
