@@ -23,13 +23,16 @@ import type {
   ArmorerTool,
   DefaultToolEvents,
   MinimalAbortSignal,
+  OutputValidationMode,
   ToolCallWithArguments,
   ToolConfig,
+  ToolDigestOptions,
   ToolEventsMap,
   ToolExecuteOptions,
   ToolMetadata,
   ToolParametersSchema,
   ToolPolicyContext,
+  ToolPolicyContextProvider,
   ToolPolicyDecision,
   ToolPolicyHooks,
 } from './is-tool';
@@ -88,6 +91,10 @@ export interface ArmorerOptions {
   context?: ArmorerContext;
   embed?: Embedder;
   policy?: ToolPolicyHooks;
+  policyContext?: ToolPolicyContextProvider | Record<string, unknown>;
+  digests?: ToolDigestOptions;
+  outputValidationMode?: OutputValidationMode;
+  budget?: { maxCalls?: number; maxDurationMs?: number };
   concurrency?: number;
   telemetry?: boolean;
   readOnly?: boolean;
@@ -154,6 +161,13 @@ export interface ArmorerEvents {
   };
   'execute-success': { tool: ArmorerTool; call: ToolCall; result: unknown };
   'execute-error': { tool: ArmorerTool; call: ToolCall; error: unknown };
+  'output-validate-success': { tool: ArmorerTool; call: ToolCall; result: unknown };
+  'output-validate-error': {
+    tool: ArmorerTool;
+    call: ToolCall;
+    result: unknown;
+    error: unknown;
+  };
   settled: { tool: ArmorerTool; call: ToolCall; result?: unknown; error?: unknown };
   'policy-denied': {
     tool: ArmorerTool;
@@ -166,6 +180,7 @@ export interface ArmorerEvents {
     call: ToolCall;
     params: unknown;
     startedAt: number;
+    inputDigest?: string;
   };
   'tool.finished': {
     tool: ArmorerTool;
@@ -177,7 +192,12 @@ export interface ArmorerEvents {
     result?: unknown;
     error?: unknown;
     reason?: string;
+    errorCategory?: 'denied' | 'failed' | 'transient';
+    inputDigest?: string;
+    outputDigest?: string;
+    outputValidation?: { success: boolean; error?: unknown };
   };
+  'budget-exceeded': { tool: ArmorerTool; call: ToolCall; reason: string };
   progress: { tool: ArmorerTool; call: ToolCall; percent?: number; message?: string };
   'output-chunk': { tool: ArmorerTool; call: ToolCall; chunk: unknown };
   log: {
@@ -299,7 +319,13 @@ export function createArmorer(
   const allowMutation = options.allowMutation ?? !readOnly;
   const telemetryEnabled = options.telemetry === true;
   const registryPolicy = options.policy;
+  const registryPolicyContext = options.policyContext;
+  const registryDigests = options.digests;
+  const registryOutputValidationMode = options.outputValidationMode;
   const registryConcurrency = options.concurrency;
+  const budget = options.budget;
+  const budgetStart = Date.now();
+  let budgetCalls = 0;
   const embedder = options.embed ? createCachedEmbedder(options.embed) : undefined;
   const buildTool =
     typeof options.toolFactory === 'function'
@@ -390,6 +416,9 @@ export function createArmorer(
       parameters: schema,
       execute: options.execute as ToolConfig['execute'],
     };
+    if (options.outputSchema) {
+      configuration.outputSchema = options.outputSchema;
+    }
     if (normalizedTags) {
       configuration.tags = normalizedTags;
     }
@@ -398,6 +427,15 @@ export function createArmorer(
     }
     if (options.policy) {
       configuration.policy = options.policy;
+    }
+    if (options.policyContext) {
+      configuration.policyContext = options.policyContext;
+    }
+    if (options.digests !== undefined) {
+      configuration.digests = options.digests;
+    }
+    if (options.outputValidationMode) {
+      configuration.outputValidationMode = options.outputValidationMode;
     }
     if (options.concurrency !== undefined) {
       configuration.concurrency = options.concurrency;
@@ -439,6 +477,25 @@ export function createArmorer(
 
       emit('call', { tool, call: toolCall });
 
+      const budgetReason = checkBudget(budget, budgetStart, budgetCalls);
+      if (budgetReason) {
+        const denied: ToolResult = {
+          callId: toolCall.id,
+          outcome: 'error',
+          content: budgetReason,
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          result: undefined,
+          error: budgetReason,
+          errorCategory: 'denied',
+        };
+        emit('budget-exceeded', { tool, call: toolCall, reason: budgetReason });
+        emit('error', { tool, result: denied });
+        return denied;
+      }
+
+      budgetCalls += 1;
+
       // Set up event listeners to bubble up tool events when executing multiple tools
       const cleanup: (() => void)[] = [];
       if (isMultiple) {
@@ -448,6 +505,8 @@ export function createArmorer(
           'execute-start',
           'validate-success',
           'validate-error',
+          'output-validate-success',
+          'output-validate-error',
           'execute-success',
           'execute-error',
           'settled',
@@ -557,6 +616,9 @@ export function createArmorer(
         schema: configuration.schema,
         execute: configuration.execute,
       };
+      if (configuration.outputSchema) {
+        result.outputSchema = configuration.outputSchema;
+      }
       if (configuration.tags) {
         result.tags = [...configuration.tags];
       }
@@ -565,6 +627,15 @@ export function createArmorer(
       }
       if (configuration.policy) {
         result.policy = configuration.policy;
+      }
+      if (configuration.policyContext) {
+        result.policyContext = configuration.policyContext;
+      }
+      if (configuration.digests !== undefined) {
+        result.digests = configuration.digests;
+      }
+      if (configuration.outputValidationMode) {
+        result.outputValidationMode = configuration.outputValidationMode;
       }
       if (configuration.concurrency !== undefined) {
         result.concurrency = configuration.concurrency;
@@ -617,6 +688,13 @@ export function createArmorer(
       readOnly,
       allowMutation,
     });
+    const resolvedPolicyContext = mergePolicyContexts(
+      registryPolicyContext,
+      configuration.policyContext,
+    );
+    const resolvedDigests = resolveToolDigests(configuration, registryDigests);
+    const resolvedOutputValidationMode =
+      configuration.outputValidationMode ?? registryOutputValidationMode;
     const resolvedConcurrency = resolveToolConcurrency(
       configuration,
       registryConcurrency,
@@ -643,8 +721,20 @@ export function createArmorer(
     if (configuration.metadata) {
       options.metadata = configuration.metadata;
     }
+    if (configuration.outputSchema) {
+      options.outputSchema = configuration.outputSchema;
+    }
     if (resolvedPolicy) {
       options.policy = resolvedPolicy;
+    }
+    if (resolvedPolicyContext) {
+      options.policyContext = resolvedPolicyContext;
+    }
+    if (resolvedDigests) {
+      options.digests = resolvedDigests;
+    }
+    if (resolvedOutputValidationMode) {
+      options.outputValidationMode = resolvedOutputValidationMode;
     }
     if (resolvedConcurrency !== undefined) {
       options.concurrency = resolvedConcurrency;
@@ -686,6 +776,9 @@ export function createArmorer(
       parameters: normalizedSchema,
       execute: configuration.execute,
     };
+    if (configuration.outputSchema) {
+      result.outputSchema = configuration.outputSchema;
+    }
     if (configuration.tags) {
       result.tags = [...configuration.tags];
     }
@@ -694,6 +787,15 @@ export function createArmorer(
     }
     if (configuration.policy) {
       result.policy = configuration.policy;
+    }
+    if (configuration.policyContext) {
+      result.policyContext = configuration.policyContext;
+    }
+    if (configuration.digests !== undefined) {
+      result.digests = configuration.digests;
+    }
+    if (configuration.outputValidationMode) {
+      result.outputValidationMode = configuration.outputValidationMode;
     }
     if (configuration.concurrency !== undefined) {
       result.concurrency = configuration.concurrency;
@@ -781,6 +883,46 @@ function resolveToolConcurrency(
     return metadataConcurrency;
   }
   return normalizeConcurrency(registryConcurrency);
+}
+
+function resolveToolDigests(
+  configuration: ToolConfig,
+  registryDigests?: ToolDigestOptions,
+): ToolDigestOptions | undefined {
+  if (configuration.digests !== undefined) {
+    return configuration.digests;
+  }
+  return registryDigests;
+}
+
+function mergePolicyContexts(
+  registryContext?: ToolPolicyContextProvider | Record<string, unknown>,
+  toolContext?: ToolPolicyContextProvider,
+): ToolPolicyContextProvider | undefined {
+  const registryProvider = toPolicyContextProvider(registryContext);
+  const toolProvider = toPolicyContextProvider(toolContext);
+  if (!registryProvider && !toolProvider) {
+    return undefined;
+  }
+  return async (context) => {
+    const base = registryProvider ? await registryProvider(context) : undefined;
+    const next = toolProvider ? await toolProvider(context) : undefined;
+    return {
+      ...(base && typeof base === 'object' && !Array.isArray(base) ? base : {}),
+      ...(next && typeof next === 'object' && !Array.isArray(next) ? next : {}),
+    };
+  };
+}
+
+function toPolicyContextProvider(
+  input?: ToolPolicyContextProvider | Record<string, unknown>,
+): ToolPolicyContextProvider | undefined {
+  if (!input) return undefined;
+  if (typeof input === 'function') return input;
+  if (typeof input === 'object' && !Array.isArray(input)) {
+    return () => input;
+  }
+  return undefined;
 }
 
 function normalizeConcurrency(value?: unknown): number | undefined {
@@ -894,6 +1036,24 @@ function normalizeToolSchema(schema: unknown): ToolParametersSchema {
     return z.object(schema as Record<string, z.ZodTypeAny>);
   }
   throw new Error('Tool schema must be a Zod object schema or an object of Zod schemas');
+}
+
+function checkBudget(
+  budget: ArmorerOptions['budget'] | undefined,
+  startedAt: number,
+  calls: number,
+): string | undefined {
+  if (!budget) return undefined;
+  if (typeof budget.maxCalls === 'number' && calls >= budget.maxCalls) {
+    return `Budget exceeded: max calls ${budget.maxCalls}`;
+  }
+  if (typeof budget.maxDurationMs === 'number') {
+    const elapsed = Date.now() - startedAt;
+    if (elapsed >= budget.maxDurationMs) {
+      return `Budget exceeded: max duration ${budget.maxDurationMs}ms`;
+    }
+  }
+  return undefined;
 }
 
 function createLazyExecuteResolver(

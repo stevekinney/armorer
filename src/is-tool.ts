@@ -34,12 +34,16 @@ export interface ToolConfig {
   description: string;
   schema: ToolParametersSchema;
   parameters?: ToolParametersSchema;
+  outputSchema?: z.ZodTypeAny;
   execute:
     | ((params: unknown, context?: unknown) => Promise<unknown>)
     | Promise<(params: unknown, context?: unknown) => Promise<unknown>>;
   tags?: readonly string[];
   metadata?: ToolMetadata;
   policy?: ToolPolicyHooks;
+  policyContext?: ToolPolicyContextProvider;
+  digests?: ToolDigestOptions;
+  outputValidationMode?: OutputValidationMode;
   concurrency?: number;
   diagnostics?: ToolDiagnostics;
 }
@@ -109,6 +113,8 @@ export type ToolPolicyContext = {
   toolName: string;
   toolCall: ToolCall;
   params: unknown;
+  inputDigest?: string;
+  policyContext?: Record<string, unknown>;
   tags?: readonly string[];
   metadata?: ToolMetadata;
   configuration: ToolConfig;
@@ -117,6 +123,9 @@ export type ToolPolicyContext = {
 export type ToolPolicyAfterContext = ToolPolicyContext & {
   outcome: 'success' | 'error' | 'denied';
   result?: unknown;
+  outputDigest?: string;
+  outputValidation?: OutputValidationResult;
+  errorCategory?: 'denied' | 'failed' | 'transient';
   error?: unknown;
   reason?: string;
 };
@@ -126,6 +135,25 @@ export type ToolPolicyHooks = {
     context: ToolPolicyContext,
   ) => ToolPolicyDecision | void | Promise<ToolPolicyDecision | void>;
   afterExecute?: (context: ToolPolicyAfterContext) => void | Promise<void>;
+};
+
+export type ToolPolicyContextProvider = (
+  context: ToolPolicyContext,
+) => Record<string, unknown> | void | Promise<Record<string, unknown> | void>;
+
+export type ToolDigestOptions =
+  | boolean
+  | {
+      input?: boolean;
+      output?: boolean;
+      algorithm?: 'sha256';
+    };
+
+export type OutputValidationMode = 'report' | 'throw';
+
+export type OutputValidationResult = {
+  success: boolean;
+  error?: unknown;
 };
 
 export type DefaultToolEvents = {
@@ -142,7 +170,18 @@ export type DefaultToolEvents = {
   'execute-error': { error: unknown } & ToolEventDetailContext;
   settled: { result?: unknown; error?: unknown } & ToolEventDetailContext;
   'policy-denied': { params: unknown; reason?: string } & ToolEventDetailContext;
-  'tool.started': { params: unknown; startedAt: number } & ToolEventDetailContext;
+  'tool.started': {
+    params: unknown;
+    startedAt: number;
+    inputDigest?: string;
+  } & ToolEventDetailContext;
+  'output-validate-success': {
+    result: unknown;
+  } & ToolEventDetailContext;
+  'output-validate-error': {
+    result: unknown;
+    error: unknown;
+  } & ToolEventDetailContext;
   'tool.finished': {
     status: 'success' | 'error' | 'denied' | 'cancelled';
     durationMs: number;
@@ -151,6 +190,10 @@ export type DefaultToolEvents = {
     result?: unknown;
     error?: unknown;
     reason?: string;
+    errorCategory?: 'denied' | 'failed' | 'transient';
+    inputDigest?: string;
+    outputDigest?: string;
+    outputValidation?: OutputValidationResult;
   } & ToolEventDetailContext;
   progress: { percent?: number; message?: string };
   'output-chunk': { chunk: unknown };

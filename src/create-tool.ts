@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { createEventTarget } from 'event-emission';
 import { z } from 'zod';
 
@@ -7,10 +9,13 @@ import type {
   ArmorerTool,
   DefaultToolEvents,
   MinimalAbortSignal,
+  OutputValidationMode,
+  OutputValidationResult,
   ToolCallWithArguments,
   ToolConfig,
   ToolContext,
   ToolDiagnostics,
+  ToolDigestOptions,
   ToolEventsMap,
   ToolExecuteOptions,
   ToolExecuteWithOptions,
@@ -18,6 +23,7 @@ import type {
   ToolParametersSchema,
   ToolPolicyAfterContext,
   ToolPolicyContext,
+  ToolPolicyContextProvider,
   ToolPolicyDecision,
   ToolPolicyHooks,
   ToolRepairHint,
@@ -49,6 +55,7 @@ export interface CreateToolOptions<
   name: string;
   description: string;
   schema?: z.ZodType<TParameters> | z.ZodRawShape | z.ZodTypeAny;
+  outputSchema?: z.ZodTypeAny;
   execute:
     | ((params: TParameters, context: TContext) => Promise<TReturn>)
     | Promise<(params: TParameters, context: TContext) => Promise<TReturn>>;
@@ -56,6 +63,9 @@ export interface CreateToolOptions<
   tags?: NormalizeTagsOption<Tags>;
   metadata?: M;
   policy?: ToolPolicyHooks;
+  policyContext?: ToolPolicyContextProvider;
+  digests?: ToolDigestOptions;
+  outputValidationMode?: OutputValidationMode;
   concurrency?: number;
   telemetry?: boolean;
   diagnostics?: ToolDiagnostics;
@@ -143,11 +153,15 @@ export function createTool<
     name,
     description,
     schema: toolSchema,
+    outputSchema,
     execute: fn,
     timeoutMs,
     tags,
     metadata: customMetadata,
     policy,
+    policyContext,
+    digests,
+    outputValidationMode,
     concurrency,
     telemetry,
     diagnostics,
@@ -177,6 +191,8 @@ export function createTool<
   const metadataValue = customMetadata ?? (undefined as M);
   const normalizedTags = normalizeTagsWithMetadata(tags, metadataValue, name);
   const telemetryEnabled = telemetry === true;
+  const digestOptions = normalizeDigestOptions(digests);
+  const resolvedOutputValidationMode = outputValidationMode ?? 'report';
   const concurrencyLimit = normalizeConcurrency(
     typeof metadataValue?.concurrency === 'number'
       ? metadataValue.concurrency
@@ -190,14 +206,22 @@ export function createTool<
 
   const resolveExecute = createLazyExecuteResolver(fn);
   const policyHooks = policy;
+  const policyContextProvider = policyContext;
 
-  const buildPolicyContext = (toolCall: ToolCall, params: unknown): ToolPolicyContext => {
+  const buildPolicyContext = (
+    toolCall: ToolCall,
+    params: unknown,
+    inputDigest?: string,
+  ): ToolPolicyContext => {
     const context: ToolPolicyContext = {
       toolName: name,
       toolCall,
       params,
       configuration,
     };
+    if (inputDigest !== undefined) {
+      context.inputDigest = inputDigest;
+    }
     if (normalizedTags.length) {
       context.tags = normalizedTags;
     }
@@ -283,10 +307,21 @@ export function createTool<
   ): Promise<ToolResult> => {
     const baseDetail = { toolCall, configuration };
     const startedAt = telemetryEnabled ? Date.now() : 0;
+    const inputDigest = digestOptions.input
+      ? computeDigest(toolCall.arguments, digestOptions.algorithm)
+      : undefined;
 
     const finishTelemetry = (
       status: 'success' | 'error' | 'denied' | 'cancelled',
-      details: { result?: unknown; error?: unknown; reason?: string } = {},
+      details: {
+        result?: unknown;
+        error?: unknown;
+        reason?: string;
+        errorCategory?: 'denied' | 'failed' | 'transient';
+        inputDigest?: string;
+        outputDigest?: string;
+        outputValidation?: OutputValidationResult;
+      } = {},
     ) => {
       if (!telemetryEnabled) return;
       const finishedAt = Date.now();
@@ -301,7 +336,12 @@ export function createTool<
     };
 
     if (telemetryEnabled) {
-      emit('tool.started', { ...baseDetail, params: toolCall.arguments, startedAt });
+      emit('tool.started', {
+        ...baseDetail,
+        params: toolCall.arguments,
+        startedAt,
+        inputDigest,
+      });
     }
 
     const handleCancellation = (reason?: unknown): ToolResult => {
@@ -321,7 +361,14 @@ export function createTool<
       const errorObj = new Error(message);
       emit('execute-error', { ...baseDetail, error: errorObj });
       emit('settled', { ...baseDetail, error: errorObj });
-      finishTelemetry('cancelled', { error: errorObj });
+      const cancelledDetails: {
+        error?: unknown;
+        inputDigest?: string;
+      } = { error: errorObj };
+      if (inputDigest !== undefined) {
+        cancelledDetails.inputDigest = inputDigest;
+      }
+      finishTelemetry('cancelled', cancelledDetails);
       const callId = toolCall.id;
       return {
         callId,
@@ -331,6 +378,8 @@ export function createTool<
         toolName: name,
         result: undefined,
         error: message,
+        errorCategory: 'failed',
+        inputDigest,
       } as ToolResult;
     };
 
@@ -350,7 +399,13 @@ export function createTool<
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
       }
-      const policyContext = buildPolicyContext(typedToolCall, parsed);
+      const policyContext = buildPolicyContext(typedToolCall, parsed, inputDigest);
+      if (policyContextProvider) {
+        const injected = await policyContextProvider(policyContext);
+        if (injected && typeof injected === 'object' && !Array.isArray(injected)) {
+          policyContext.policyContext = injected;
+        }
+      }
       const decision = await resolvePolicyDecision(policyContext);
       if (decision?.allow === false) {
         const reason = decision.reason ?? 'Policy denied';
@@ -361,9 +416,18 @@ export function createTool<
         await runPolicyAfter({
           ...policyContext,
           outcome: 'denied',
+          errorCategory: 'denied',
           reason,
         });
-        finishTelemetry('denied', { reason });
+        const deniedDetails: {
+          reason?: string;
+          errorCategory?: 'denied';
+          inputDigest?: string;
+        } = { reason, errorCategory: 'denied' };
+        if (inputDigest !== undefined) {
+          deniedDetails.inputDigest = inputDigest;
+        }
+        finishTelemetry('denied', deniedDetails);
         const callId = typedToolCall.id;
         return {
           callId,
@@ -373,6 +437,8 @@ export function createTool<
           toolName: name,
           result: undefined,
           error: reason,
+          errorCategory: 'denied',
+          inputDigest,
         } as ToolResult;
       }
       const meta: { toolName: string; callId?: string } = { toolName: name };
@@ -405,14 +471,58 @@ export function createTool<
           ? withTimeout(runner, options.timeoutMs)
           : runner;
       const value = await raceWithSignal(timed, options.signal);
+      const outputValidation = validateOutput(
+        outputSchema,
+        value,
+        resolvedOutputValidationMode,
+      );
+      if (outputValidation) {
+        if (outputValidation.success) {
+          emit('output-validate-success', { ...parsedDetail, result: value });
+        } else {
+          emit('output-validate-error', {
+            ...parsedDetail,
+            result: value,
+            error: outputValidation.error,
+          });
+          if (resolvedOutputValidationMode === 'throw') {
+            throw outputValidation.error;
+          }
+        }
+      }
+      const outputDigest = digestOptions.output
+        ? computeDigest(value, digestOptions.algorithm)
+        : undefined;
       emit('execute-success', { ...parsedDetail, result: value });
       emit('settled', { ...parsedDetail, result: value });
-      await runPolicyAfter({
+      const policyAfter: ToolPolicyAfterContext = {
         ...policyContext,
         outcome: 'success',
         result: value,
-      });
-      finishTelemetry('success', { result: value });
+      };
+      if (outputDigest !== undefined) {
+        policyAfter.outputDigest = outputDigest;
+      }
+      if (outputValidation !== undefined) {
+        policyAfter.outputValidation = outputValidation;
+      }
+      await runPolicyAfter(policyAfter);
+      const successDetails: {
+        result?: unknown;
+        inputDigest?: string;
+        outputDigest?: string;
+        outputValidation?: OutputValidationResult;
+      } = { result: value };
+      if (inputDigest !== undefined) {
+        successDetails.inputDigest = inputDigest;
+      }
+      if (outputDigest !== undefined) {
+        successDetails.outputDigest = outputDigest;
+      }
+      if (outputValidation !== undefined) {
+        successDetails.outputValidation = outputValidation;
+      }
+      finishTelemetry('success', successDetails);
       const callId = typedToolCall.id;
       return {
         callId,
@@ -421,6 +531,16 @@ export function createTool<
         toolCallId: callId,
         toolName: name,
         result: value,
+        inputDigest,
+        outputDigest,
+        outputValidation: outputValidation
+          ? {
+              success: outputValidation.success,
+              error: outputValidation.error
+                ? errorString(normalizeError(outputValidation.error))
+                : undefined,
+            }
+          : undefined,
       } as ToolResult;
     } catch (error) {
       if (isAbortRejection(error)) {
@@ -475,12 +595,33 @@ export function createTool<
       }
       emit('settled', { ...baseDetail, error });
       const callId = toolCall.id;
+      const errorCategory = classifyError(error);
+      const errorPolicyContext = buildPolicyContext(
+        toolCall,
+        toolCall.arguments,
+        inputDigest,
+      );
+      if (policyContextProvider) {
+        const injected = await policyContextProvider(errorPolicyContext);
+        if (injected && typeof injected === 'object' && !Array.isArray(injected)) {
+          errorPolicyContext.policyContext = injected;
+        }
+      }
       await runPolicyAfter({
-        ...buildPolicyContext(toolCall, toolCall.arguments),
+        ...errorPolicyContext,
         outcome: 'error',
+        errorCategory,
         error,
       });
-      finishTelemetry('error', { error });
+      const errorDetails: {
+        error?: unknown;
+        errorCategory?: 'failed' | 'transient' | 'denied';
+        inputDigest?: string;
+      } = { error, errorCategory };
+      if (inputDigest !== undefined) {
+        errorDetails.inputDigest = inputDigest;
+      }
+      finishTelemetry('error', errorDetails);
       const message = errorString(
         normalizeError(
           error,
@@ -495,6 +636,8 @@ export function createTool<
         toolName: name,
         result: undefined,
         error: message,
+        errorCategory,
+        inputDigest,
       } as ToolResult;
     }
   };
@@ -508,6 +651,9 @@ export function createTool<
     parameters: typedSchema,
     execute: async (params) => executeParams(params as TParameters),
   };
+  if (outputSchema) {
+    configuration.outputSchema = outputSchema;
+  }
   if (normalizedTags.length) {
     configuration.tags = normalizedTags;
   }
@@ -516,6 +662,15 @@ export function createTool<
   }
   if (policyHooks) {
     configuration.policy = policyHooks;
+  }
+  if (policyContextProvider) {
+    configuration.policyContext = policyContextProvider;
+  }
+  if (digests !== undefined) {
+    configuration.digests = digests;
+  }
+  if (outputValidationMode !== undefined) {
+    configuration.outputValidationMode = outputValidationMode;
   }
   if (concurrencyLimit !== undefined) {
     configuration.concurrency = concurrencyLimit;
@@ -532,6 +687,7 @@ export function createTool<
     description,
     schema: typedSchema,
     parameters: typedSchema,
+    outputSchema,
     execute,
     rawExecute: async (params: unknown, context: TContext) => {
       const resolved = await resolveExecute();
@@ -793,6 +949,96 @@ function normalizeSchema(schema: unknown): z.ZodTypeAny {
     return z.object(schema as Record<string, z.ZodTypeAny>);
   }
   throw new Error('Tool schema must be a Zod object schema or an object of Zod schemas');
+}
+
+function normalizeDigestOptions(input?: ToolDigestOptions): {
+  input: boolean;
+  output: boolean;
+  algorithm: 'sha256';
+} {
+  if (!input) {
+    return { input: false, output: false, algorithm: 'sha256' };
+  }
+  if (input === true) {
+    return { input: true, output: true, algorithm: 'sha256' };
+  }
+  return {
+    input: input.input !== false,
+    output: input.output !== false,
+    algorithm: input.algorithm ?? 'sha256',
+  };
+}
+
+function computeDigest(value: unknown, algorithm: 'sha256'): string {
+  const serialized = stableStringify(value);
+  return createHash(algorithm).update(serialized).digest('hex');
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || value === undefined) return String(value);
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Error) {
+    return JSON.stringify({
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+    });
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+    return `{${entries
+      .map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function classifyError(error: unknown): 'failed' | 'transient' {
+  const code = typeof (error as any)?.code === 'string' ? (error as any).code : undefined;
+  const message =
+    typeof (error as any)?.message === 'string'
+      ? (error as any).message.toLowerCase()
+      : '';
+  const transientCodes = new Set([
+    'ETIMEDOUT',
+    'ECONNRESET',
+    'EAI_AGAIN',
+    'ECONNREFUSED',
+    'ENETDOWN',
+    'ENETUNREACH',
+    'EHOSTUNREACH',
+  ]);
+  if (code && transientCodes.has(code)) {
+    return 'transient';
+  }
+  if (message.includes('timeout') || message.includes('rate limit')) {
+    return 'transient';
+  }
+  return 'failed';
+}
+
+function validateOutput(
+  schema: z.ZodTypeAny | undefined,
+  value: unknown,
+  mode: OutputValidationMode,
+): OutputValidationResult | undefined {
+  if (!schema) {
+    return undefined;
+  }
+  const result = schema.safeParse(value);
+  if (result.success) {
+    return { success: true };
+  }
+  if (mode === 'throw') {
+    return { success: false, error: result.error };
+  }
+  return { success: false, error: result.error };
 }
 
 function normalizeTagsWithMetadata(

@@ -32,6 +32,10 @@ export interface ToolResult {
   toolName: string;
   result: unknown;
   error?: string;
+  errorCategory?: 'denied' | 'failed' | 'transient';
+  inputDigest?: string;
+  outputDigest?: string;
+  outputValidation?: { success: boolean; error?: string };
 }
 
 /**

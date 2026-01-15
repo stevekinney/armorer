@@ -1018,6 +1018,65 @@ describe('isTool', () => {
     expect(finished).toBe(1);
   });
 
+  it('computes input and output digests when enabled', async () => {
+    const tool = createTool({
+      name: 'digest',
+      description: 'digests',
+      schema: z.object({ a: z.string() }),
+      digests: true,
+      async execute({ a }) {
+        return { ok: a === 'x' };
+      },
+    });
+
+    const result = await (tool as any).executeWith({ params: { a: 'x' } });
+    expect(result.inputDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.outputDigest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('validates output schema and emits output validation events', async () => {
+    const tool = createTool({
+      name: 'output-validate',
+      description: 'output schema',
+      schema: z.object({ a: z.string() }),
+      outputSchema: z.object({ ok: z.boolean() }),
+      async execute() {
+        return { ok: true };
+      },
+    });
+
+    let validated = 0;
+    tool.addEventListener('output-validate-success' as any, () => {
+      validated += 1;
+    });
+
+    const result = await (tool as any).executeWith({ params: { a: 'x' } });
+    expect(result.outputValidation?.success).toBe(true);
+    expect(validated).toBe(1);
+  });
+
+  it('injects policy context via policyContext provider', async () => {
+    const tool = createTool({
+      name: 'policy-context',
+      description: 'policy context',
+      schema: z.object({ a: z.string() }),
+      policyContext: () => ({ runId: 'run-1' }),
+      policy: {
+        beforeExecute({ policyContext }) {
+          if (policyContext?.runId !== 'run-1') {
+            return { allow: false, reason: 'missing runId' };
+          }
+        },
+      },
+      async execute({ a }) {
+        return a.toUpperCase();
+      },
+    });
+
+    const result = await (tool as any).executeWith({ params: { a: 'x' } });
+    expect(result.result).toBe('X');
+  });
+
   it('enforces per-tool concurrency limits', async () => {
     let active = 0;
     let max = 0;

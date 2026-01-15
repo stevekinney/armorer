@@ -273,6 +273,50 @@ describe('createArmorer', () => {
     expect(result.error).toContain('not allowed');
   });
 
+  it('enforces session budgets for max calls', async () => {
+    const armorer = createArmorer([], { budget: { maxCalls: 1 } });
+    armorer.register({
+      name: 'one',
+      description: 'budgeted',
+      schema: z.object({}),
+      execute: async () => 'ok',
+    });
+
+    const first = await armorer.execute({
+      id: 'call-1',
+      name: 'one',
+      arguments: {},
+    });
+    const second = await armorer.execute({
+      id: 'call-2',
+      name: 'one',
+      arguments: {},
+    });
+
+    expect(first.result).toBe('ok');
+    expect(second.errorCategory).toBe('denied');
+    expect(second.error).toContain('Budget exceeded');
+  });
+
+  it('enforces session budgets for max duration', async () => {
+    const armorer = createArmorer([], { budget: { maxDurationMs: 0 } });
+    armorer.register({
+      name: 'time',
+      description: 'budgeted',
+      schema: z.object({}),
+      execute: async () => 'ok',
+    });
+
+    const result = await armorer.execute({
+      id: 'call-1',
+      name: 'time',
+      arguments: {},
+    });
+
+    expect(result.errorCategory).toBe('denied');
+    expect(result.error).toContain('Budget exceeded');
+  });
+
   it('createTool accepts object schemas', () => {
     const armorer = createArmorer();
     const tool = armorer.createTool({
