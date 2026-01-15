@@ -11,9 +11,7 @@ import type {
 /** Extract input type from a tool's schema */
 export type InferToolInput<T> =
   T extends ArmorerTool<infer S, infer _E, infer _R, infer _M>
-    ? S extends z.ZodType<infer I>
-      ? I
-      : never
+    ? Extract<z.infer<S>, object>
     : never;
 
 /** Extract output type from a tool */
@@ -29,7 +27,7 @@ export type AnyTool = ArmorerTool<
 >;
 
 /** Tool that accepts a specific input type */
-export type ToolWithInput<I extends Record<string, unknown>> = ArmorerTool<
+export type ToolWithInput<I extends object> = ArmorerTool<
   z.ZodType<I>,
   ToolEventsMap,
   unknown,
@@ -64,7 +62,7 @@ export type ComposedToolEvents = DefaultToolEvents & {
 };
 
 /** Composed tool result type - uses DefaultToolEvents by default */
-export type ComposedTool<TInput extends Record<string, unknown>, TOutput> = ArmorerTool<
+export type ComposedTool<TInput extends object, TOutput> = ArmorerTool<
   z.ZodType<TInput>,
   DefaultToolEvents,
   TOutput,

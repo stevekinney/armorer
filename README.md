@@ -18,11 +18,12 @@ Armorer turns tool calling into a structured, observable, and searchable workflo
 ## Features
 
 - Zod-powered schema validation with TypeScript inference
-- Central tool registry with execution and event hooks
+- Central tool registry with execution, policy, and event hooks
 - Query + search helpers with scoring and metadata filters
 - Provider adapters for OpenAI, Anthropic, and Gemini
 - Tool composition utilities (pipe/compose/bind/when/parallel/retry)
 - MCP server integration for exposing tools over MCP
+- Concurrency controls and execution tracing hooks
 
 ## Installation
 
@@ -66,6 +67,70 @@ const toolCall = await armorer.execute({
 });
 
 console.log(toolCall.result); // 8
+```
+
+## Safety, Policy, and Metadata
+
+Armorer supports registry-level policy hooks and per-tool policy for centralized guardrails.
+You can also tag tools as mutating or read-only and enforce those tags at the registry.
+
+```ts
+import { createArmorer, createTool } from 'armorer';
+import { z } from 'zod';
+
+const armorer = createArmorer([], {
+  readOnly: true,
+  policy: {
+    beforeExecute({ toolName, metadata }) {
+      if (metadata?.mutates) {
+        return { allow: false, reason: `${toolName} is mutating` };
+      }
+    },
+  },
+  telemetry: true,
+});
+
+const writeFile = createTool({
+  name: 'fs.write',
+  description: 'Write a file',
+  schema: z.object({ path: z.string(), content: z.string() }),
+  metadata: { mutates: true },
+  async execute() {
+    return { ok: true };
+  },
+});
+
+armorer.register(writeFile);
+```
+
+Metadata keys with built-in enforcement:
+
+- `metadata.mutates: true` marks a tool as mutating
+- `metadata.readOnly: true` marks a tool as read-only
+- `metadata.concurrency: number` sets a per-tool concurrency limit
+
+Registry options for enforcement:
+
+- `readOnly: true` denies mutating tools automatically
+- `allowMutation: false` denies mutating tools automatically
+
+Execution tracing events (opt-in via `telemetry: true`):
+
+- `tool.started` with `startedAt`
+- `tool.finished` with `status` and `durationMs`
+
+Per-tool concurrency:
+
+```ts
+createTool({
+  name: 'git.status',
+  description: 'status',
+  metadata: { concurrency: 1 },
+  schema: z.object({}),
+  async execute() {
+    return { ok: true };
+  },
+});
 ```
 
 ## Documentation

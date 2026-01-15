@@ -16,6 +16,10 @@ import type {
   ToolExecuteWithOptions,
   ToolMetadata,
   ToolParametersSchema,
+  ToolPolicyAfterContext,
+  ToolPolicyContext,
+  ToolPolicyDecision,
+  ToolPolicyHooks,
   ToolRepairHint,
   ToolValidationReport,
 } from './is-tool';
@@ -33,29 +37,32 @@ import type { ToolCall, ToolResult } from './types';
  * - Only the execute function receives typed params
  */
 export interface CreateToolOptions<
-  TInput extends Record<string, unknown> = Record<string, never>,
+  TInput extends object = Record<string, never>,
   TOutput = unknown,
   E extends ToolEventsMap = DefaultToolEvents,
   Tags extends readonly string[] = readonly string[],
   M extends ToolMetadata | undefined = undefined,
   TContext extends ToolContext<E> = ToolContext<E>,
-  TParameters extends Record<string, unknown> = TInput,
+  TParameters extends object = TInput,
   TReturn = TOutput,
 > {
   name: string;
   description: string;
-  schema?: z.ZodType<TParameters> | z.ZodRawShape;
+  schema?: z.ZodType<TParameters> | z.ZodRawShape | z.ZodTypeAny;
   execute:
     | ((params: TParameters, context: TContext) => Promise<TReturn>)
     | Promise<(params: TParameters, context: TContext) => Promise<TReturn>>;
   timeoutMs?: number;
   tags?: NormalizeTagsOption<Tags>;
   metadata?: M;
+  policy?: ToolPolicyHooks;
+  concurrency?: number;
+  telemetry?: boolean;
   diagnostics?: ToolDiagnostics;
 }
 
 export type WithContext<
-  T extends Record<string, unknown> = Record<string, unknown>,
+  T extends object = Record<string, unknown>,
   E extends ToolEventsMap = DefaultToolEvents,
 > = ToolContext<E> & T;
 
@@ -110,26 +117,26 @@ export function lazy<TExecute extends (...args: any[]) => Promise<any>>(
  * ```
  */
 export function createTool<
-  TInput extends Record<string, unknown> = Record<string, never>,
+  TInput extends object = Record<string, never>,
   TOutput = unknown,
   E extends ToolEventsMap = DefaultToolEvents,
   Tags extends readonly string[] = readonly string[],
   M extends ToolMetadata | undefined = undefined,
   TContext extends ToolContext<E> = ToolContext<E>,
-  TParameters extends Record<string, unknown> = TInput,
+  TParameters extends object = TInput,
   TReturn = TOutput,
 >(
   options: CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
   armorer?: Armorer,
-): ArmorerTool;
+): ArmorerTool<z.ZodType<TInput>, E, TReturn, M>;
 export function createTool<
-  TInput extends Record<string, unknown> = Record<string, never>,
+  TInput extends object = Record<string, never>,
   TOutput = unknown,
   E extends ToolEventsMap = DefaultToolEvents,
   Tags extends readonly string[] = readonly string[],
   M extends ToolMetadata | undefined = undefined,
   TContext extends ToolContext<E> = ToolContext<E>,
-  TParameters extends Record<string, unknown> = TInput,
+  TParameters extends object = TInput,
   TReturn = TOutput,
 >(
   {
@@ -140,10 +147,13 @@ export function createTool<
     timeoutMs,
     tags,
     metadata: customMetadata,
+    policy,
+    concurrency,
+    telemetry,
     diagnostics,
   }: CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
   armorer?: Armorer,
-): ArmorerTool {
+): ArmorerTool<z.ZodType<TInput>, E, TReturn, M> {
   const normalizedSchema = normalizeSchema(toolSchema);
   const schema = normalizedSchema as unknown as ToolParametersSchema;
   const typedSchema = normalizedSchema as unknown as z.ZodType<TParameters>;
@@ -164,9 +174,69 @@ export function createTool<
   const emit = (type: string, detail: unknown) =>
     dispatchEvent({ type, detail } as Parameters<typeof dispatchEvent>[0]);
 
+  const metadataValue = customMetadata ?? (undefined as M);
+  const normalizedTags = normalizeTagsWithMetadata(tags, metadataValue, name);
+  const telemetryEnabled = telemetry === true;
+  const concurrencyLimit = normalizeConcurrency(
+    typeof metadataValue?.concurrency === 'number'
+      ? metadataValue.concurrency
+      : concurrency,
+  );
+  const limiter = createConcurrencyLimiter(concurrencyLimit);
+  const runWithConcurrency = <T>(task: () => Promise<T>) =>
+    limiter ? limiter.run(task) : task();
+
   let configuration!: ToolConfig;
 
   const resolveExecute = createLazyExecuteResolver(fn);
+  const policyHooks = policy;
+
+  const buildPolicyContext = (toolCall: ToolCall, params: unknown): ToolPolicyContext => {
+    const context: ToolPolicyContext = {
+      toolName: name,
+      toolCall,
+      params,
+      configuration,
+    };
+    if (normalizedTags.length) {
+      context.tags = normalizedTags;
+    }
+    if (metadataValue !== undefined) {
+      context.metadata = metadataValue;
+    }
+    return context;
+  };
+
+  const resolvePolicyDecision = async (
+    context: ToolPolicyContext,
+  ): Promise<ToolPolicyDecision | undefined> => {
+    if (!policyHooks?.beforeExecute) {
+      return undefined;
+    }
+    const decision = await policyHooks.beforeExecute(context);
+    if (decision === undefined) {
+      return undefined;
+    }
+    if (typeof decision === 'boolean') {
+      return { allow: decision };
+    }
+    return decision;
+  };
+
+  const runPolicyAfter = async (context: ToolPolicyAfterContext): Promise<void> => {
+    if (!policyHooks?.afterExecute) {
+      return;
+    }
+    try {
+      await policyHooks.afterExecute(context);
+    } catch (error) {
+      emit('log', {
+        level: 'warn',
+        message: 'policy afterExecute failed',
+        data: error,
+      });
+    }
+  };
 
   const executeCall = async (
     toolCall: ToolCallWithArguments,
@@ -180,7 +250,9 @@ export function createTool<
             ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
           }
         : undefined;
-    return executeInner(normalizeToolCall(toolCall), executeOptions);
+    return runWithConcurrency(() =>
+      executeInner(normalizeToolCall(toolCall), executeOptions),
+    );
   };
 
   const executeParams = async (
@@ -210,6 +282,27 @@ export function createTool<
     options: { timeoutMs?: number; signal?: MinimalAbortSignal } = {},
   ): Promise<ToolResult> => {
     const baseDetail = { toolCall, configuration };
+    const startedAt = telemetryEnabled ? Date.now() : 0;
+
+    const finishTelemetry = (
+      status: 'success' | 'error' | 'denied' | 'cancelled',
+      details: { result?: unknown; error?: unknown; reason?: string } = {},
+    ) => {
+      if (!telemetryEnabled) return;
+      const finishedAt = Date.now();
+      emit('tool.finished', {
+        ...baseDetail,
+        status,
+        durationMs: finishedAt - startedAt,
+        startedAt,
+        finishedAt,
+        ...details,
+      });
+    };
+
+    if (telemetryEnabled) {
+      emit('tool.started', { ...baseDetail, params: toolCall.arguments, startedAt });
+    }
 
     const handleCancellation = (reason?: unknown): ToolResult => {
       let message: string;
@@ -228,6 +321,7 @@ export function createTool<
       const errorObj = new Error(message);
       emit('execute-error', { ...baseDetail, error: errorObj });
       emit('settled', { ...baseDetail, error: errorObj });
+      finishTelemetry('cancelled', { error: errorObj });
       const callId = toolCall.id;
       return {
         callId,
@@ -255,6 +349,31 @@ export function createTool<
       emit('validate-success', { ...parsedDetail, params: toolCall.arguments, parsed });
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
+      }
+      const policyContext = buildPolicyContext(typedToolCall, parsed);
+      const decision = await resolvePolicyDecision(policyContext);
+      if (decision?.allow === false) {
+        const reason = decision.reason ?? 'Policy denied';
+        emit('policy-denied', { ...parsedDetail, params: parsed, reason });
+        const errorObj = new Error(reason);
+        emit('execute-error', { ...parsedDetail, error: errorObj });
+        emit('settled', { ...parsedDetail, error: errorObj });
+        await runPolicyAfter({
+          ...policyContext,
+          outcome: 'denied',
+          reason,
+        });
+        finishTelemetry('denied', { reason });
+        const callId = typedToolCall.id;
+        return {
+          callId,
+          outcome: 'error',
+          content: reason,
+          toolCallId: callId,
+          toolName: name,
+          result: undefined,
+          error: reason,
+        } as ToolResult;
       }
       const meta: { toolName: string; callId?: string } = { toolName: name };
       if (typedToolCall.id) {
@@ -288,6 +407,12 @@ export function createTool<
       const value = await raceWithSignal(timed, options.signal);
       emit('execute-success', { ...parsedDetail, result: value });
       emit('settled', { ...parsedDetail, result: value });
+      await runPolicyAfter({
+        ...policyContext,
+        outcome: 'success',
+        result: value,
+      });
+      finishTelemetry('success', { result: value });
       const callId = typedToolCall.id;
       return {
         callId,
@@ -350,6 +475,12 @@ export function createTool<
       }
       emit('settled', { ...baseDetail, error });
       const callId = toolCall.id;
+      await runPolicyAfter({
+        ...buildPolicyContext(toolCall, toolCall.arguments),
+        outcome: 'error',
+        error,
+      });
+      finishTelemetry('error', { error });
       const message = errorString(
         normalizeError(
           error,
@@ -368,14 +499,6 @@ export function createTool<
     }
   };
 
-  const normalizedTags = Array.isArray(tags)
-    ? uniqTags(
-        (tags as readonly string[]).map((tag) =>
-          assertKebabCaseTag(tag, `Tool "${name}"`),
-        ),
-      )
-    : undefined;
-
   const callable = async (params: unknown) => executeParams(params as TParameters);
 
   configuration = {
@@ -385,19 +508,23 @@ export function createTool<
     parameters: typedSchema,
     execute: async (params) => executeParams(params as TParameters),
   };
-  if (normalizedTags) {
+  if (normalizedTags.length) {
     configuration.tags = normalizedTags;
   }
-  if (customMetadata !== undefined) {
-    configuration.metadata = customMetadata;
+  if (metadataValue !== undefined) {
+    configuration.metadata = metadataValue;
+  }
+  if (policyHooks) {
+    configuration.policy = policyHooks;
+  }
+  if (concurrencyLimit !== undefined) {
+    configuration.concurrency = concurrencyLimit;
   }
 
   const toJSON = (() => {
     const json = toJSONSchema(configuration);
-    return () => ({ ...json, tags: normalizedTags ?? [] });
+    return () => ({ ...json, tags: normalizedTags });
   })();
-
-  const metadataValue = customMetadata ?? (undefined as M);
 
   // Build metadata bag for proxy lookup
   const bag: Record<PropertyKey, unknown> = {
@@ -429,12 +556,12 @@ export function createTool<
     toJSON,
     toString: () => `**${name}**: ${description}`,
     [Symbol.toPrimitive]: () => name,
-    tags: normalizedTags ?? [],
+    tags: normalizedTags,
     metadata: metadataValue,
   };
 
   const tool = new Proxy(
-    callable as unknown as ArmorerTool<z.ZodType<TInput>, E, TOutput, M>,
+    callable as unknown as ArmorerTool<z.ZodType<TInput>, E, TReturn, M>,
     {
       get(target, prop, receiver) {
         if (prop in bag) return (bag as any)[prop];
@@ -477,14 +604,14 @@ export function createTool<
             ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
           }
         : undefined;
-    return executeInner(toolCall, executeOptions);
+    return runWithConcurrency(() => executeInner(toolCall, executeOptions));
   };
 
-  const finalTool = tool as unknown as ArmorerTool;
+  const finalTool = tool as unknown as ArmorerTool<z.ZodType<TInput>, E, TReturn, M>;
 
   // Register with armorer if provided
   if (armorer) {
-    armorer.register(finalTool);
+    armorer.register(finalTool as unknown as ArmorerTool);
   }
 
   return finalTool;
@@ -554,7 +681,7 @@ export function createTool<
  */
 type CreateToolWithContextOptions<
   Ctx extends Record<string, unknown>,
-  TInput extends Record<string, unknown>,
+  TInput extends object,
   TOutput,
   E extends ToolEventsMap,
   Tags extends readonly string[],
@@ -567,7 +694,7 @@ type CreateToolWithContextOptions<
 
 export function withContext<Ctx extends Record<string, unknown>>(
   context: Ctx,
-): <TInput extends Record<string, unknown>, TOutput = unknown>(
+): <TInput extends object, TOutput = unknown>(
   options: CreateToolWithContextOptions<
     Ctx,
     TInput,
@@ -579,7 +706,7 @@ export function withContext<Ctx extends Record<string, unknown>>(
 ) => ArmorerTool;
 export function withContext<
   Ctx extends Record<string, unknown>,
-  TInput extends Record<string, unknown>,
+  TInput extends object,
   TOutput = unknown,
 >(
   context: Ctx,
@@ -666,6 +793,64 @@ function normalizeSchema(schema: unknown): z.ZodTypeAny {
     return z.object(schema as Record<string, z.ZodTypeAny>);
   }
   throw new Error('Tool schema must be a Zod object schema or an object of Zod schemas');
+}
+
+function normalizeTagsWithMetadata(
+  tags: NormalizeTagsOption<readonly string[]> | undefined,
+  metadata: ToolMetadata | undefined,
+  toolName: string,
+): string[] {
+  const baseTags = Array.isArray(tags)
+    ? uniqTags(tags.map((tag) => assertKebabCaseTag(tag, `Tool "${toolName}"`)))
+    : [];
+  const merged = new Set(baseTags);
+  if (metadata?.mutates === true) {
+    merged.add('mutating');
+  }
+  if (metadata?.readOnly === true) {
+    merged.add('readonly');
+  }
+  return Array.from(merged);
+}
+
+function normalizeConcurrency(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const floored = Math.floor(value);
+  if (floored <= 0) {
+    return undefined;
+  }
+  return floored;
+}
+
+type ConcurrencyLimiter = {
+  run: <T>(task: () => Promise<T>) => Promise<T>;
+};
+
+function createConcurrencyLimiter(limit?: number): ConcurrencyLimiter | undefined {
+  const resolved = normalizeConcurrency(limit);
+  if (resolved === undefined) {
+    return undefined;
+  }
+  let active = 0;
+  const queue: Array<() => void> = [];
+  const run = async <T>(task: () => Promise<T>): Promise<T> => {
+    if (active >= resolved) {
+      await new Promise<void>((resolve) => queue.push(resolve));
+    }
+    active += 1;
+    try {
+      return await task();
+    } finally {
+      active -= 1;
+      const next = queue.shift();
+      if (next) {
+        next();
+      }
+    }
+  };
+  return { run };
 }
 
 type ToolExecute<TInput, TOutput, TContext> = (

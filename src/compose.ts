@@ -179,7 +179,7 @@ export function pipe(...tools: AnyTool[]): AnyTool {
   return createTool({
     name: `pipe(${toolNames.join(', ')})`,
     description: `Composed pipeline: ${toolNames.join(' → ')}`,
-    schema: first.schema,
+    schema: first.schema as z.ZodTypeAny,
 
     async execute(input: unknown, context: ToolContext<DefaultToolEvents>) {
       let result: unknown = input;
@@ -302,12 +302,12 @@ export function compose(...tools: AnyTool[]): AnyTool {
 }
 
 type BindParams<TTool extends AnyTool> =
-  InferToolInput<TTool> extends Record<string, unknown>
+  InferToolInput<TTool> extends object
     ? Partial<InferToolInput<TTool>>
     : InferToolInput<TTool>;
 
 type BindInput<TTool extends AnyTool, TBound extends BindParams<TTool>> =
-  InferToolInput<TTool> extends Record<string, unknown>
+  InferToolInput<TTool> extends object
     ? Omit<InferToolInput<TTool>, keyof TBound>
     : Record<string, never>;
 

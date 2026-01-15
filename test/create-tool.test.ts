@@ -963,6 +963,82 @@ describe('isTool', () => {
     expect(settled).toBe(1);
   });
 
+  it('policy hooks can deny execution and emit policy-denied', async () => {
+    const tool = createTool({
+      name: 'denytool',
+      description: 'policy denied',
+      schema: z.object({ a: z.string() }),
+      policy: {
+        beforeExecute() {
+          return { allow: false, reason: 'nope' };
+        },
+      },
+      async execute() {
+        return 'ok';
+      },
+    });
+
+    let denied = 0;
+    tool.addEventListener('policy-denied' as any, (evt) => {
+      denied += 1;
+      expect((evt.detail as any).reason).toBe('nope');
+    });
+
+    const result = await (tool as any).executeWith({ params: { a: 'x' } });
+    expect(result.error).toBe('nope');
+    expect(denied).toBe(1);
+  });
+
+  it('emits telemetry events when enabled', async () => {
+    const tool = createTool({
+      name: 'telemetry',
+      description: 'telemetry events',
+      schema: z.object({ a: z.string() }),
+      telemetry: true,
+      async execute({ a }) {
+        return a.toUpperCase();
+      },
+    });
+
+    let started = 0;
+    let finished = 0;
+    tool.addEventListener('tool.started' as any, (evt) => {
+      started += 1;
+      expect(typeof (evt.detail as any).startedAt).toBe('number');
+    });
+    tool.addEventListener('tool.finished' as any, (evt) => {
+      finished += 1;
+      expect((evt.detail as any).status).toBe('success');
+      expect((evt.detail as any).durationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    const out = await tool({ a: 'x' });
+    expect(out).toBe('X');
+    expect(started).toBe(1);
+    expect(finished).toBe(1);
+  });
+
+  it('enforces per-tool concurrency limits', async () => {
+    let active = 0;
+    let max = 0;
+    const tool = createTool({
+      name: 'concurrency',
+      description: 'limits',
+      schema: z.object({ a: z.string() }),
+      concurrency: 1,
+      async execute() {
+        active += 1;
+        max = Math.max(max, active);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        active -= 1;
+        return 'ok';
+      },
+    });
+
+    await Promise.all([tool({ a: 'x' }), tool({ a: 'y' })]);
+    expect(max).toBe(1);
+  });
+
   it('executeWith supports timeouts and normalizes timeout error', async () => {
     const tool = createTool({
       name: 'slow',

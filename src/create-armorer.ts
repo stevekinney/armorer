@@ -29,6 +29,9 @@ import type {
   ToolExecuteOptions,
   ToolMetadata,
   ToolParametersSchema,
+  ToolPolicyContext,
+  ToolPolicyDecision,
+  ToolPolicyHooks,
 } from './is-tool';
 import { isTool } from './is-tool';
 import type {
@@ -84,6 +87,11 @@ export interface ArmorerOptions {
   signal?: MinimalAbortSignal;
   context?: ArmorerContext;
   embed?: Embedder;
+  policy?: ToolPolicyHooks;
+  concurrency?: number;
+  telemetry?: boolean;
+  readOnly?: boolean;
+  allowMutation?: boolean;
   toolFactory?: (
     configuration: ToolConfig,
     context: ArmorerToolFactoryContext,
@@ -147,6 +155,29 @@ export interface ArmorerEvents {
   'execute-success': { tool: ArmorerTool; call: ToolCall; result: unknown };
   'execute-error': { tool: ArmorerTool; call: ToolCall; error: unknown };
   settled: { tool: ArmorerTool; call: ToolCall; result?: unknown; error?: unknown };
+  'policy-denied': {
+    tool: ArmorerTool;
+    call: ToolCall;
+    params: unknown;
+    reason?: string;
+  };
+  'tool.started': {
+    tool: ArmorerTool;
+    call: ToolCall;
+    params: unknown;
+    startedAt: number;
+  };
+  'tool.finished': {
+    tool: ArmorerTool;
+    call: ToolCall;
+    status: 'success' | 'error' | 'denied' | 'cancelled';
+    durationMs: number;
+    startedAt: number;
+    finishedAt: number;
+    result?: unknown;
+    error?: unknown;
+    reason?: string;
+  };
   progress: { tool: ArmorerTool; call: ToolCall; percent?: number; message?: string };
   'output-chunk': { tool: ArmorerTool; call: ToolCall; chunk: unknown };
   log: {
@@ -166,14 +197,14 @@ export type ArmorerEventDispatcher = <K extends keyof ArmorerEvents & string>(
 export interface Armorer {
   register: (...entries: (ToolConfig | ArmorerTool)[]) => Armorer;
   createTool: <
-    TInput extends Record<string, unknown> = Record<string, never>,
+    TInput extends object = Record<string, never>,
     TOutput = unknown,
     E extends ToolEventsMap = DefaultToolEvents,
     Tags extends readonly string[] = readonly string[],
     M extends ToolMetadata | undefined = undefined,
   >(
     options: CreateToolOptions<TInput, TOutput, E, Tags, M>,
-  ) => ArmorerTool;
+  ) => ArmorerTool<z.ZodType<TInput>, E, TOutput, M>;
   execute(call: ToolCallInput, options?: ToolExecuteOptions): Promise<ToolResult>;
   execute(calls: ToolCallInput[], options?: ToolExecuteOptions): Promise<ToolResult[]>;
   tools: () => ArmorerTool[];
@@ -264,6 +295,11 @@ export function createArmorer(
     detail: ArmorerEvents[K],
   ) => dispatchEvent({ type, detail } as EmissionEvent<ArmorerEvents[K]>);
   const baseContext = options.context ? { ...options.context } : {};
+  const readOnly = options.readOnly ?? false;
+  const allowMutation = options.allowMutation ?? !readOnly;
+  const telemetryEnabled = options.telemetry === true;
+  const registryPolicy = options.policy;
+  const registryConcurrency = options.concurrency;
   const embedder = options.embed ? createCachedEmbedder(options.embed) : undefined;
   const buildTool =
     typeof options.toolFactory === 'function'
@@ -326,12 +362,14 @@ export function createArmorer(
   }
 
   function createTool<
-    TInput extends Record<string, unknown> = Record<string, never>,
+    TInput extends object = Record<string, never>,
     TOutput = unknown,
     E extends ToolEventsMap = DefaultToolEvents,
     Tags extends readonly string[] = readonly string[],
     M extends ToolMetadata | undefined = undefined,
-  >(options: CreateToolOptions<TInput, TOutput, E, Tags, M>): ArmorerTool {
+  >(
+    options: CreateToolOptions<TInput, TOutput, E, Tags, M>,
+  ): ArmorerTool<z.ZodType<TInput>, E, TOutput, M> {
     const schema = normalizeToolSchema(options.schema);
     const normalizedTags = Array.isArray(options.tags)
       ? uniqTags(
@@ -358,12 +396,18 @@ export function createArmorer(
     if (options.metadata !== undefined) {
       configuration.metadata = options.metadata;
     }
+    if (options.policy) {
+      configuration.policy = options.policy;
+    }
+    if (options.concurrency !== undefined) {
+      configuration.concurrency = options.concurrency;
+    }
     register(configuration);
     const tool = registry.get(configuration.name);
     if (!tool) {
       throw new Error(`Failed to register tool: ${configuration.name}`);
     }
-    return tool;
+    return tool as unknown as ArmorerTool<z.ZodType<TInput>, E, TOutput, M>;
   }
 
   async function execute(call: ToolCallInput): Promise<ToolResult>;
@@ -399,12 +443,15 @@ export function createArmorer(
       const cleanup: (() => void)[] = [];
       if (isMultiple) {
         const toolEventTypes: (keyof DefaultToolEvents)[] = [
+          'tool.started',
+          'tool.finished',
           'execute-start',
           'validate-success',
           'validate-error',
           'execute-success',
           'execute-error',
           'settled',
+          'policy-denied',
           'progress',
           'output-chunk',
           'log',
@@ -516,6 +563,12 @@ export function createArmorer(
       if (configuration.metadata) {
         result.metadata = configuration.metadata;
       }
+      if (configuration.policy) {
+        result.policy = configuration.policy;
+      }
+      if (configuration.concurrency !== undefined) {
+        result.concurrency = configuration.concurrency;
+      }
       return result;
     });
   }
@@ -560,6 +613,14 @@ export function createArmorer(
 
   function buildDefaultTool(configuration: ToolConfig): ArmorerTool {
     const resolveExecute = createLazyExecuteResolver(configuration.execute);
+    const resolvedPolicy = mergePolicies(registryPolicy, configuration.policy, {
+      readOnly,
+      allowMutation,
+    });
+    const resolvedConcurrency = resolveToolConcurrency(
+      configuration,
+      registryConcurrency,
+    );
     const options: Parameters<typeof createToolFactory>[0] = {
       name: configuration.name,
       description: configuration.description,
@@ -582,10 +643,19 @@ export function createArmorer(
     if (configuration.metadata) {
       options.metadata = configuration.metadata;
     }
+    if (resolvedPolicy) {
+      options.policy = resolvedPolicy;
+    }
+    if (resolvedConcurrency !== undefined) {
+      options.concurrency = resolvedConcurrency;
+    }
+    if (telemetryEnabled) {
+      options.telemetry = true;
+    }
     if (configuration.diagnostics) {
       options.diagnostics = configuration.diagnostics;
     }
-    return createToolFactory(options);
+    return createToolFactory(options) as unknown as ArmorerTool;
   }
 
   function normalizeConfiguration(configuration: ToolConfig): ToolConfig {
@@ -621,6 +691,12 @@ export function createArmorer(
     }
     if (configuration.metadata) {
       result.metadata = configuration.metadata;
+    }
+    if (configuration.policy) {
+      result.policy = configuration.policy;
+    }
+    if (configuration.concurrency !== undefined) {
+      result.concurrency = configuration.concurrency;
     }
     if (configuration.diagnostics) {
       result.diagnostics = configuration.diagnostics;
@@ -690,6 +766,118 @@ export function createArmorer(
       registerConfiguration(configuration);
     }
   }
+}
+
+function resolveToolConcurrency(
+  configuration: ToolConfig,
+  registryConcurrency?: number,
+): number | undefined {
+  const direct = normalizeConcurrency(configuration.concurrency);
+  if (direct !== undefined) {
+    return direct;
+  }
+  const metadataConcurrency = normalizeConcurrency(configuration.metadata?.concurrency);
+  if (metadataConcurrency !== undefined) {
+    return metadataConcurrency;
+  }
+  return normalizeConcurrency(registryConcurrency);
+}
+
+function normalizeConcurrency(value?: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const floored = Math.floor(value);
+  if (floored <= 0) {
+    return undefined;
+  }
+  return floored;
+}
+
+function mergePolicies(
+  registryPolicy: ToolPolicyHooks | undefined,
+  toolPolicy: ToolPolicyHooks | undefined,
+  options: { readOnly: boolean; allowMutation: boolean },
+): ToolPolicyHooks | undefined {
+  const enforceMutating = options.readOnly || !options.allowMutation;
+  const hasBefore =
+    enforceMutating ||
+    registryPolicy?.beforeExecute !== undefined ||
+    toolPolicy?.beforeExecute !== undefined;
+  const hasAfter =
+    registryPolicy?.afterExecute !== undefined || toolPolicy?.afterExecute !== undefined;
+  if (!hasBefore && !hasAfter) {
+    return undefined;
+  }
+  return {
+    async beforeExecute(context) {
+      if (enforceMutating && isMutatingToolContext(context)) {
+        return {
+          allow: false,
+          reason: `Mutating tool "${context.toolName}" is not allowed`,
+        } satisfies ToolPolicyDecision;
+      }
+      const registryDecision = await resolvePolicyDecision(
+        registryPolicy?.beforeExecute,
+        context,
+      );
+      if (registryDecision?.allow === false) {
+        return registryDecision;
+      }
+      const toolDecision = await resolvePolicyDecision(
+        toolPolicy?.beforeExecute,
+        context,
+      );
+      if (toolDecision?.allow === false) {
+        return toolDecision;
+      }
+      return { allow: true } satisfies ToolPolicyDecision;
+    },
+    async afterExecute(context) {
+      if (toolPolicy?.afterExecute) {
+        await toolPolicy.afterExecute(context);
+      }
+      if (registryPolicy?.afterExecute) {
+        await registryPolicy.afterExecute(context);
+      }
+    },
+  };
+}
+
+async function resolvePolicyDecision(
+  hook: ToolPolicyHooks['beforeExecute'] | undefined,
+  context: ToolPolicyContext,
+): Promise<ToolPolicyDecision | undefined> {
+  if (!hook) {
+    return undefined;
+  }
+  const decision = await hook(context);
+  if (decision === undefined) {
+    return undefined;
+  }
+  if (typeof decision === 'boolean') {
+    return { allow: decision };
+  }
+  return decision;
+}
+
+function isMutatingToolContext(context: ToolPolicyContext): boolean {
+  const tags = context.tags?.map((tag) => tag.toLowerCase()) ?? [];
+  const tagSet = new Set(tags);
+  const metadata = context.metadata;
+  if (metadata?.mutates === true) {
+    return true;
+  }
+  if (metadata?.readOnly === true) {
+    return false;
+  }
+  if (tagSet.has('mutating')) {
+    return true;
+  }
+  if (tagSet.has('readonly') || tagSet.has('read-only')) {
+    return false;
+  }
+  return false;
 }
 
 function normalizeToolSchema(schema: unknown): ToolParametersSchema {

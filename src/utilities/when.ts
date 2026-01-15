@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import type {
   AnyTool,
   ComposedTool,
@@ -8,28 +10,23 @@ import type {
 import { createTool } from '../create-tool';
 import type { DefaultToolEvents, ToolContext } from '../is-tool';
 
-type WhenPredicate<TInput extends Record<string, unknown>> = (
+type WhenPredicate<TInput = unknown> = (
   input: TInput,
   context: ToolContext<DefaultToolEvents>,
 ) => boolean | Promise<boolean>;
 
 export function when<
   TTool extends AnyTool,
-  TElse extends ToolWithInput<InferToolInput<TTool>>,
+  TElse extends ToolWithInput<InferToolInput<TTool>> | undefined = undefined,
 >(
   predicate: WhenPredicate<InferToolInput<TTool>>,
   whenTrue: TTool,
-  whenFalse: TElse,
-): ComposedTool<InferToolInput<TTool>, InferToolOutput<TTool> | InferToolOutput<TElse>>;
-export function when<TTool extends AnyTool>(
-  predicate: WhenPredicate<InferToolInput<TTool>>,
-  whenTrue: TTool,
-): ComposedTool<InferToolInput<TTool>, InferToolOutput<TTool> | InferToolInput<TTool>>;
-export function when(
-  predicate: WhenPredicate<Record<string, unknown>>,
-  whenTrue: AnyTool,
-  whenFalse?: AnyTool,
-): AnyTool {
+  whenFalse?: TElse,
+): ComposedTool<
+  InferToolInput<TTool>,
+  | InferToolOutput<TTool>
+  | (TElse extends AnyTool ? InferToolOutput<TElse> : InferToolInput<TTool>)
+> {
   const name = whenFalse
     ? `when(${whenTrue.name}, ${whenFalse.name})`
     : `when(${whenTrue.name})`;
@@ -40,9 +37,9 @@ export function when(
   return createTool({
     name,
     description,
-    schema: whenTrue.schema,
+    schema: whenTrue.schema as z.ZodTypeAny,
     async execute(params, context) {
-      const input = params;
+      const input = params as InferToolInput<TTool>;
       const executeOptions =
         context.signal || context.timeoutMs !== undefined
           ? {
@@ -61,5 +58,9 @@ export function when(
       }
       return input;
     },
-  }) as AnyTool;
+  }) as ComposedTool<
+    InferToolInput<TTool>,
+    | InferToolOutput<TTool>
+    | (TElse extends AnyTool ? InferToolOutput<TElse> : InferToolInput<TTool>)
+  >;
 }

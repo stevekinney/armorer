@@ -9,7 +9,7 @@ import type {
 import { createTool } from '../create-tool';
 import type { DefaultToolEvents, ToolContext } from '../is-tool';
 
-type PreprocessMapper<TInput, TTransformedInput extends Record<string, unknown>> = (
+type PreprocessMapper<TInput, TTransformedInput> = (
   input: TInput,
   context: ToolContext<DefaultToolEvents>,
 ) => TTransformedInput | Promise<TTransformedInput>;
@@ -39,10 +39,7 @@ type PreprocessMapper<TInput, TTransformedInput extends Record<string, unknown>>
  * const result = await addNumbersWithPreprocessing({ a: '5', b: '3' });
  * ```
  */
-export function preprocess<
-  TTool extends AnyTool,
-  TNewInput extends Record<string, unknown>,
->(
+export function preprocess<TTool extends AnyTool, TNewInput extends object>(
   tool: TTool,
   mapper: PreprocessMapper<TNewInput, InferToolInput<TTool>>,
 ): ComposedTool<TNewInput, InferToolOutput<TTool>> {

@@ -254,6 +254,25 @@ describe('createArmorer', () => {
     expect(tool.metadata).toEqual({ tier: 'gold' });
   });
 
+  it('enforces readOnly for mutating tools', async () => {
+    const armorer = createArmorer([], { readOnly: true });
+    armorer.register({
+      name: 'mutating',
+      description: 'mutates',
+      schema: z.object({}),
+      metadata: { mutates: true },
+      execute: async () => 'ok',
+    });
+
+    const result = await armorer.execute({
+      id: 'mutating-1',
+      name: 'mutating',
+      arguments: {},
+    });
+
+    expect(result.error).toContain('not allowed');
+  });
+
   it('createTool accepts object schemas', () => {
     const armorer = createArmorer();
     const tool = armorer.createTool({

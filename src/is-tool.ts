@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 import type { ToolCall, ToolResult } from './types';
 
-export type ToolParametersSchema = z.ZodType<Record<string, unknown>>;
+export type ToolParametersSchema = z.ZodTypeAny;
 export type {
   AddEventListenerOptionsLike,
   AsyncIteratorOptions,
@@ -39,6 +39,8 @@ export interface ToolConfig {
     | Promise<(params: unknown, context?: unknown) => Promise<unknown>>;
   tags?: readonly string[];
   metadata?: ToolMetadata;
+  policy?: ToolPolicyHooks;
+  concurrency?: number;
   diagnostics?: ToolDiagnostics;
 }
 
@@ -92,7 +94,39 @@ export type ToolEventDetailContext = {
   configuration: ToolConfig;
 };
 
-export type ToolMetadata = Record<string, unknown>;
+export type ToolMetadata = Record<string, unknown> & {
+  mutates?: boolean;
+  readOnly?: boolean;
+  concurrency?: number;
+};
+
+export type ToolPolicyDecision = {
+  allow: boolean;
+  reason?: string;
+};
+
+export type ToolPolicyContext = {
+  toolName: string;
+  toolCall: ToolCall;
+  params: unknown;
+  tags?: readonly string[];
+  metadata?: ToolMetadata;
+  configuration: ToolConfig;
+};
+
+export type ToolPolicyAfterContext = ToolPolicyContext & {
+  outcome: 'success' | 'error' | 'denied';
+  result?: unknown;
+  error?: unknown;
+  reason?: string;
+};
+
+export type ToolPolicyHooks = {
+  beforeExecute?: (
+    context: ToolPolicyContext,
+  ) => ToolPolicyDecision | void | Promise<ToolPolicyDecision | void>;
+  afterExecute?: (context: ToolPolicyAfterContext) => void | Promise<void>;
+};
 
 export type DefaultToolEvents = {
   'status-update': { status: string };
@@ -107,6 +141,17 @@ export type DefaultToolEvents = {
   'execute-success': { result: unknown } & ToolEventDetailContext;
   'execute-error': { error: unknown } & ToolEventDetailContext;
   settled: { result?: unknown; error?: unknown } & ToolEventDetailContext;
+  'policy-denied': { params: unknown; reason?: string } & ToolEventDetailContext;
+  'tool.started': { params: unknown; startedAt: number } & ToolEventDetailContext;
+  'tool.finished': {
+    status: 'success' | 'error' | 'denied' | 'cancelled';
+    durationMs: number;
+    startedAt: number;
+    finishedAt: number;
+    result?: unknown;
+    error?: unknown;
+    reason?: string;
+  } & ToolEventDetailContext;
   progress: { percent?: number; message?: string };
   'output-chunk': { chunk: unknown };
   log: { level: 'debug' | 'info' | 'warn' | 'error'; message: string; data?: unknown };
