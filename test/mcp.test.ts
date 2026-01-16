@@ -185,6 +185,33 @@ describe('createMCP', () => {
     }
   });
 
+  it('adds readOnlyHint annotation for read-only tools', async () => {
+    const armorer = createArmorer();
+    createTool(
+      {
+        name: 'read-only-tool',
+        description: 'read-only',
+        schema: z.object({}),
+        metadata: { readOnly: true },
+        async execute() {
+          return { ok: true };
+        },
+      },
+      armorer,
+    );
+
+    const { client, server } = await connect(armorer);
+
+    try {
+      const tools = await client.listTools();
+      const tool = tools.tools.find((entry) => entry.name === 'read-only-tool');
+      expect(tool?.annotations?.readOnlyHint).toBe(true);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it('ignores non-object metadata for _meta', async () => {
     const armorer = createArmorer();
     createTool(

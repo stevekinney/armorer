@@ -101,6 +101,7 @@ export type ToolEventDetailContext = {
 export type ToolMetadata = Record<string, unknown> & {
   mutates?: boolean;
   readOnly?: boolean;
+  dangerous?: boolean;
   concurrency?: number;
 };
 

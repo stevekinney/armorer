@@ -110,12 +110,14 @@ Metadata keys with built-in enforcement:
 
 - `metadata.mutates: true` marks a tool as mutating
 - `metadata.readOnly: true` marks a tool as read-only
+- `metadata.dangerous: true` marks a tool as dangerous
 - `metadata.concurrency: number` sets a per-tool concurrency limit
 
 Registry options for enforcement:
 
 - `readOnly: true` denies mutating tools automatically
 - `allowMutation: false` denies mutating tools automatically
+- `allowDangerous: false` denies dangerous tools automatically
 
 Execution tracing events (opt-in via `telemetry: true`):
 
@@ -376,6 +378,7 @@ Longer-form docs live in `documentation/`:
 - [MCP Server](documentation/mcp.md)
 - [Public API Reference](documentation/api-reference.md)
 - [Development](documentation/development.md)
+- Claude Agent SDK adapter at `armorer/claude-agent-sdk`
 
 ## License
 

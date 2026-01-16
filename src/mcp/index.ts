@@ -51,6 +51,15 @@ export function createMCP(armorer: Armorer, options: CreateMCPOptions = {}): Mcp
     const metadataConfig = toolConfigFromMetadata(tool);
     const config = { ...metadataConfig, ...(toolConfig?.(tool) ?? {}) };
     const meta = config?.meta ?? tool.metadata;
+    const readOnlyHint = tool.metadata?.readOnly === true;
+    const annotations = readOnlyHint
+      ? {
+          ...(config?.annotations ?? {}),
+          ...(config?.annotations?.readOnlyHint === undefined
+            ? { readOnlyHint: true }
+            : {}),
+        }
+      : config?.annotations;
     const registeredConfig: {
       title?: string;
       description?: string;
@@ -66,8 +75,8 @@ export function createMCP(armorer: Armorer, options: CreateMCPOptions = {}): Mcp
     if (config?.title !== undefined) {
       registeredConfig.title = config.title;
     }
-    if (config?.annotations !== undefined) {
-      registeredConfig.annotations = config.annotations;
+    if (annotations !== undefined) {
+      registeredConfig.annotations = annotations;
     }
     if (config?.execution !== undefined) {
       registeredConfig.execution = config.execution;
@@ -193,7 +202,15 @@ export function toolConfigFromMetadata(tool: ArmorerTool): MCPToolConfig | undef
   if (config.description !== undefined) resolved.description = config.description;
   if (config.inputSchema !== undefined) resolved.inputSchema = config.inputSchema;
   if (config.outputSchema !== undefined) resolved.outputSchema = config.outputSchema;
-  if (config.annotations !== undefined) resolved.annotations = config.annotations;
+  let annotations = config.annotations ? { ...config.annotations } : undefined;
+  if (metadata.readOnly === true) {
+    if (!annotations) {
+      annotations = { readOnlyHint: true };
+    } else if (annotations.readOnlyHint === undefined) {
+      annotations.readOnlyHint = true;
+    }
+  }
+  if (annotations) resolved.annotations = annotations;
   if (config.execution !== undefined) resolved.execution = config.execution;
   if (config.meta !== undefined) resolved.meta = config.meta;
   return resolved;

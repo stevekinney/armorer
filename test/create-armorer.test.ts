@@ -273,6 +273,25 @@ describe('createArmorer', () => {
     expect(result.error).toContain('not allowed');
   });
 
+  it('enforces allowDangerous for dangerous tools', async () => {
+    const armorer = createArmorer([], { allowDangerous: false });
+    armorer.register({
+      name: 'dangerous',
+      description: 'dangerous tool',
+      schema: z.object({}),
+      metadata: { dangerous: true },
+      execute: async () => 'ok',
+    });
+
+    const result = await armorer.execute({
+      id: 'dangerous-1',
+      name: 'dangerous',
+      arguments: {},
+    });
+
+    expect(result.error).toContain('Dangerous tool');
+  });
+
   it('enforces session budgets for max calls', async () => {
     const armorer = createArmorer([], { budget: { maxCalls: 1 } });
     armorer.register({

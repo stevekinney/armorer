@@ -1,6 +1,6 @@
 {
   "name": "armorer",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "A lightweight registry for validated AI tools. Build tools with Zod schemas and metadata, register them in an armorer, and execute/query them with event hooks.",
   "keywords": [
     "ai",
@@ -75,6 +75,12 @@
       "import": "./dist/adapters/gemini/index.js",
       "require": "./dist/adapters/gemini/index.cjs",
       "default": "./dist/adapters/gemini/index.js"
+    },
+    "./claude-agent-sdk": {
+      "types": "./dist/adapters/claude-agent-sdk/index.d.ts",
+      "import": "./dist/adapters/claude-agent-sdk/index.js",
+      "require": "./dist/adapters/claude-agent-sdk/index.cjs",
+      "default": "./dist/adapters/claude-agent-sdk/index.js"
     }
   },
   "main": "./dist/index.js",
@@ -119,11 +125,11 @@
     ]
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.6",
     "@modelcontextprotocol/sdk": "^1.25.2",
     "event-emission": "0.2.0"
   },
   "devDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.6",
     "@eslint/eslintrc": "^3.3.3",
     "@eslint/js": "^9.39.2",
     "@eslint/markdown": "^7.5.1",

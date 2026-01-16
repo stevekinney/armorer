@@ -1056,6 +1056,9 @@ function normalizeTagsWithMetadata(
   if (metadata?.readOnly === true) {
     merged.add('readonly');
   }
+  if (metadata?.dangerous === true) {
+    merged.add('dangerous');
+  }
   return Array.from(merged);
 }
 

@@ -99,6 +99,7 @@ export interface ArmorerOptions {
   telemetry?: boolean;
   readOnly?: boolean;
   allowMutation?: boolean;
+  allowDangerous?: boolean;
   toolFactory?: (
     configuration: ToolConfig,
     context: ArmorerToolFactoryContext,
@@ -317,6 +318,7 @@ export function createArmorer(
   const baseContext = options.context ? { ...options.context } : {};
   const readOnly = options.readOnly ?? false;
   const allowMutation = options.allowMutation ?? !readOnly;
+  const allowDangerous = options.allowDangerous ?? true;
   const telemetryEnabled = options.telemetry === true;
   const registryPolicy = options.policy;
   const registryPolicyContext = options.policyContext;
@@ -687,6 +689,7 @@ export function createArmorer(
     const resolvedPolicy = mergePolicies(registryPolicy, configuration.policy, {
       readOnly,
       allowMutation,
+      allowDangerous,
     });
     const resolvedPolicyContext = mergePolicyContexts(
       registryPolicyContext,
@@ -939,11 +942,13 @@ function normalizeConcurrency(value?: unknown): number | undefined {
 function mergePolicies(
   registryPolicy: ToolPolicyHooks | undefined,
   toolPolicy: ToolPolicyHooks | undefined,
-  options: { readOnly: boolean; allowMutation: boolean },
+  options: { readOnly: boolean; allowMutation: boolean; allowDangerous: boolean },
 ): ToolPolicyHooks | undefined {
   const enforceMutating = options.readOnly || !options.allowMutation;
+  const enforceDangerous = !options.allowDangerous;
   const hasBefore =
     enforceMutating ||
+    enforceDangerous ||
     registryPolicy?.beforeExecute !== undefined ||
     toolPolicy?.beforeExecute !== undefined;
   const hasAfter =
@@ -957,6 +962,12 @@ function mergePolicies(
         return {
           allow: false,
           reason: `Mutating tool "${context.toolName}" is not allowed`,
+        } satisfies ToolPolicyDecision;
+      }
+      if (enforceDangerous && isDangerousToolContext(context)) {
+        return {
+          allow: false,
+          reason: `Dangerous tool "${context.toolName}" is not allowed`,
         } satisfies ToolPolicyDecision;
       }
       const registryDecision = await resolvePolicyDecision(
@@ -1018,6 +1029,19 @@ function isMutatingToolContext(context: ToolPolicyContext): boolean {
   }
   if (tagSet.has('readonly') || tagSet.has('read-only')) {
     return false;
+  }
+  return false;
+}
+
+function isDangerousToolContext(context: ToolPolicyContext): boolean {
+  const tags = context.tags?.map((tag) => tag.toLowerCase()) ?? [];
+  const tagSet = new Set(tags);
+  const metadata = context.metadata;
+  if (metadata?.dangerous === true) {
+    return true;
+  }
+  if (tagSet.has('dangerous')) {
+    return true;
   }
   return false;
 }
