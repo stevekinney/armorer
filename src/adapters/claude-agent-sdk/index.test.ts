@@ -100,4 +100,18 @@ describe('claude-agent-sdk adapter', () => {
       message: 'Use --apply to allow mutating tools.',
     });
   });
+
+  it('allows builtin dangerous tools when allowDangerous is true', async () => {
+    const gate = createClaudeToolGate({
+      registry: createArmorer(),
+      readOnly: true,
+      allowMutation: false,
+      allowDangerous: true,
+      builtin: { dangerous: ['bash'] },
+    });
+
+    const decision = await gate('bash');
+
+    expect(decision).toEqual({ behavior: 'allow' });
+  });
 });

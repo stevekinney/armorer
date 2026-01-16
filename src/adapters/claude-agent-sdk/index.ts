@@ -189,7 +189,7 @@ export function createClaudeToolGate(
       return Promise.resolve({ behavior: 'allow' });
     }
     if (dangerousTools.has(toolName)) {
-      if (readOnly || !allowMutation || !allowDangerous) {
+      if (!allowDangerous) {
         return Promise.resolve({ behavior: 'deny', message: messages.dangerous });
       }
       return Promise.resolve({ behavior: 'allow' });

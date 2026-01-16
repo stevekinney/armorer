@@ -378,7 +378,7 @@ Longer-form docs live in `documentation/`:
 - [MCP Server](documentation/mcp.md)
 - [Public API Reference](documentation/api-reference.md)
 - [Development](documentation/development.md)
-- Claude Agent SDK adapter at `armorer/claude-agent-sdk`
+- Claude Agent SDK adapter at `armorer/claude-agent-sdk` (includes `createClaudeToolGate`)
 
 ## License
 
