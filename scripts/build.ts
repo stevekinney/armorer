@@ -9,6 +9,8 @@ const entrypoints = [
   './src/adapters/openai/index.ts',
   './src/adapters/anthropic/index.ts',
   './src/adapters/gemini/index.ts',
+  './src/adapters/claude-agent-sdk/index.ts',
+  './src/tools/index.ts',
 ];
 
 // Clean dist folder

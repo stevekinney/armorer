@@ -265,6 +265,8 @@ const armorer = createArmorer([], {
 
 If the embedder is asynchronous, the first query may fall back to lexical matching until vectors are available; subsequent calls will use embeddings automatically.
 
+For detailed examples including OpenAI and Pinecone integration, see the [Embeddings & Semantic Search](embeddings.md) documentation.
+
 #### Type Guards
 
 You can use `isArmorer()` to check if an object is an Armorer registry:
@@ -310,6 +312,15 @@ const armorer = createArmorer([], {
 // All registered tools will have the middleware applied
 armorer.register(myTool);
 ```
+
+Common middleware patterns:
+
+- **Validation**: Enforce naming conventions, required metadata, or schema constraints
+- **Enrichment**: Add default metadata like timestamps, source identifiers, or tags
+- **Transformation**: Rename tools, modify schemas, or wrap execute functions
+- **Logging**: Track tool registration for observability
+
+Middleware must be synchronous when deserializing from `SerializedArmorer`. The middleware receives the full `ToolConfig` including the execute function.
 
 #### getTool() for Deserialization
 
@@ -454,3 +465,29 @@ const restored = createArmorer(serialized);
 ```
 
 `SerializedArmorer` is a `ToolConfig[]` that includes execute functions, so it is meant for in-process cloning. Functions are not JSON-serializable, so `JSON.stringify(armorer.toJSON())` will drop them. If you need cross-process persistence, store your own manifest (name, schema, metadata, module path) and rebuild configs at startup, typically using `lazy(() => import(...))` for the execute function.
+
+### Combining Armorers
+
+Use `combineArmorers` to merge multiple registries into a single fresh registry:
+
+```typescript
+import { combineArmorers, createArmorer, createTool } from 'armorer';
+
+const mathArmorer = createArmorer();
+mathArmorer.register(addTool, subtractTool);
+
+const stringArmorer = createArmorer();
+stringArmorer.register(formatTool, parseTool);
+
+// Combine into a single registry
+const combined = combineArmorers(mathArmorer, stringArmorer);
+console.log(combined.tools()); // All tools from both registries
+```
+
+Behavior:
+
+- Tools are copied via `toJSON()` and registered into a new armorer
+- If multiple armorers define the same tool name, the **last** one wins
+- Contexts are shallow-merged in the same order (last one wins on key collisions)
+
+This is useful for modular tool organization where different parts of your application define their own tools, and you want to expose them through a single registry.

@@ -23,10 +23,14 @@ Armorer turns tool calling into a structured, observable, and searchable workflo
 - Zod-powered schema validation with TypeScript inference
 - Central tool registry with execution, policy, and event hooks
 - Query + search helpers with scoring and metadata filters
+- Semantic search with vector embeddings (OpenAI, Pinecone, etc.)
 - Provider adapters for OpenAI, Anthropic, and Gemini
 - Tool composition utilities (pipe/compose/bind/when/parallel/retry)
 - MCP server integration for exposing tools over MCP
+- Claude Agent SDK adapter with tool gating
+- Registry middleware for tool configuration transformation
 - Concurrency controls and execution tracing hooks
+- Pre-configured search tool for semantic tool discovery in agentic workflows
 
 ## Installation
 
@@ -75,7 +79,7 @@ console.log(toolCall.result); // 8
 ## Safety, Policy, and Metadata
 
 Armorer supports registry-level policy hooks and per-tool policy for centralized guardrails.
-You can also tag tools as mutating or read-only and enforce those tags at the registry.
+You can also tag tools as mutating or read-only and enforce those tags at the registry. See the [Registry documentation](documentation/registry.md) for details on querying, searching, and middleware.
 
 ```ts
 import { createArmorer, createTool } from 'armorer';
@@ -142,7 +146,7 @@ createTool({
 
 ### Overview
 
-Define tools with Zod schemas, validation, and typed execution contexts.
+Define tools with Zod schemas, validation, and typed execution contexts. For advanced patterns like chaining tools together, see [Tool Composition](documentation/composition.md).
 
 ### Basic Tool
 
@@ -340,11 +344,58 @@ longTask.addEventListener('progress', (event) => {
 });
 ```
 
+## Search Tool for Agentic Workflows
+
+Armorer includes a pre-configured search tool that lets agents discover available tools dynamically. This is useful when you have many tools and want the LLM to find the right one for a task.
+
+```typescript
+import { createArmorer, createTool } from 'armorer';
+import { createSearchTool } from 'armorer/tools';
+import { z } from 'zod';
+
+const armorer = createArmorer();
+
+// Install the search tool - it auto-registers with the armorer
+createSearchTool(armorer);
+
+// Register your tools (can be done before or after the search tool)
+createTool(
+  {
+    name: 'send-email',
+    description: 'Send an email to recipients',
+    schema: z.object({ to: z.string(), subject: z.string(), body: z.string() }),
+    tags: ['communication'],
+    async execute({ to, subject, body }) {
+      return { sent: true };
+    },
+  },
+  armorer,
+);
+
+// Agents can now search for tools via armorer.execute()
+const result = await armorer.execute({
+  name: 'search-tools',
+  arguments: { query: 'contact someone' },
+});
+
+console.log(result.result);
+// [{ name: 'send-email', description: '...', tags: ['communication'], score: 1.5 }]
+```
+
+The search tool:
+
+- **Auto-registers** with the armorer when created
+- **Discovers tools dynamically** - finds tools registered before or after it
+- **Works with provider adapters** - included in `toOpenAITools(armorer)`, etc.
+- **Supports semantic search** when embeddings are configured on the armorer
+
+See [Search Tool documentation](documentation/search-tools.md) for filtering by tags, configuration options, and agentic workflow examples.
+
 ## TypeScript
 
 ### Overview
 
-TypeScript inference guidance and type-level patterns.
+TypeScript inference guidance and type-level patterns. For a complete list of exported types, see the [API Reference](documentation/api-reference.md).
 
 Armorer is written in TypeScript and provides full type inference:
 
@@ -370,15 +421,19 @@ const result = await tool({ count: 5 }); // number
 
 Longer-form docs live in `documentation/`:
 
-- [Armorer Registry](documentation/registry.md)
-- [Tool Composition](documentation/composition.md)
-- [AbortSignal Support](documentation/about-signal.md)
-- [JSON Schema Output](documentation/json-schema.md)
-- [Provider Adapters](documentation/provider-adapters.md)
-- [MCP Server](documentation/mcp.md)
-- [Public API Reference](documentation/api-reference.md)
-- [Development](documentation/development.md)
-- Claude Agent SDK adapter at `armorer/claude-agent-sdk` (includes `createClaudeToolGate`)
+- [Armorer Registry](documentation/registry.md) - Registration, execution, querying, searching, middleware, and serialization
+- [Tool Composition](documentation/composition.md) - `pipe`, `compose`, `bind`, `tap`, `when`, `parallel`, `retry`, `preprocess`, `postprocess`
+- [Embeddings & Semantic Search](documentation/embeddings.md) - Vector embeddings with OpenAI and Pinecone
+- [LanceDB Integration](documentation/lancedb.md) - Serverless vector database for local and cloud deployments
+- [Chroma Integration](documentation/chroma.md) - Open-source embedding database with built-in embedding functions
+- [Search Tools Tool](documentation/search-tools.md) - Pre-configured tool for semantic tool discovery in agentic workflows
+- [AbortSignal Support](documentation/about-signal.md) - Cancellation and timeout handling
+- [JSON Schema Output](documentation/json-schema.md) - Export tools as JSON Schema
+- [Provider Adapters](documentation/provider-adapters.md) - OpenAI, Anthropic, and Gemini integrations
+- [MCP Server](documentation/mcp.md) - Expose tools over Model Context Protocol
+- [Claude Agent SDK](documentation/claude-agent-sdk.md) - Integration with `@anthropic-ai/claude-agent-sdk` including tool gating
+- [Public API Reference](documentation/api-reference.md) - Complete API reference with all exports and types
+- [Development](documentation/development.md) - Local development workflows
 
 ## License
 

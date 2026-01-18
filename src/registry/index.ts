@@ -1,6 +1,6 @@
 import type { EmissionEvent } from 'event-emission';
 
-import { isArmorer } from '../create-armorer';
+import { type Armorer, isArmorer } from '../create-armorer';
 import type {
   ArmorerTool,
   ToolConfig,
@@ -229,6 +229,7 @@ export type ToolRegistryLike = {
 };
 
 export type ToolQueryInput =
+  | Armorer
   | ArmorerTool
   | ToolRegistryLike
   | Iterable<ArmorerTool>

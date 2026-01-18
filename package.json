@@ -81,6 +81,12 @@
       "import": "./dist/adapters/claude-agent-sdk/index.js",
       "require": "./dist/adapters/claude-agent-sdk/index.cjs",
       "default": "./dist/adapters/claude-agent-sdk/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js",
+      "require": "./dist/tools/index.cjs",
+      "default": "./dist/tools/index.js"
     }
   },
   "main": "./dist/index.js",

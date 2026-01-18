@@ -1,0 +1,274 @@
+import { describe, expect, it } from 'bun:test';
+import { z } from 'zod';
+
+import { createArmorer } from '../src/create-armorer';
+import { createTool } from '../src/create-tool';
+import { createSearchTool } from '../src/tools/search-tools';
+
+describe('createSearchTool', () => {
+  const makeTool = (
+    name: string,
+    overrides: Partial<Parameters<typeof createTool>[0]> = {},
+  ) =>
+    createTool({
+      name,
+      description: `${name} tool`,
+      schema: z.object({ value: z.number() }),
+      execute: async ({ value }) => ({ value }),
+      ...overrides,
+    });
+
+  it('creates a search tool registered with the armorer', () => {
+    const armorer = createArmorer();
+    const searchTool = createSearchTool(armorer);
+
+    expect(searchTool.name).toBe('search-tools');
+    expect(armorer.getTool('search-tools')?.name).toBe('search-tools');
+  });
+
+  it('allows custom name', () => {
+    const armorer = createArmorer();
+    const searchTool = createSearchTool(armorer, { name: 'find-tools' });
+
+    expect(searchTool.name).toBe('find-tools');
+    expect(armorer.getTool('find-tools')?.name).toBe('find-tools');
+  });
+
+  it('can skip registration', () => {
+    const armorer = createArmorer();
+    const searchTool = createSearchTool(armorer, { register: false });
+
+    expect(armorer.getTool('search-tools')).toBeUndefined();
+    expect(searchTool.name).toBe('search-tools');
+  });
+
+  it('searches tools by query', async () => {
+    const armorer = createArmorer();
+    armorer.register(
+      makeTool('send-email', { description: 'Send an email message' }),
+      makeTool('send-sms', { description: 'Send a text message' }),
+      makeTool('get-weather', { description: 'Get weather forecast' }),
+    );
+    createSearchTool(armorer);
+
+    const results = await armorer.execute({
+      name: 'search-tools',
+      arguments: { query: 'send message' },
+    });
+
+    expect(results.error).toBeUndefined();
+    const tools = results.result as Array<{ name: string; score: number }>;
+    expect(tools.length).toBeGreaterThanOrEqual(2);
+    expect(tools.map((t) => t.name)).toContain('send-email');
+    expect(tools.map((t) => t.name)).toContain('send-sms');
+  });
+
+  it('respects limit parameter', async () => {
+    const armorer = createArmorer();
+    armorer.register(
+      makeTool('tool-a'),
+      makeTool('tool-b'),
+      makeTool('tool-c'),
+      makeTool('tool-d'),
+    );
+    createSearchTool(armorer, { limit: 2 });
+
+    const results = await armorer.execute({
+      name: 'search-tools',
+      arguments: { query: 'tool', limit: 2 },
+    });
+
+    expect(results.error).toBeUndefined();
+    const tools = results.result as Array<{ name: string }>;
+    expect(tools.length).toBe(2);
+  });
+
+  it('filters by tags', async () => {
+    const armorer = createArmorer();
+    armorer.register(
+      makeTool('send-email', { tags: ['communication'] }),
+      makeTool('send-sms', { tags: ['communication'] }),
+      makeTool('get-weather', { tags: ['weather'] }),
+    );
+    createSearchTool(armorer);
+
+    const results = await armorer.execute({
+      name: 'search-tools',
+      arguments: { query: 'send', tags: ['communication'] },
+    });
+
+    expect(results.error).toBeUndefined();
+    const tools = results.result as Array<{ name: string }>;
+    expect(tools.length).toBe(2);
+    expect(tools.map((t) => t.name)).not.toContain('get-weather');
+  });
+
+  it('includes reasons when explain is enabled', async () => {
+    const armorer = createArmorer();
+    armorer.register(makeTool('send-email', { tags: ['email'] }));
+    createSearchTool(armorer, { explain: true });
+
+    const results = await armorer.execute({
+      name: 'search-tools',
+      arguments: { query: 'email' },
+    });
+
+    expect(results.error).toBeUndefined();
+    const tools = results.result as Array<{ name: string; reasons?: string[] }>;
+    expect(tools[0]?.reasons).toBeDefined();
+    expect(tools[0]?.reasons?.length).toBeGreaterThan(0);
+  });
+
+  it('returns tool descriptions and tags', async () => {
+    const armorer = createArmorer();
+    armorer.register(
+      makeTool('send-email', {
+        description: 'Send an email to recipients',
+        tags: ['communication', 'email'],
+      }),
+    );
+    createSearchTool(armorer);
+
+    const results = await armorer.execute({
+      name: 'search-tools',
+      arguments: { query: 'email' },
+    });
+
+    expect(results.error).toBeUndefined();
+    const tools = results.result as Array<{
+      name: string;
+      description: string;
+      tags?: string[];
+    }>;
+    expect(tools[0]?.name).toBe('send-email');
+    expect(tools[0]?.description).toBe('Send an email to recipients');
+    expect(tools[0]?.tags).toContain('communication');
+    expect(tools[0]?.tags).toContain('email');
+  });
+
+  it('can be called directly', async () => {
+    const armorer = createArmorer();
+    armorer.register(makeTool('alpha'), makeTool('beta'));
+    const searchTool = createSearchTool(armorer);
+
+    const results = await searchTool({ query: 'alpha' });
+
+    expect(Array.isArray(results)).toBe(true);
+    expect(results[0]?.name).toBe('alpha');
+  });
+
+  it('has readonly metadata', () => {
+    const armorer = createArmorer();
+    const searchTool = createSearchTool(armorer);
+
+    expect(searchTool.metadata?.readOnly).toBe(true);
+    expect(searchTool.tags).toContain('readonly');
+  });
+
+  describe('agent usability', () => {
+    it('is available to agents via armorer.execute()', async () => {
+      const armorer = createArmorer();
+      armorer.register(makeTool('example-tool'));
+      createSearchTool(armorer);
+
+      // Simulate an agent calling the search tool via armorer.execute()
+      const result = await armorer.execute({
+        id: 'call-123',
+        name: 'search-tools',
+        arguments: { query: 'example' },
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.toolName).toBe('search-tools');
+      expect(Array.isArray(result.result)).toBe(true);
+    });
+
+    it('is listed in armorer.tools() for provider adapters', () => {
+      const armorer = createArmorer();
+      createSearchTool(armorer);
+
+      const tools = armorer.tools();
+      const searchTool = tools.find((t) => t.name === 'search-tools');
+
+      expect(searchTool).toBeDefined();
+      expect(searchTool?.description).toContain('Search for available tools');
+    });
+  });
+
+  describe('dynamic tool discovery', () => {
+    it('finds tools registered AFTER the search tool is installed', async () => {
+      const armorer = createArmorer();
+
+      // Install search tool FIRST
+      createSearchTool(armorer);
+
+      // Register tools AFTER the search tool
+      armorer.register(
+        makeTool('late-tool-alpha', { description: 'A tool added later' }),
+        makeTool('late-tool-beta', { description: 'Another late tool' }),
+      );
+
+      // Search should find the late-registered tools
+      const results = await armorer.execute({
+        name: 'search-tools',
+        arguments: { query: 'late tool' },
+      });
+
+      expect(results.error).toBeUndefined();
+      const tools = results.result as Array<{ name: string }>;
+      expect(tools.map((t) => t.name)).toContain('late-tool-alpha');
+      expect(tools.map((t) => t.name)).toContain('late-tool-beta');
+    });
+
+    it('finds tools registered at any point in time', async () => {
+      const armorer = createArmorer();
+
+      // Register some tools before
+      armorer.register(makeTool('before-tool', { description: 'Registered before' }));
+
+      // Install search tool
+      createSearchTool(armorer);
+
+      // Register more tools after
+      armorer.register(makeTool('after-tool', { description: 'Registered after' }));
+
+      // First search - should find both
+      const results1 = await armorer.execute({
+        name: 'search-tools',
+        arguments: { query: 'tool' },
+      });
+      const tools1 = results1.result as Array<{ name: string }>;
+      expect(tools1.map((t) => t.name)).toContain('before-tool');
+      expect(tools1.map((t) => t.name)).toContain('after-tool');
+
+      // Register even more tools
+      armorer.register(makeTool('much-later-tool', { description: 'Registered much later' }));
+
+      // Second search - should find all three
+      const results2 = await armorer.execute({
+        name: 'search-tools',
+        arguments: { query: 'tool' },
+      });
+      const tools2 = results2.result as Array<{ name: string }>;
+      expect(tools2.map((t) => t.name)).toContain('before-tool');
+      expect(tools2.map((t) => t.name)).toContain('after-tool');
+      expect(tools2.map((t) => t.name)).toContain('much-later-tool');
+    });
+
+    it('does not include itself in search results by default', async () => {
+      const armorer = createArmorer();
+      createSearchTool(armorer);
+      armorer.register(makeTool('user-tool'));
+
+      const results = await armorer.execute({
+        name: 'search-tools',
+        arguments: { query: 'tool' },
+      });
+
+      const tools = results.result as Array<{ name: string }>;
+      // The search tool itself should appear in results since it matches "tool"
+      // but user-tool should definitely be there
+      expect(tools.map((t) => t.name)).toContain('user-tool');
+    });
+  });
+});

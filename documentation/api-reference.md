@@ -95,6 +95,14 @@ Usage forms:
 
 The `execute` function receives `ToolContext & Ctx`. The helper type `WithContext<Ctx>` models that merge.
 
+#### `combineArmorers(...armorers)`
+
+Merges multiple Armorer instances into a fresh Armorer. Tools are copied via `toJSON()` and registered into a new armorer. If multiple armorers define the same tool name, the last one wins. Contexts are shallow-merged in the same order.
+
+```typescript
+function combineArmorers(...armorers: [Armorer, ...Armorer[]]): Armorer;
+```
+
 #### `createArmorer(serialized?, options?)`
 
 Creates a registry of tools. `serialized` can be a `SerializedArmorer` created by `armorer.toJSON()`.
@@ -107,6 +115,14 @@ Options (`ArmorerOptions`):
 - `toolFactory?`: `(configuration, { dispatchEvent, baseContext, buildDefaultTool }) => ArmorerTool`
 - `getTool?`: `(configuration: Omit<ToolConfig, 'execute'>) => ToolConfig['execute']` - Called when a tool configuration doesn't have an execute method (typically when deserializing)
 - `middleware?`: Array of `ToolMiddleware` functions to transform tool configurations during registration (must be synchronous when deserializing)
+
+#### `createMiddleware(fn)`
+
+Creates a typed middleware function for transforming tool configurations during registration:
+
+```typescript
+function createMiddleware(fn: (config: ToolConfig) => ToolConfig): ToolMiddleware;
+```
 
 Registry surface (`Armorer`):
 
@@ -247,8 +263,9 @@ Registry helper types (`armorer/registry`):
 
 - `QueryResult`: array of `ArmorerTool`
 - `QuerySelectionResult`: query result union for selections
-- `Embedder`: `(texts: string[]) => number[][] | Promise<number[][]>`
+- `Embedder`: `(texts: string[]) => number[][] | Promise<number[][]>` - function to generate embeddings
 - `EmbeddingVector`: numeric vector returned by `Embedder`
+- `EmbeddingMatch`: embedding match metadata with `field` and `score`
 - `TagFilter`: tag filters (`any`, `all`, `none`)
 - `SchemaFilter`: schema filters (`keys`, `matches`)
 - `MetadataFilter`: metadata filters (`has`, `eq`, `contains`, `startsWith`, `range`, `predicate`)
@@ -284,6 +301,29 @@ Tool types:
 - `ToolCallWithArguments`: tool call with parsed arguments
 - `ToolExecuteOptions`: execution options (`signal`)
 - `ToolExecuteWithOptions`: execution options with params, callId, timeout
+
+Policy types:
+
+- `ToolPolicyHooks`: hooks for policy enforcement (`beforeExecute`, `afterExecute`)
+- `ToolPolicyContext`: context passed to `beforeExecute` hook
+- `ToolPolicyAfterContext`: context passed to `afterExecute` hook
+- `ToolPolicyDecision`: return type from policy hooks (`{ allow: boolean, reason?: string }`)
+- `ToolPolicyContextProvider`: function returning policy context
+
+Validation and diagnostics types:
+
+- `OutputValidationMode`: `'warn' | 'error' | 'silent'`
+- `OutputValidationResult`: result of output validation
+- `ToolValidationReport`: validation report with warnings and errors
+- `ToolValidationWarning`: individual validation warning
+- `ToolRepairHint`: hint for repairing validation issues
+- `ToolDiagnostics`: diagnostics options for tools
+- `ToolDiagnosticsAdapter`: adapter for custom diagnostics reporting
+- `ToolDigestOptions`: options for tool digest generation
+
+Middleware types:
+
+- `ToolMiddleware`: middleware function type for tool configuration transformation
 
 Query types:
 
@@ -388,3 +428,68 @@ Pipelines created with `pipe()`/`compose()` and tools created with `parallel()` 
 - `toGemini(input)`: converts a tool, tool array, or `Armorer` to Gemini function declarations (`GeminiFunctionDeclaration` or array)
 - Type helper: `GeminiTool` for wrapper objects with `functionDeclarations`
 - Types: `GeminiFunctionDeclaration`, `GeminiSchema`, `GeminiTool`
+
+### Subpath export: `armorer/claude-agent-sdk`
+
+Claude Agent SDK adapter for integrating Armorer tools with `@anthropic-ai/claude-agent-sdk`.
+
+Functions:
+
+- `toClaudeAgentSdkTools(input, options?)`: converts tools to Claude Agent SDK tool format
+- `createClaudeAgentSdkServer(input, options?)`: creates an MCP server with tool metadata
+- `createClaudeToolGate(options)`: creates a permission gate function for tool access control
+
+Types:
+
+- `ClaudeAgentSdkTool`: return type of Claude Agent SDK's `tool()` function
+- `ClaudeAgentSdkServer`: return type of `createSdkMcpServer()`
+- `ClaudeAgentSdkToolConfig`: tool configuration override options
+- `ClaudeAgentSdkToolOptions`: options for `toClaudeAgentSdkTools()`
+- `CreateClaudeAgentSdkServerOptions`: options for `createClaudeAgentSdkServer()`
+- `ClaudeAgentSdkServerResult`: return type of `createClaudeAgentSdkServer()`
+- `ClaudeToolGateOptions`: options for `createClaudeToolGate()`
+- `ClaudeToolGateDecision`: return type of the gate function
+
+### Subpath export: `armorer/tools`
+
+Pre-configured tools for common agentic workflows.
+
+#### Search Tools Tool
+
+A tool that searches for other tools in an Armorer registry, enabling semantic tool discovery in agentic workflows.
+
+Functions:
+
+- `createSearchTool(armorer, options?)`: creates a search tool bound to an armorer
+
+Options (`CreateSearchToolOptions`):
+
+- `limit?`: Default maximum number of tools to return (default: 10)
+- `explain?`: Include matching reasons in results (default: false)
+- `name?`: Custom tool name (default: 'search-tools')
+- `description?`: Custom tool description
+- `tags?`: Additional tags to add to the tool
+- `register?`: Automatically register with the armorer (default: true)
+
+Types:
+
+- `CreateSearchToolOptions`: options for `createSearchTool()`
+- `SearchToolsResult`: individual search result with name, description, tags, score, and optional reasons
+- `SearchToolsInput`: input parameters (query, limit, tags)
+- `SearchTool`: the created tool type
+
+Usage:
+
+```typescript
+import { createArmorer } from 'armorer';
+import { createSearchTool } from 'armorer/tools';
+
+const armorer = createArmorer();
+// ... register tools
+
+const searchTool = createSearchTool(armorer);
+const results = await searchTool({ query: 'send message' });
+// [{ name: 'send-email', description: '...', score: 1.5 }, ...]
+```
+
+See [Search Tools Tool](search-tools.md) for complete documentation.
