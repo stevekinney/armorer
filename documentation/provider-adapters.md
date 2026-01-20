@@ -4,12 +4,12 @@
 
 Export tools to OpenAI, Anthropic, and Gemini tool formats.
 
-Export tools in the format expected by different LLM providers. Each adapter is available as a separate subpath export.
+Export tools in the format expected by different LLM providers. Each adapter is available as a separate subpath export (the legacy `armorer/openai`/`armorer/anthropic`/`armorer/gemini` paths still work).
 
 ### OpenAI
 
 ```typescript
-import { toOpenAI } from 'armorer/openai';
+import { toOpenAI } from 'armorer/adapters/openai';
 
 // Single tool
 const openAITool = toOpenAI(myTool);
@@ -31,7 +31,7 @@ const response = await openai.chat.completions.create({
 ### Anthropic
 
 ```typescript
-import { toAnthropic } from 'armorer/anthropic';
+import { toAnthropic } from 'armorer/adapters/anthropic';
 
 // Single tool
 const anthropicTool = toAnthropic(myTool);
@@ -53,7 +53,7 @@ const response = await anthropic.messages.create({
 ### Google Gemini
 
 ```typescript
-import { toGemini } from 'armorer/gemini';
+import { toGemini } from 'armorer/adapters/gemini';
 
 // Single tool
 const geminiDeclaration = toGemini(myTool);

@@ -90,7 +90,7 @@ describe('preprocess', () => {
     });
 
     const preprocessed = preprocess(tool, async (input) => input);
-    expect(preprocessed.tags).toEqual([]);
+    expect(preprocessed.tags).toBeUndefined();
   });
 });
 
@@ -103,13 +103,10 @@ describe('postprocess', () => {
       execute: async ({ id }) => ({ userId: id, name: 'John' }),
     });
 
-    const fetchUserFormatted = postprocess(
-      fetchUser,
-      async (output) => ({
-        ...output,
-        displayName: `${output.name} (${output.userId})`,
-      }),
-    );
+    const fetchUserFormatted = postprocess(fetchUser, async (output) => ({
+      ...output,
+      displayName: `${output.name} (${output.userId})`,
+    }));
 
     const result = await fetchUserFormatted({ id: '123' });
     expect(result).toEqual({
@@ -181,7 +178,7 @@ describe('postprocess', () => {
     });
 
     const postprocessed = postprocess(tool, async (output) => output);
-    expect(postprocessed.tags).toEqual([]);
+    expect(postprocessed.tags).toBeUndefined();
   });
 
   it('uses same schema as original tool', () => {
@@ -207,17 +204,11 @@ describe('preprocess and postprocess composition', () => {
       execute: async ({ n }) => n * 2,
     });
 
-    const preprocessed = preprocess(
-      baseTool,
-      async (input: { str: string }) => ({
-        n: parseInt(input.str, 10),
-      }),
-    );
+    const preprocessed = preprocess(baseTool, async (input: { str: string }) => ({
+      n: parseInt(input.str, 10),
+    }));
 
-    const composed = postprocess(
-      preprocessed,
-      async (output) => `Result: ${output}`,
-    );
+    const composed = postprocess(preprocessed, async (output) => `Result: ${output}`);
 
     const result = await composed({ str: '5' });
     expect(result).toBe('Result: 10');

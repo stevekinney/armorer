@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { combineArmorers } from '../src/combine-armorers';
-import { createArmorer } from '../src/create-armorer';
+import { combineArmorers, createArmorer } from '../src/runtime';
 
 describe('combineArmorers', () => {
   it('combines tools from multiple armorers', async () => {
@@ -90,4 +89,3 @@ describe('combineArmorers', () => {
     });
   });
 });
-

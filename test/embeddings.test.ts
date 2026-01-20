@@ -30,17 +30,17 @@ describe('registry embedding helpers', () => {
     expect(getRegistryEmbedder(registry)).toBe(embed);
   });
 
-  it('stores empty embeddings when there is no content', () => {
+  it('stores embeddings when name is the only content', () => {
     let calls = 0;
     const embed = () => {
       calls += 1;
       return [[1]];
     };
-    const tool = makeTool('   ', { description: '   ' });
+    const tool = makeTool('empty', { description: '   ' });
 
     warmToolEmbeddings(tool, embed);
-    expect(calls).toBe(0);
-    expect(getToolEmbeddings(tool)).toEqual([]);
+    expect(calls).toBe(1);
+    expect(getToolEmbeddings(tool)?.length).toBe(1);
   });
 
   it('resolves async tool embeddings and caches them', async () => {

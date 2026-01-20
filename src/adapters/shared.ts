@@ -1,84 +1,94 @@
-import { isArmorer } from '../create-armorer';
-import type { Armorer, ArmorerTool, ToolConfig } from '../index';
-import { isTool } from '../is-tool';
+import type { SerializedToolDefinition } from '../core/serialization';
+import { serializeToolDefinition } from '../core/serialization';
+import type { AnyToolDefinition } from '../core/tool-definition';
 
 /**
- * Type guard to check if input is a ToolConfig (not an ArmorerTool).
+ * Type guard to check if input is a serialized tool definition.
  */
-export function isToolConfig(input: unknown): input is ToolConfig {
+export function isSerializedToolDefinition(
+  input: unknown,
+): input is SerializedToolDefinition {
   return (
     input !== null &&
     typeof input === 'object' &&
-    'name' in input &&
-    'description' in input &&
-    ('schema' in input || 'parameters' in input) &&
-    'execute' in input &&
-    !isTool(input)
+    'schemaVersion' in input &&
+    (input as SerializedToolDefinition).schemaVersion === '2020-12'
+  );
+}
+
+export function isToolDefinition(input: unknown): input is AnyToolDefinition {
+  return (
+    input !== null &&
+    (typeof input === 'object' || typeof input === 'function') &&
+    'id' in input &&
+    'identity' in input &&
+    'inputSchema' in input &&
+    !('schemaVersion' in input)
   );
 }
 
 /**
- * Converts an ArmorerTool to its ToolConfig.
+ * Normalizes various input types to an array of SerializedToolDefinition objects.
  */
-function toolToConfig(tool: ArmorerTool): ToolConfig {
-  return tool.configuration;
-}
+export function normalizeToSerializedDefinitions(
+  input:
+    | SerializedToolDefinition
+    | AnyToolDefinition
+    | (SerializedToolDefinition | AnyToolDefinition)[]
+    | ToolRegistryLike,
+): SerializedToolDefinition[] {
+  const toSerialized = (item: SerializedToolDefinition | AnyToolDefinition) => {
+    if (isSerializedToolDefinition(item)) return item;
+    if (isToolDefinition(item)) return serializeToolDefinition(item);
+    throw new TypeError(
+      'Invalid tool input: expected ToolDefinition or SerializedToolDefinition',
+    );
+  };
 
-/**
- * Normalizes various input types to an array of ToolConfig objects.
- */
-export function normalizeToToolConfigs(
-  input: ArmorerTool | ToolConfig | (ArmorerTool | ToolConfig)[] | Armorer,
-): ToolConfig[] {
-  // Handle Armorer registry
-  if (isArmorer(input)) {
-    const tools = input.tools();
-    if (Array.isArray(tools)) {
-      return tools.map(toolToConfig);
+  if (isToolRegistryLike(input)) {
+    const tools = input.tools ? input.tools() : input.list?.();
+    if (!Array.isArray(tools)) {
+      throw new Error('Registry tools() must return an array.');
     }
-    throw new Error('Armorer.tools() must return an array.');
+    return tools.map((tool) => toSerialized(tool));
   }
 
-  // Handle array of tools
   if (Array.isArray(input)) {
-    return input.map((item) => {
-      if (isTool(item)) {
-        return toolToConfig(item);
-      }
-      if (isToolConfig(item)) {
-        return item;
-      }
-      throw new TypeError('Invalid tool input: expected ArmorerTool or ToolConfig');
-    });
+    return input.map((item) => toSerialized(item));
   }
 
-  // Handle single tool
-  if (isTool(input)) {
-    return [toolToConfig(input)];
-  }
-
-  // Handle single config
-  if (isToolConfig(input)) {
-    return [input];
-  }
-
-  throw new TypeError('Invalid input: expected tool, tool array, or Armorer registry');
+  return [toSerialized(input)];
 }
 
 /**
  * Determines if the input was a single item (returns true) or array/registry (returns false).
  */
 export function isSingleInput(
-  input: ArmorerTool | ToolConfig | (ArmorerTool | ToolConfig)[] | Armorer,
+  input:
+    | SerializedToolDefinition
+    | AnyToolDefinition
+    | (SerializedToolDefinition | AnyToolDefinition)[]
+    | ToolRegistryLike,
 ): boolean {
-  return !Array.isArray(input) && !isArmorer(input);
+  return !Array.isArray(input) && !isToolRegistryLike(input);
 }
 
 /**
  * Union type for adapter input.
  */
 export type AdapterInput =
-  | ArmorerTool
-  | ToolConfig
-  | (ArmorerTool | ToolConfig)[]
-  | Armorer;
+  | SerializedToolDefinition
+  | AnyToolDefinition
+  | (SerializedToolDefinition | AnyToolDefinition)[]
+  | ToolRegistryLike;
+
+export type ToolRegistryLike = {
+  tools?: () => AnyToolDefinition[] | SerializedToolDefinition[];
+  list?: () => AnyToolDefinition[] | SerializedToolDefinition[];
+};
+
+function isToolRegistryLike(value: unknown): value is ToolRegistryLike {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as ToolRegistryLike;
+  return typeof candidate.tools === 'function' || typeof candidate.list === 'function';
+}

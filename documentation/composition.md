@@ -13,7 +13,7 @@ Pipelines are first-class tools. The result of `pipe()` or `compose()` is an `Ar
 Chains tools left-to-right (data flows forward):
 
 ```typescript
-import { createTool } from 'armorer';
+import { createTool } from 'armorer/runtime';
 import { pipe } from 'armorer/utilities';
 import { z } from 'zod';
 
@@ -68,7 +68,7 @@ Bind some or all parameters of a tool and get back a new tool that only needs th
 Optional third argument: `{ name?: string; description?: string }`.
 
 ```typescript
-import { createTool } from 'armorer';
+import { createTool } from 'armorer/runtime';
 import { bind } from 'armorer/utilities';
 
 const sendEmail = createTool({
@@ -200,7 +200,7 @@ const result = await fetchUserFormatted({ id: '123' });
 Pipelines created with `pipe()` or `compose()`, as well as tools created with `bind()`, `tap()`, `when()`, `parallel()`, `retry()`, `preprocess()`, and `postprocess()`, are valid tools in their own right. They implement the full `ArmorerTool` interface (and pass `isTool()`), so you can register, query via registry helpers, serialize, and adapt them just like any other tool.
 
 ```typescript
-import { isTool } from 'armorer';
+import { isTool } from 'armorer/runtime';
 import { pipe } from 'armorer/utilities';
 
 const pipeline = pipe(parseNumber, double);

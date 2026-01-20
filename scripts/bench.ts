@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { defineTool } from '../src/core';
 import { createArmorer } from '../src/create-armorer';
 import type { ToolConfig } from '../src/is-tool';
 import {
@@ -129,12 +130,16 @@ function makeToolConfig(index: number): ToolConfig {
   const schema = schemas[index % schemas.length] ?? schemas[0]!;
   const tier = tiers[index % tiers.length] ?? 'free';
   const owner = owners[index % owners.length] ?? 'team-a';
-  return {
+  const definition = defineTool({
     name: `tool-${index}-${verb}-${domain}`,
     description: `${verb} ${domain} with ${tagA} output and ${tier} tier`,
     tags: [tagA, tagB, domain],
     metadata: { tier, owner, group: domain },
-    schema,
+    inputSchema: schema,
+  });
+  return {
+    ...definition,
+    parameters: schema,
     execute: async () => null,
   };
 }

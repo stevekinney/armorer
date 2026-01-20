@@ -1,0 +1,1372 @@
+import { createHash } from 'node:crypto';
+
+import { createEventTarget } from 'event-emission';
+import { z } from 'zod';
+
+import type { ToolError, ToolErrorCategory } from '../core/errors';
+import type { ToolRisk } from '../core/risk';
+import { isZodObjectSchema, isZodSchema } from '../core/schema-utilities';
+import { serializeToolDefinition } from '../core/serialization';
+import type { JsonValue } from '../core/serialization/json';
+import {
+  assertKebabCaseTag,
+  type NormalizeTagsOption,
+  uniqTags,
+} from '../core/tag-utilities';
+import type { AnyToolDefinition, ToolLifecycle } from '../core/tool-definition';
+import { defineTool } from '../core/tool-definition';
+import type { Armorer } from './create-armorer';
+import { errorString, normalizeError } from './errors';
+import type {
+  ArmorerTool,
+  DefaultToolEvents,
+  MinimalAbortSignal,
+  OutputValidationMode,
+  OutputValidationResult,
+  ToolCallWithArguments,
+  ToolConfig,
+  ToolContext,
+  ToolDiagnostics,
+  ToolDigestOptions,
+  ToolEventsMap,
+  ToolExecuteOptions,
+  ToolExecuteWithOptions,
+  ToolMetadata,
+  ToolParametersSchema,
+  ToolPolicyAfterContext,
+  ToolPolicyContext,
+  ToolPolicyContextProvider,
+  ToolPolicyDecision,
+  ToolPolicyHooks,
+  ToolRepairHint,
+  ToolValidationReport,
+} from './is-tool';
+import type { ToolCall, ToolResult } from './types';
+
+/**
+ * Options for creating a tool.
+ *
+ * TInput is inferred from the schema type. To minimize type computation:
+ * - ToolContext and related types use type-erasure (unknown) for params
+ * - Runtime schema validation provides actual type safety
+ * - Only the execute function receives typed params
+ */
+export interface CreateToolOptions<
+  TInput extends object = Record<string, unknown>,
+  TOutput = unknown,
+  E extends ToolEventsMap = DefaultToolEvents,
+  Tags extends readonly string[] = readonly string[],
+  M extends ToolMetadata | undefined = undefined,
+  TContext extends ToolContext<E> = ToolContext<E>,
+  TParameters extends object = TInput,
+  TReturn = TOutput,
+> {
+  name: string;
+  description: string;
+  namespace?: string;
+  version?: string;
+  title?: string;
+  examples?: readonly string[];
+  risk?: ToolRisk;
+  lifecycle?: ToolLifecycle;
+  schema?: z.ZodType<TParameters> | z.ZodRawShape | z.ZodTypeAny;
+  outputSchema?: z.ZodTypeAny;
+  execute:
+    | ((params: TParameters, context: TContext) => Promise<TReturn>)
+    | Promise<(params: TParameters, context: TContext) => Promise<TReturn>>;
+  timeoutMs?: number;
+  tags?: NormalizeTagsOption<Tags>;
+  metadata?: M;
+  policy?: ToolPolicyHooks;
+  policyContext?: ToolPolicyContextProvider;
+  digests?: ToolDigestOptions;
+  outputValidationMode?: OutputValidationMode;
+  concurrency?: number;
+  telemetry?: boolean;
+  diagnostics?: ToolDiagnostics;
+}
+
+type SchemaInput = z.ZodTypeAny | z.ZodRawShape;
+
+type InferSchemaInput<TSchema extends SchemaInput> = TSchema extends z.ZodRawShape
+  ? z.infer<z.ZodObject<TSchema>>
+  : TSchema extends z.ZodType<infer T>
+    ? T extends object
+      ? T
+      : Record<string, unknown>
+    : Record<string, unknown>;
+
+export type WithContext<
+  T extends object = Record<string, unknown>,
+  E extends ToolEventsMap = DefaultToolEvents,
+> = ToolContext<E> & T;
+
+export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
+  loader: () => PromiseLike<TExecute> | TExecute,
+): TExecute {
+  let resolved: TExecute | undefined;
+  let pending: Promise<TExecute> | undefined;
+
+  const load = async () => {
+    if (resolved) return resolved;
+    if (!pending) {
+      pending = Promise.resolve()
+        .then(() => loader())
+        .then((value) => {
+          if (typeof value !== 'function') {
+            throw new TypeError('lazy loader must resolve to a function');
+          }
+          resolved = value;
+          return value;
+        })
+        .catch((error) => {
+          pending = undefined;
+          throw error;
+        });
+    }
+    return pending;
+  };
+
+  return (async (...args: Parameters<TExecute>) => {
+    const execute = await load();
+    return execute(...args);
+  }) as TExecute;
+}
+
+/**
+ * Creates a tool with explicit input/output types.
+ *
+ * Usage:
+ * ```ts
+ * interface MyInput { foo: string; bar: number; }
+ * interface MyOutput { result: string; }
+ *
+ * const tool = createTool<MyInput, MyOutput>({
+ *   name: 'myTool',
+ *   schema: z.object({ foo: z.string(), bar: z.number() }),
+ *   execute: async (params) => {
+ *     // params is MyInput - properly typed!
+ *     return { result: params.foo };
+ *   }
+ * });
+ * ```
+ */
+export function createTool<
+  TSchema extends SchemaInput,
+  TOutput = unknown,
+  E extends ToolEventsMap = DefaultToolEvents,
+  Tags extends readonly string[] = readonly string[],
+  M extends ToolMetadata | undefined = undefined,
+  TContext extends ToolContext<E> = ToolContext<E>,
+  TReturn = TOutput,
+>(
+  options: CreateToolOptions<
+    InferSchemaInput<TSchema>,
+    TOutput,
+    E,
+    Tags,
+    M,
+    TContext,
+    InferSchemaInput<TSchema>,
+    TReturn
+  > & { schema: TSchema },
+  armorer?: Armorer,
+): ArmorerTool<z.ZodType<InferSchemaInput<TSchema>>, E, TReturn, M>;
+
+export function createTool<
+  TInput extends object = Record<string, unknown>,
+  TOutput = unknown,
+  E extends ToolEventsMap = DefaultToolEvents,
+  Tags extends readonly string[] = readonly string[],
+  M extends ToolMetadata | undefined = undefined,
+  TContext extends ToolContext<E> = ToolContext<E>,
+  TParameters extends object = TInput,
+  TReturn = TOutput,
+>(
+  options: CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
+  armorer?: Armorer,
+): ArmorerTool<z.ZodType<TInput>, E, TReturn, M>;
+export function createTool<
+  TInput extends object = Record<string, unknown>,
+  TOutput = unknown,
+  E extends ToolEventsMap = DefaultToolEvents,
+  Tags extends readonly string[] = readonly string[],
+  M extends ToolMetadata | undefined = undefined,
+  TContext extends ToolContext<E> = ToolContext<E>,
+  TParameters extends object = TInput,
+  TReturn = TOutput,
+>(
+  {
+    name,
+    description,
+    namespace,
+    version,
+    title,
+    examples,
+    risk,
+    lifecycle,
+    schema: toolSchema,
+    outputSchema,
+    execute: fn,
+    timeoutMs,
+    tags,
+    metadata: customMetadata,
+    policy,
+    policyContext,
+    digests,
+    outputValidationMode,
+    concurrency,
+    telemetry,
+    diagnostics,
+  }: CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
+  armorer?: Armorer,
+): ArmorerTool<z.ZodType<TInput>, E, TReturn, M> {
+  const normalizedSchema = normalizeSchema(toolSchema);
+
+  const hub = createEventTarget<E>();
+  const {
+    addEventListener,
+    dispatchEvent,
+    on,
+    once,
+    subscribe,
+    toObservable,
+    events,
+    complete,
+  } = hub;
+
+  // Helper to emit events with proper typing (event-emission accepts partial events at runtime)
+  const emit = (type: string, detail: unknown) =>
+    dispatchEvent({ type, detail } as Parameters<typeof dispatchEvent>[0]);
+
+  const metadataValue = customMetadata ?? (undefined as M);
+  const resolvedRisk = mergeRisk(metadataValue, risk);
+  const normalizedTags = normalizeTagsWithRisk(tags, resolvedRisk, name);
+  const telemetryEnabled = telemetry === true;
+  const digestOptions = normalizeDigestOptions(digests);
+  const resolvedOutputValidationMode = outputValidationMode ?? 'report';
+  const concurrencyLimit = normalizeConcurrency(
+    typeof metadataValue?.concurrency === 'number'
+      ? metadataValue.concurrency
+      : concurrency,
+  );
+  const limiter = createConcurrencyLimiter(concurrencyLimit);
+  const runWithConcurrency = <T>(task: () => Promise<T>) =>
+    limiter ? limiter.run(task) : task();
+
+  const resolveExecute = createLazyExecuteResolver(fn);
+  const policyHooks = policy;
+  const policyContextProvider = policyContext;
+
+  const definition = defineTool({
+    name,
+    description,
+    ...(namespace !== undefined ? { namespace } : {}),
+    ...(version !== undefined ? { version } : {}),
+    ...(title !== undefined ? { title } : {}),
+    ...(examples !== undefined ? { examples } : {}),
+    ...(normalizedTags.length ? { tags: normalizedTags } : {}),
+    ...(metadataValue !== undefined ? { metadata: metadataValue } : {}),
+    ...(resolvedRisk !== undefined ? { risk: resolvedRisk } : {}),
+    ...(lifecycle !== undefined ? { lifecycle } : {}),
+    inputSchema: normalizedSchema,
+    ...(outputSchema !== undefined ? { outputSchema } : {}),
+  }) as AnyToolDefinition;
+
+  const schema = definition.inputSchema as unknown as ToolParametersSchema;
+  const typedSchema = definition.inputSchema as unknown as z.ZodType<TParameters>;
+
+  const buildPolicyContext = (
+    toolCall: ToolCall,
+    params: unknown,
+    inputDigest?: string,
+  ): ToolPolicyContext => {
+    const context: ToolPolicyContext = {
+      toolName: name,
+      toolCall,
+      params,
+      configuration,
+    };
+    if (inputDigest !== undefined) {
+      context.inputDigest = inputDigest;
+    }
+    if (normalizedTags.length) {
+      context.tags = normalizedTags;
+    }
+    if (metadataValue !== undefined) {
+      context.metadata = metadataValue;
+    }
+    return context;
+  };
+
+  const resolvePolicyDecision = async (
+    context: ToolPolicyContext,
+  ): Promise<ToolPolicyDecision | undefined> => {
+    if (!policyHooks?.beforeExecute) {
+      return undefined;
+    }
+    const decision = await policyHooks.beforeExecute(context);
+    if (decision === undefined) {
+      return undefined;
+    }
+    if (typeof decision === 'boolean') {
+      return { allow: decision };
+    }
+    return decision;
+  };
+
+  const runPolicyAfter = async (context: ToolPolicyAfterContext): Promise<void> => {
+    if (!policyHooks?.afterExecute) {
+      return;
+    }
+    try {
+      await policyHooks.afterExecute(context);
+    } catch (error) {
+      emit('log', {
+        level: 'warn',
+        message: 'policy afterExecute failed',
+        data: error,
+      });
+    }
+  };
+
+  const executeCall = async (
+    toolCall: ToolCallWithArguments,
+    options?: ToolExecuteOptions,
+  ): Promise<ToolResult> => {
+    const resolvedTimeoutMs = options?.timeoutMs ?? timeoutMs;
+    const executeOptions =
+      options?.signal || resolvedTimeoutMs !== undefined
+        ? {
+            ...(options?.signal ? { signal: options.signal } : {}),
+            ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
+          }
+        : undefined;
+    return runWithConcurrency(() =>
+      executeInner(normalizeToolCall(toolCall), executeOptions),
+    );
+  };
+
+  const executeParams = async (
+    params: TParameters,
+    options?: ToolExecuteOptions,
+  ): Promise<TReturn> => {
+    const toolCall = createToolCall<TParameters>(name, params);
+    const result = await executeCall(toolCall, options);
+    if (result.error) {
+      throw new Error(result.error.message);
+    }
+    if (result.errorMessage) {
+      throw new Error(result.errorMessage);
+    }
+    return result.result as TReturn;
+  };
+
+  const execute = (
+    input: ToolCallWithArguments | TParameters,
+    options?: ToolExecuteOptions,
+  ): Promise<ToolResult | TReturn> => {
+    if (looksLikeToolCall(input, name)) {
+      return executeCall(input, options);
+    }
+    return executeParams(input, options);
+  };
+
+  const executeInner = async (
+    toolCall: ToolCall & { arguments: unknown },
+    options: { timeoutMs?: number; signal?: MinimalAbortSignal } = {},
+  ): Promise<ToolResult> => {
+    const baseDetail = { toolCall, configuration };
+    const startedAt = telemetryEnabled ? Date.now() : 0;
+    const inputDigest = digestOptions.input
+      ? computeDigest(toolCall.arguments, digestOptions.algorithm)
+      : undefined;
+
+    const finishTelemetry = (
+      status: 'success' | 'error' | 'denied' | 'cancelled',
+      details: {
+        result?: unknown;
+        error?: unknown;
+        reason?: string;
+        errorCategory?: ToolErrorCategory;
+        inputDigest?: string;
+        outputDigest?: string;
+        outputValidation?: OutputValidationResult;
+      } = {},
+    ) => {
+      if (!telemetryEnabled) return;
+      const finishedAt = Date.now();
+      emit('tool.finished', {
+        ...baseDetail,
+        status,
+        durationMs: finishedAt - startedAt,
+        startedAt,
+        finishedAt,
+        ...details,
+      });
+    };
+
+    if (telemetryEnabled) {
+      emit('tool.started', {
+        ...baseDetail,
+        params: toolCall.arguments,
+        startedAt,
+        inputDigest,
+      });
+    }
+
+    const handleCancellation = (reason?: unknown): ToolResult => {
+      let message = 'Cancelled';
+      if (typeof reason === 'string') {
+        message = reason || 'Cancelled';
+      } else if (reason instanceof Error) {
+        message = reason.message || 'Cancelled';
+      } else {
+        const formatted = formatNonStringReason(reason);
+        if (formatted) {
+          message = `Cancelled: ${formatted}`;
+        }
+      }
+      const errorObj = new Error(message);
+      const toolError = createToolError('cancelled', message, {
+        code: 'CANCELLED',
+        retryable: false,
+      });
+      emit('execute-error', { ...baseDetail, error: errorObj });
+      emit('settled', { ...baseDetail, error: errorObj });
+      const cancelledDetails: {
+        error?: unknown;
+        errorCategory?: ToolErrorCategory;
+        inputDigest?: string;
+      } = { error: errorObj, errorCategory: toolError.category };
+      if (inputDigest !== undefined) {
+        cancelledDetails.inputDigest = inputDigest;
+      }
+      finishTelemetry('cancelled', cancelledDetails);
+      const callId = toolCall.id;
+      return {
+        callId,
+        outcome: 'error',
+        content: message,
+        toolCallId: callId,
+        toolName: name,
+        result: undefined,
+        error: toolError,
+        errorMessage: toolError.message,
+        errorCategory: toolError.category,
+        inputDigest,
+      } as ToolResult;
+    };
+
+    if (options.signal?.aborted) {
+      return handleCancellation(options.signal.reason);
+    }
+
+    try {
+      emit('execute-start', { ...baseDetail, params: toolCall.arguments });
+      if (options.signal?.aborted) {
+        return handleCancellation(options.signal.reason);
+      }
+      const parsed = schema.parse(toolCall.arguments) as TParameters;
+      const typedToolCall = { ...toolCall, arguments: parsed } as ToolCallWithArguments;
+      const parsedDetail = { toolCall: typedToolCall, configuration };
+      emit('validate-success', { ...parsedDetail, params: toolCall.arguments, parsed });
+      if (options.signal?.aborted) {
+        return handleCancellation(options.signal.reason);
+      }
+      const policyContext = buildPolicyContext(typedToolCall, parsed, inputDigest);
+      if (policyContextProvider) {
+        const injected = await policyContextProvider(policyContext);
+        if (injected && typeof injected === 'object' && !Array.isArray(injected)) {
+          policyContext.policyContext = injected;
+        }
+      }
+      const decision = await resolvePolicyDecision(policyContext);
+      if (decision?.allow === false) {
+        const reason = decision.reason ?? 'Policy denied';
+        emit('policy-denied', { ...parsedDetail, params: parsed, reason });
+        const errorObj = new Error(reason);
+        const toolError = createToolError('permission', reason, {
+          code: 'POLICY_DENIED',
+          retryable: false,
+        });
+        emit('execute-error', { ...parsedDetail, error: errorObj });
+        emit('settled', { ...parsedDetail, error: errorObj });
+        await runPolicyAfter({
+          ...policyContext,
+          outcome: 'denied',
+          errorCategory: toolError.category,
+          reason,
+        });
+        const deniedDetails: {
+          reason?: string;
+          errorCategory?: ToolErrorCategory;
+          inputDigest?: string;
+        } = { reason, errorCategory: toolError.category };
+        if (inputDigest !== undefined) {
+          deniedDetails.inputDigest = inputDigest;
+        }
+        finishTelemetry('denied', deniedDetails);
+        const callId = typedToolCall.id;
+        return {
+          callId,
+          outcome: 'error',
+          content: reason,
+          toolCallId: callId,
+          toolName: name,
+          result: undefined,
+          error: toolError,
+          errorMessage: toolError.message,
+          errorCategory: toolError.category,
+          inputDigest,
+        } as ToolResult;
+      }
+      const meta: { toolName: string; callId?: string } = { toolName: name };
+      if (typedToolCall.id) {
+        meta.callId = typedToolCall.id;
+      }
+      const resolvedExecute = await resolveExecute();
+      if (options.signal?.aborted) {
+        return handleCancellation(options.signal.reason);
+      }
+      // Merge armorer context if tool was created with an armorer that has context
+      const armorerContext = armorer?.getContext?.();
+
+      const toolContext: ToolContext<E> = {
+        dispatch: dispatchEvent,
+        meta,
+        toolCall: typedToolCall,
+        configuration,
+        ...(options.signal ? { signal: options.signal } : {}),
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+        ...(armorerContext || {}),
+      };
+
+      // `TContext` may be a subtype of `ToolContext<E>` (e.g. with extra fields).
+      // At runtime we can only guarantee the base ToolContext shape plus any armorer context,
+      // so we cast to avoid `exactOptionalPropertyTypes` assignability issues.
+      const runner = resolvedExecute(parsed, toolContext as unknown as TContext);
+      const timed =
+        typeof options.timeoutMs === 'number'
+          ? withTimeout(runner, options.timeoutMs)
+          : runner;
+      const value = await raceWithSignal(timed, options.signal);
+      const outputValidation = validateOutput(
+        outputSchema,
+        value,
+        resolvedOutputValidationMode,
+      );
+      if (outputValidation) {
+        if (outputValidation.success) {
+          emit('output-validate-success', { ...parsedDetail, result: value });
+        } else {
+          emit('output-validate-error', {
+            ...parsedDetail,
+            result: value,
+            error: outputValidation.error,
+          });
+          if (resolvedOutputValidationMode === 'throw') {
+            throw outputValidation.error;
+          }
+        }
+      }
+      const outputDigest = digestOptions.output
+        ? computeDigest(value, digestOptions.algorithm)
+        : undefined;
+      emit('execute-success', { ...parsedDetail, result: value });
+      emit('settled', { ...parsedDetail, result: value });
+      const policyAfter: ToolPolicyAfterContext = {
+        ...policyContext,
+        outcome: 'success',
+        result: value,
+      };
+      if (outputDigest !== undefined) {
+        policyAfter.outputDigest = outputDigest;
+      }
+      if (outputValidation !== undefined) {
+        policyAfter.outputValidation = outputValidation;
+      }
+      await runPolicyAfter(policyAfter);
+      const successDetails: {
+        result?: unknown;
+        inputDigest?: string;
+        outputDigest?: string;
+        outputValidation?: OutputValidationResult;
+      } = { result: value };
+      if (inputDigest !== undefined) {
+        successDetails.inputDigest = inputDigest;
+      }
+      if (outputDigest !== undefined) {
+        successDetails.outputDigest = outputDigest;
+      }
+      if (outputValidation !== undefined) {
+        successDetails.outputValidation = outputValidation;
+      }
+      finishTelemetry('success', successDetails);
+      const callId = typedToolCall.id;
+      return {
+        callId,
+        outcome: 'success',
+        content: value,
+        toolCallId: callId,
+        toolName: name,
+        result: value,
+        inputDigest,
+        outputDigest,
+        outputValidation: outputValidation
+          ? {
+              success: outputValidation.success,
+              error: outputValidation.error
+                ? errorString(normalizeError(outputValidation.error))
+                : undefined,
+            }
+          : undefined,
+      } as ToolResult;
+    } catch (error) {
+      if (isAbortRejection(error)) {
+        return handleCancellation(error.reason);
+      }
+      const isZod = error instanceof z.ZodError;
+      if (isZod) {
+        let report: ToolValidationReport | undefined;
+        let repairHints: ToolRepairHint[] | undefined;
+
+        if (diagnostics?.safeParseWithReport) {
+          try {
+            const diagnosticsSchema = getDiagnosticsSchema(schema);
+            const diagnosticsResult = diagnostics.safeParseWithReport(
+              diagnosticsSchema,
+              toolCall.arguments,
+            );
+            report = diagnosticsResult.report;
+            if (diagnostics?.createRepairHints) {
+              const hintError = diagnosticsResult.success
+                ? error
+                : diagnosticsResult.error;
+              repairHints = diagnostics.createRepairHints(hintError, {
+                rootLabel: 'arguments',
+              });
+            }
+          } catch {
+            // Ignore diagnostics failures
+          }
+        }
+
+        if (!repairHints && diagnostics?.createRepairHints) {
+          try {
+            repairHints = diagnostics.createRepairHints(error, {
+              rootLabel: 'arguments',
+            });
+          } catch {
+            // Ignore diagnostics failures
+          }
+        }
+
+        emit('validate-error', {
+          ...baseDetail,
+          params: toolCall.arguments,
+          error,
+          report,
+          repairHints,
+        });
+      } else {
+        emit('execute-error', { ...baseDetail, error });
+      }
+      emit('settled', { ...baseDetail, error });
+      const callId = toolCall.id;
+      const errorCategory = classifyErrorCategory(error);
+      const errorPolicyContext = buildPolicyContext(
+        toolCall,
+        toolCall.arguments,
+        inputDigest,
+      );
+      if (policyContextProvider) {
+        const injected = await policyContextProvider(errorPolicyContext);
+        if (injected && typeof injected === 'object' && !Array.isArray(injected)) {
+          errorPolicyContext.policyContext = injected;
+        }
+      }
+      await runPolicyAfter({
+        ...errorPolicyContext,
+        outcome: 'error',
+        errorCategory,
+        error,
+      });
+      const errorDetails: {
+        error?: unknown;
+        errorCategory?: ToolErrorCategory;
+        inputDigest?: string;
+      } = { error, errorCategory };
+      if (inputDigest !== undefined) {
+        errorDetails.inputDigest = inputDigest;
+      }
+      finishTelemetry('error', errorDetails);
+      const message = errorString(
+        normalizeError(error, isTimeoutError(error) ? { code: 'TIMEOUT' } : undefined),
+      );
+      const toolError = isZod
+        ? createToolError('validation', message, {
+            code: 'VALIDATION_ERROR',
+            retryable: false,
+            details: { issues: serializeZodIssues(error.issues ?? []) },
+          })
+        : createToolError(errorCategory, message, {
+            code: extractErrorCode(error) ?? defaultErrorCode(errorCategory),
+            retryable: errorCategory === 'transient' || errorCategory === 'timeout',
+          });
+      return {
+        callId,
+        outcome: 'error',
+        content: message,
+        toolCallId: callId,
+        toolName: name,
+        result: undefined,
+        error: toolError,
+        errorMessage: toolError.message,
+        errorCategory: toolError.category,
+        inputDigest,
+      } as ToolResult;
+    }
+  };
+
+  function formatNonStringReason(reason: unknown): string | undefined {
+    if (reason === undefined || reason === null) return undefined;
+    if (
+      typeof reason === 'number' ||
+      typeof reason === 'boolean' ||
+      typeof reason === 'bigint'
+    ) {
+      return String(reason);
+    }
+    if (typeof reason === 'symbol') {
+      return reason.description ?? 'Symbol';
+    }
+    if (typeof reason === 'object') {
+      try {
+        return JSON.stringify(reason);
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
+  const callable = async (params: unknown) => executeParams(params as TParameters);
+
+  const configuration: ToolConfig = {
+    ...definition,
+    parameters: typedSchema,
+    execute: async (params) => executeParams(params as TParameters),
+  };
+  if (policyHooks) {
+    configuration.policy = policyHooks;
+  }
+  if (policyContextProvider) {
+    configuration.policyContext = policyContextProvider;
+  }
+  if (digests !== undefined) {
+    configuration.digests = digests;
+  }
+  if (outputValidationMode !== undefined) {
+    configuration.outputValidationMode = outputValidationMode;
+  }
+  if (concurrencyLimit !== undefined) {
+    configuration.concurrency = concurrencyLimit;
+  }
+
+  const toJSON = (() => {
+    const json = serializeToolDefinition(configuration);
+    return () => json;
+  })();
+
+  // Build metadata bag for proxy lookup
+  const bag: Record<PropertyKey, unknown> = {
+    id: configuration.id,
+    identity: configuration.identity,
+    display: configuration.display,
+    name: configuration.name,
+    description: configuration.description,
+    inputSchema: configuration.inputSchema,
+    schema: configuration.schema,
+    parameters: typedSchema,
+    outputSchema: configuration.outputSchema,
+    risk: configuration.risk,
+    lifecycle: configuration.lifecycle,
+    execute,
+    run: async (params: unknown, context: TContext) => {
+      const resolved = await resolveExecute();
+      return resolved(params as TParameters, context);
+    },
+    rawExecute: async (params: unknown, context: TContext) => {
+      const resolved = await resolveExecute();
+      return resolved(params as TParameters, context);
+    },
+    configuration,
+    // Event listener methods
+    addEventListener,
+    dispatchEvent,
+    // Observable-based event methods (event-emission 0.2.0)
+    on,
+    once,
+    subscribe,
+    toObservable,
+    // Async iteration (event-emission 0.2.0)
+    events,
+    // Lifecycle methods
+    complete,
+    get completed() {
+      return hub.completed;
+    },
+    toJSON,
+    toString: () => `**${configuration.name}**: ${configuration.description}`,
+    [Symbol.toPrimitive]: () => configuration.name,
+    tags: configuration.tags,
+    metadata: configuration.metadata,
+  };
+
+  const tool = new Proxy(
+    callable as unknown as ArmorerTool<z.ZodType<TInput>, E, TReturn, M>,
+    {
+      get(target, prop, receiver) {
+        if (Object.prototype.hasOwnProperty.call(bag, prop)) {
+          return bag[prop];
+        }
+        return Reflect.get(
+          target as object,
+          prop,
+          receiver as unknown as object,
+        ) as unknown;
+      },
+      has(_target, prop) {
+        if (Object.prototype.hasOwnProperty.call(bag, prop)) return true;
+        return Reflect.has(callable as unknown as object, prop);
+      },
+      apply(_target, _thisArg, argArray) {
+        return callable(argArray[0]);
+      },
+      // Optional: cleanup on dispose
+      getOwnPropertyDescriptor(_target, prop) {
+        if (Object.prototype.hasOwnProperty.call(bag, prop)) {
+          return {
+            configurable: true,
+            enumerable: true,
+            writable: false,
+            value: bag[prop],
+          };
+        }
+        return Object.getOwnPropertyDescriptor(callable, prop);
+      },
+    },
+  );
+
+  // Provide [Symbol.dispose] to complete the event target (clears listeners and marks complete)
+  bag[Symbol.dispose] = () => {
+    complete();
+  };
+
+  bag['executeWith'] = (options: ToolExecuteWithOptions) => {
+    const toolCall = createToolCall(name, options.params, options.callId);
+    const resolvedTimeoutMs = options.timeoutMs ?? timeoutMs;
+    const executeOptions =
+      options.signal || resolvedTimeoutMs !== undefined
+        ? {
+            ...(options.signal ? { signal: options.signal } : {}),
+            ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
+          }
+        : undefined;
+    return runWithConcurrency(() => executeInner(toolCall, executeOptions));
+  };
+
+  const finalTool = tool as unknown as ArmorerTool<z.ZodType<TInput>, E, TReturn, M>;
+
+  // Register with armorer if provided
+  if (armorer) {
+    armorer.register(finalTool as unknown as ArmorerTool);
+  }
+
+  return finalTool;
+
+  function asError(error: unknown): Error {
+    if (error instanceof Error) return error;
+    return new Error(errorString(normalizeError(error)));
+  }
+
+  function withTimeout<TP>(promise: Promise<TP>, timeoutMs: number): Promise<TP> {
+    return new Promise<TP>((resolve, reject) => {
+      const id = setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs);
+      void promise.then(
+        (v) => {
+          clearTimeout(id);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(id);
+          reject(asError(e));
+        },
+      );
+    });
+  }
+
+  function raceWithSignal<TP>(
+    promise: Promise<TP>,
+    signal?: MinimalAbortSignal,
+  ): Promise<TP> {
+    if (!signal) return promise;
+    if (signal.aborted) {
+      return Promise.reject(createAbortRejection(signal.reason));
+    }
+    return new Promise<TP>((resolve, reject) => {
+      const onAbort = () => {
+        cleanup();
+        reject(createAbortRejection(signal.reason));
+      };
+      const cleanup = () => {
+        signal.removeEventListener('abort', onAbort);
+      };
+      signal.addEventListener('abort', onAbort);
+      void promise.then(
+        (value) => {
+          cleanup();
+          resolve(value);
+        },
+        (error) => {
+          cleanup();
+          reject(asError(error));
+        },
+      );
+    });
+  }
+
+  type AbortRejection = Error & { [ABORT_REJECTION_SYMBOL]: true; reason?: unknown };
+
+  function createAbortRejection(reason?: unknown): AbortRejection {
+    const error = new Error('Aborted') as AbortRejection;
+    error[ABORT_REJECTION_SYMBOL] = true;
+    error.reason = reason;
+    return error;
+  }
+
+  function isAbortRejection(error: unknown): error is AbortRejection {
+    if (!error || typeof error !== 'object') return false;
+    const record = error as Record<PropertyKey, unknown>;
+    return record[ABORT_REJECTION_SYMBOL] === true;
+  }
+}
+
+/**
+ * Options for creating a tool with additional context.
+ * TInput is the input interface type - the schema validates it at runtime.
+ */
+type CreateToolWithContextOptions<
+  Ctx extends Record<string, unknown>,
+  TInput extends object,
+  TOutput,
+  E extends ToolEventsMap,
+  Tags extends readonly string[],
+  M extends ToolMetadata | undefined,
+> = Omit<CreateToolOptions<TInput, TOutput, E, Tags, M>, 'execute'> & {
+  execute:
+    | ((params: TInput, context: ToolContext<E> & Ctx) => Promise<TOutput>)
+    | Promise<(params: TInput, context: ToolContext<E> & Ctx) => Promise<TOutput>>;
+};
+
+type AnyToolWithContextOptions<Ctx extends Record<string, unknown>> =
+  CreateToolWithContextOptions<
+    Ctx,
+    Record<string, unknown>,
+    unknown,
+    DefaultToolEvents,
+    readonly string[],
+    ToolMetadata | undefined
+  >;
+
+export function withContext<Ctx extends Record<string, unknown>>(
+  context: Ctx,
+  options?: AnyToolWithContextOptions<Ctx>,
+): ArmorerTool | ((options: AnyToolWithContextOptions<Ctx>) => ArmorerTool) {
+  const build = (opts: AnyToolWithContextOptions<Ctx>) => {
+    const { execute, ...rest } = opts;
+    const resolveExecute = createLazyExecuteResolver(execute);
+    return createTool({
+      ...rest,
+      async execute(params, toolContext) {
+        const extended = Object.assign({}, toolContext, context);
+        const resolved = await resolveExecute();
+        return resolved(params, extended);
+      },
+    } as CreateToolOptions<
+      Record<string, unknown>,
+      unknown,
+      DefaultToolEvents,
+      readonly string[],
+      ToolMetadata | undefined
+    >);
+  };
+  if (options) {
+    return build(options);
+  }
+  return build;
+}
+
+const ABORT_REJECTION_SYMBOL = Symbol('armorer.abort');
+
+export function createToolCall<Args>(
+  toolName: string,
+  args: Args,
+  id?: string,
+): ToolCall & { arguments: Args } {
+  return {
+    id: id ?? crypto.randomUUID(),
+    name: toolName,
+    arguments: args,
+  };
+}
+
+const TOOL_CALL_KEYS = new Set(['id', 'name', 'arguments']);
+
+function normalizeToolCall<T extends ToolCallWithArguments>(toolCall: T): T {
+  if (toolCall.id) return toolCall;
+  return { ...toolCall, id: crypto.randomUUID() };
+}
+
+function looksLikeToolCall(
+  value: unknown,
+  toolName: string,
+): value is ToolCallWithArguments {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate['name'] !== 'string') return false;
+  if (candidate['name'] !== toolName) return false;
+  if (typeof candidate['id'] !== 'string') return false;
+  if (!Object.prototype.hasOwnProperty.call(candidate, 'arguments')) return false;
+  return Object.keys(candidate).every((key) => TOOL_CALL_KEYS.has(key));
+}
+
+function normalizeSchema(schema: unknown): z.ZodTypeAny {
+  if (schema === undefined) {
+    return z.object({});
+  }
+  if (isZodObjectSchema(schema)) {
+    return schema;
+  }
+  if (isZodSchema(schema)) {
+    throw new Error('Tool schema must be a Zod object schema');
+  }
+  if (schema && typeof schema === 'object') {
+    return z.object(schema as Record<string, z.ZodTypeAny>);
+  }
+  throw new Error('Tool schema must be a Zod object schema or an object of Zod schemas');
+}
+
+function getDiagnosticsSchema(schema: unknown): unknown {
+  if (!schema || typeof schema !== 'object') return schema;
+  const candidate = schema as { _def?: { out?: unknown; schema?: unknown } };
+  return candidate._def?.out ?? candidate._def?.schema ?? schema;
+}
+
+function normalizeDigestOptions(input?: ToolDigestOptions): {
+  input: boolean;
+  output: boolean;
+  algorithm: 'sha256';
+} {
+  if (!input) {
+    return { input: false, output: false, algorithm: 'sha256' };
+  }
+  if (input === true) {
+    return { input: true, output: true, algorithm: 'sha256' };
+  }
+  return {
+    input: input.input !== false,
+    output: input.output !== false,
+    algorithm: input.algorithm ?? 'sha256',
+  };
+}
+
+function computeDigest(value: unknown, algorithm: 'sha256'): string {
+  const serialized = stableStringify(value);
+  return createHash(algorithm).update(serialized).digest('hex');
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || value === undefined) return String(value);
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Error) {
+    return JSON.stringify({
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+    });
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+    return `{${entries
+      .map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function classifyErrorCategory(error: unknown): ToolErrorCategory {
+  if (isTimeoutError(error)) return 'timeout';
+  if (isTransientError(error)) return 'transient';
+  return 'internal';
+}
+
+function isTimeoutError(error: unknown): boolean {
+  const code = extractErrorCode(error);
+  if (code === 'TIMEOUT') return true;
+  const message = getStringProperty(error, 'message')?.toLowerCase() ?? '';
+  return message.includes('timeout');
+}
+
+function isTransientError(error: unknown): boolean {
+  const code = getStringProperty(error, 'code');
+  const message = getStringProperty(error, 'message')?.toLowerCase() ?? '';
+  const transientCodes = new Set([
+    'ETIMEDOUT',
+    'ECONNRESET',
+    'EAI_AGAIN',
+    'ECONNREFUSED',
+    'ENETDOWN',
+    'ENETUNREACH',
+    'EHOSTUNREACH',
+  ]);
+  if (code && transientCodes.has(code)) {
+    return true;
+  }
+  if (message.includes('timeout') || message.includes('rate limit')) {
+    return true;
+  }
+  return false;
+}
+
+function defaultErrorCode(category: ToolErrorCategory): string {
+  switch (category) {
+    case 'validation':
+      return 'VALIDATION_ERROR';
+    case 'permission':
+      return 'PERMISSION_DENIED';
+    case 'not_found':
+      return 'NOT_FOUND';
+    case 'conflict':
+      return 'CONFLICT';
+    case 'transient':
+      return 'TRANSIENT_ERROR';
+    case 'timeout':
+      return 'TIMEOUT';
+    case 'cancelled':
+      return 'CANCELLED';
+    default:
+      return 'INTERNAL_ERROR';
+  }
+}
+
+function extractErrorCode(error: unknown): string | undefined {
+  const code = getStringProperty(error, 'code');
+  if (code) return code;
+  const name = getStringProperty(error, 'name');
+  if (name && name !== 'Error') return name;
+  return undefined;
+}
+
+function getStringProperty(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  return typeof record[key] === 'string' ? record[key] : undefined;
+}
+
+function createToolError(
+  category: ToolErrorCategory,
+  message: string,
+  options: { code?: string; retryable?: boolean; details?: JsonValue } = {},
+): ToolError {
+  return {
+    code: options.code ?? defaultErrorCode(category),
+    category,
+    retryable: (options.retryable ?? category === 'transient') || category === 'timeout',
+    message,
+    ...(options.details !== undefined ? { details: options.details } : {}),
+  };
+}
+
+function serializeZodIssues(issues: z.ZodIssue[]): JsonValue {
+  return issues.map((issue) => ({
+    code: issue.code,
+    path: issue.path.map((segment) =>
+      typeof segment === 'symbol' ? (segment.description ?? 'symbol') : segment,
+    ),
+    message: issue.message,
+  }));
+}
+
+function validateOutput(
+  schema: z.ZodTypeAny | undefined,
+  value: unknown,
+  mode: OutputValidationMode,
+): OutputValidationResult | undefined {
+  if (!schema) {
+    return undefined;
+  }
+  const result = schema.safeParse(value);
+  if (result.success) {
+    return { success: true };
+  }
+  if (mode === 'throw') {
+    return { success: false, error: result.error };
+  }
+  return { success: false, error: result.error };
+}
+
+function normalizeTagsWithRisk(
+  tags: NormalizeTagsOption<readonly string[]> | undefined,
+  risk: ToolRisk | undefined,
+  toolName: string,
+): string[] {
+  if (!Array.isArray(tags)) {
+    return buildTagsFromRisk([], risk);
+  }
+  if (!isStringArray(tags)) {
+    throw new Error(`Tool "${toolName}": tag must be a string`);
+  }
+  const baseTags = uniqTags(
+    tags.map((tag) => assertKebabCaseTag(tag, `Tool "${toolName}"`)),
+  );
+  return buildTagsFromRisk(baseTags, risk);
+}
+
+function buildTagsFromRisk(baseTags: string[], risk: ToolRisk | undefined): string[] {
+  const merged = new Set(baseTags);
+  if (risk?.mutates === true) {
+    merged.add('mutating');
+  }
+  if (risk?.readOnly === true) {
+    merged.add('readonly');
+  }
+  if (risk?.dangerous === true) {
+    merged.add('dangerous');
+  }
+  return Array.from(merged);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function mergeRisk(
+  metadata: ToolMetadata | undefined,
+  risk: ToolRisk | undefined,
+): ToolRisk | undefined {
+  const derived: ToolRisk = {};
+  if (metadata && typeof metadata === 'object') {
+    if (typeof metadata.mutates === 'boolean') derived.mutates = metadata.mutates;
+    if (typeof metadata.readOnly === 'boolean') derived.readOnly = metadata.readOnly;
+    if (typeof metadata.dangerous === 'boolean') derived.dangerous = metadata.dangerous;
+  }
+  const merged: ToolRisk = { ...derived, ...(risk ?? {}) };
+  const hasValue = Object.values(merged).some((value) => value !== undefined);
+  return hasValue ? merged : undefined;
+}
+
+function normalizeConcurrency(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const floored = Math.floor(value);
+  if (floored <= 0) {
+    return undefined;
+  }
+  return floored;
+}
+
+type ConcurrencyLimiter = {
+  run: <T>(task: () => Promise<T>) => Promise<T>;
+};
+
+function createConcurrencyLimiter(limit?: number): ConcurrencyLimiter | undefined {
+  const resolved = normalizeConcurrency(limit);
+  if (resolved === undefined) {
+    return undefined;
+  }
+  let active = 0;
+  const queue: Array<() => void> = [];
+  const run = async <T>(task: () => Promise<T>): Promise<T> => {
+    if (active >= resolved) {
+      await new Promise<void>((resolve) => queue.push(resolve));
+    }
+    active += 1;
+    try {
+      return await task();
+    } finally {
+      active -= 1;
+      const next = queue.shift();
+      if (next) {
+        next();
+      }
+    }
+  };
+  return { run };
+}
+
+type ToolExecute<TInput, TOutput, TContext> = (
+  params: TInput,
+  context: TContext,
+) => Promise<TOutput>;
+
+type LazyToolExecute<TInput, TOutput, TContext> =
+  | ToolExecute<TInput, TOutput, TContext>
+  | Promise<ToolExecute<TInput, TOutput, TContext>>;
+
+function createLazyExecuteResolver<TInput, TOutput, TContext>(
+  execute: LazyToolExecute<TInput, TOutput, TContext>,
+): () => Promise<ToolExecute<TInput, TOutput, TContext>> {
+  if (!isExecutable(execute)) {
+    throw new TypeError(
+      'execute must be a function or a promise that resolves to a function',
+    );
+  }
+  if (typeof execute === 'function') {
+    const fn = execute;
+    return () => Promise.resolve(fn);
+  }
+  let resolved: ToolExecute<TInput, TOutput, TContext> | undefined;
+  let pending: Promise<ToolExecute<TInput, TOutput, TContext>> | undefined;
+
+  return async () => {
+    if (resolved) return resolved;
+    if (!pending) {
+      pending = Promise.resolve(execute)
+        .then((value) => {
+          if (typeof value !== 'function') {
+            throw new TypeError(
+              'execute must be a function or a promise that resolves to a function',
+            );
+          }
+          resolved = value;
+          return value;
+        })
+        .catch((error) => {
+          pending = undefined;
+          throw error;
+        });
+    }
+    return pending;
+  };
+}
+
+function isExecutable<TInput, TOutput, TContext>(
+  execute: LazyToolExecute<TInput, TOutput, TContext>,
+): boolean {
+  return (
+    typeof execute === 'function' ||
+    (typeof execute === 'object' &&
+      execute !== null &&
+      'then' in execute &&
+      typeof (execute as PromiseLike<unknown>).then === 'function')
+  );
+}

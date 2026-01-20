@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer } from '../src/create-armorer';
-import { createTool } from '../src/create-tool';
-import { createSearchTool } from '../src/tools/search-tools';
+import { createArmorer, createSearchTool, createTool } from '../src/runtime';
 
 describe('createSearchTool', () => {
   const makeTool = (
@@ -242,7 +240,9 @@ describe('createSearchTool', () => {
       expect(tools1.map((t) => t.name)).toContain('after-tool');
 
       // Register even more tools
-      armorer.register(makeTool('much-later-tool', { description: 'Registered much later' }));
+      armorer.register(
+        makeTool('much-later-tool', { description: 'Registered much later' }),
+      );
 
       // Second search - should find all three
       const results2 = await armorer.execute({

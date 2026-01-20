@@ -14,9 +14,7 @@ type Assert<T extends true> = T;
 type IsAssignable<From, To> = [From] extends [To] ? true : false;
 
 type _ToolCallCompat = Assert<IsAssignable<ToolCall, HomogenaizeToolCall>>;
-type _ToolCallCompatReverse = Assert<
-  IsAssignable<HomogenaizeToolCall, ToolCall>
->;
+type _ToolCallCompatReverse = Assert<IsAssignable<HomogenaizeToolCall, ToolCall>>;
 type _ToolResultCompat = Assert<IsAssignable<ToolResult, HomogenaizeToolResult>>;
 type _ToolCompat = Assert<IsAssignable<ArmorerTool, HomogenaizeTool>>;
 type _ToolConfigCompat = Assert<

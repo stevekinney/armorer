@@ -6,12 +6,14 @@ A lightweight, type-safe registry for validated AI tools. Build tools with Zod s
 
 - [Overview](#overview)
 - [Features](#features)
+- [Core vs Runtime](#core-vs-runtime)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Safety, Policy, and Metadata](#safety-policy-and-metadata)
 - [Creating Tools](#creating-tools)
 - [TypeScript](#typescript)
 - [Documentation](#documentation)
+- [Migration Guide](#migration-guide)
 - [License](#license)
 
 ## Overview
@@ -32,6 +34,22 @@ Armorer turns tool calling into a structured, observable, and searchable workflo
 - Concurrency controls and execution tracing hooks
 - Pre-configured search tool for semantic tool discovery in agentic workflows
 
+## Core vs Runtime
+
+Armorer splits tool definitions from execution so you can import only what you need:
+
+- `armorer/core`: tool specs, registry/search, ToolError model, serialization, and minimal context types
+- `armorer/runtime`: execution, policies, createTool/createArmorer, composition utilities (pipe/parallel/retry)
+- `armorer/adapters/*`: provider formatting (OpenAI/Anthropic/Gemini) built on serialized core definitions
+- `armorer/mcp` and `armorer/claude-agent-sdk`: optional integrations (install peer deps when needed)
+
+```typescript
+import { defineTool, createRegistry } from 'armorer/core';
+import { createArmorer, createTool } from 'armorer/runtime';
+```
+
+The root import (`armorer`) still works for now, but new code should prefer the subpaths above.
+
 ## Installation
 
 ```bash
@@ -45,10 +63,16 @@ bun add armorer zod
 pnpm add armorer zod
 ```
 
+Optional integrations:
+
+```bash
+npm install @modelcontextprotocol/sdk @anthropic-ai/claude-agent-sdk
+```
+
 ## Quick Start
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createArmorer, createTool } from 'armorer/runtime';
 import { z } from 'zod';
 
 const addNumbers = createTool({
@@ -82,7 +106,7 @@ Armorer supports registry-level policy hooks and per-tool policy for centralized
 You can also tag tools as mutating or read-only and enforce those tags at the registry. See the [Registry documentation](documentation/registry.md) for details on querying, searching, and middleware.
 
 ```ts
-import { createArmorer, createTool } from 'armorer';
+import { createArmorer, createTool } from 'armorer/runtime';
 import { z } from 'zod';
 
 const armorer = createArmorer([], {
@@ -173,7 +197,7 @@ Tool schemas must be object schemas (`z.object(...)` or a plain object shape). T
 You can use `isTool(obj)` to check if an object is a tool:
 
 ```typescript
-import { isTool, createTool } from 'armorer';
+import { isTool, createTool } from 'armorer/runtime';
 
 const tool = createTool({ ... });
 if (isTool(tool)) {
@@ -349,7 +373,7 @@ longTask.addEventListener('progress', (event) => {
 Armorer includes a pre-configured search tool that lets agents discover available tools dynamically. This is useful when you have many tools and want the LLM to find the right one for a task.
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createArmorer, createTool } from 'armorer/runtime';
 import { createSearchTool } from 'armorer/tools';
 import { z } from 'zod';
 
@@ -386,7 +410,7 @@ The search tool:
 
 - **Auto-registers** with the armorer when created
 - **Discovers tools dynamically** - finds tools registered before or after it
-- **Works with provider adapters** - included in `toOpenAITools(armorer)`, etc.
+- **Works with provider adapters** - included in `toOpenAI(armorer)`, etc.
 - **Supports semantic search** when embeddings are configured on the armorer
 
 See [Search Tool documentation](documentation/search-tools.md) for filtering by tags, configuration options, and agentic workflow examples.
@@ -433,7 +457,12 @@ Longer-form docs live in `documentation/`:
 - [MCP Server](documentation/mcp.md) - Expose tools over Model Context Protocol
 - [Claude Agent SDK](documentation/claude-agent-sdk.md) - Integration with `@anthropic-ai/claude-agent-sdk` including tool gating
 - [Public API Reference](documentation/api-reference.md) - Complete API reference with all exports and types
+- [Migration Guide](documentation/migration.md) - Upgrade notes and import changes for core/runtime split
 - [Development](documentation/development.md) - Local development workflows
+
+## Migration Guide
+
+See `documentation/migration.md` for before/after import examples, error model updates, and adapter path changes.
 
 ## License
 

@@ -13,7 +13,7 @@ Armorer handles tool registration; MCP handles transport and protocol details.
 ## Quick start (stdio transport)
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createArmorer, createTool } from 'armorer/runtime';
 import { createMCP } from 'armorer/mcp';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -190,7 +190,7 @@ Run an Armorer MCP server as a local process and let the agent SDK spawn it.
 
 ```typescript
 // mcp-server.ts
-import { createArmorer, createTool } from 'armorer';
+import { createArmorer, createTool } from 'armorer/runtime';
 import { createMCP } from 'armorer/mcp';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -266,7 +266,7 @@ Use the in-process MCP server instance with the SDK `mcpServers` config.
 
 ```typescript
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { createArmorer, createTool } from 'armorer';
+import { createArmorer, createTool } from 'armorer/runtime';
 import { createMCP } from 'armorer/mcp';
 import { z } from 'zod';
 

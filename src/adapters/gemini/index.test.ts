@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer, createTool } from '../../index';
+import { createRegistry, defineTool, serializeToolDefinition } from '../../core';
 import { toGemini } from './index';
 
 describe('toGemini', () => {
@@ -10,12 +10,10 @@ describe('toGemini', () => {
     limit: z.number().optional().describe('Max results'),
   });
 
-  const tool = createTool({
+  const tool = defineTool({
     name: 'search',
     description: 'Search for items',
-    schema,
-    execute: async () => [],
-    tags: ['search', 'utility'],
+    inputSchema: schema,
   });
 
   describe('single tool conversion', () => {
@@ -40,11 +38,6 @@ describe('toGemini', () => {
       expect(result.parameters.required).toContain('query');
     });
 
-    it('sets additionalProperties to false', () => {
-      const result = toGemini(tool);
-      expect(result.parameters['additionalProperties']).toBe(false);
-    });
-
     it('does not include $schema property', () => {
       const result = toGemini(tool);
       expect(result.parameters).not.toHaveProperty('$schema');
@@ -67,23 +60,25 @@ describe('toGemini', () => {
 
   describe('registry conversion', () => {
     it('returns array for registry input', () => {
-      const armorer = createArmorer().register(tool);
-      const result = toGemini(armorer);
+      const registry = createRegistry();
+      registry.register(tool);
+      const result = toGemini(registry);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(1);
     });
 
     it('returns empty array for empty registry', () => {
-      const armorer = createArmorer();
-      const result = toGemini(armorer);
+      const registry = createRegistry();
+      const result = toGemini(registry);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(0);
     });
   });
 
-  describe('tool config conversion', () => {
-    it('works with tool configuration', () => {
-      const result = toGemini(tool.configuration);
+  describe('serialized tool conversion', () => {
+    it('works with serialized tool definitions', () => {
+      const serialized = serializeToolDefinition(tool);
+      const result = toGemini(serialized);
       expect(result.name).toBe('search');
       expect(result.parameters).toHaveProperty('type', 'object');
     });

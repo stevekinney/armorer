@@ -1,4 +1,4 @@
-import { describe, expect,it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
 import { createArmorer } from '../src/create-armorer';
@@ -180,7 +180,9 @@ describe('inspect', () => {
     });
 
     it('filters non-string capabilities', () => {
-      const flags = extractMetadataFlags({ capabilities: ['valid', 123, null, 'also-valid'] });
+      const flags = extractMetadataFlags({
+        capabilities: ['valid', 123, null, 'also-valid'],
+      });
 
       expect(flags.capabilities).toEqual(['valid', 'also-valid']);
     });
@@ -407,7 +409,11 @@ describe('inspect', () => {
 
       expect(inspection.counts.total).toBe(3);
       expect(inspection.counts.withTags).toBe(2);
-      expect(inspection.tools.map((t) => t.name).sort()).toEqual(['greet', 'plain', 'sum']);
+      expect(inspection.tools.map((t) => t.name).sort()).toEqual([
+        'greet',
+        'plain',
+        'sum',
+      ]);
     });
 
     it('supports summary detail level', () => {

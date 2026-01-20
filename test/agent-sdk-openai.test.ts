@@ -1,4 +1,4 @@
-import { dirname,join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
@@ -47,7 +47,9 @@ describe('OpenAI Agents SDK MCP integration', () => {
       armorer,
     );
 
-    const mcp = createMCP(armorer, { serverInfo: { name: 'armorer-tools', version: '0.1.0' } });
+    const mcp = createMCP(armorer, {
+      serverInfo: { name: 'armorer-tools', version: '0.1.0' },
+    });
     const transport = new WebStandardStreamableHTTPServerTransport();
     await mcp.connect(transport);
 

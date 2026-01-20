@@ -2,9 +2,9 @@
 
 ## Overview
 
-Reference for exported functions, types, and subpath APIs.
+Reference for exported functions, types, and subpath APIs. New code should prefer `armorer/core` for tool specs and registry/search, and `armorer/runtime` for execution and composition.
 
-### Root export: `armorer`
+### Runtime export: `armorer/runtime` (root `armorer` still works)
 
 #### `createTool(options)`
 
@@ -413,17 +413,17 @@ Pipelines created with `pipe()`/`compose()` and tools created with `parallel()` 
 - `ComposedTool`: composed tool type
 - `ComposedToolEvents`: step event map
 
-### Subpath export: `armorer/openai`
+### Subpath export: `armorer/adapters/openai` (also `armorer/openai`)
 
 - `toOpenAI(input)`: converts a tool, tool array, or `Armorer` to OpenAI Chat Completions tools (`OpenAITool` or `OpenAITool[]`)
 - Types: `JSONSchema`, `OpenAIFunction`, `OpenAITool`
 
-### Subpath export: `armorer/anthropic`
+### Subpath export: `armorer/adapters/anthropic` (also `armorer/anthropic`)
 
 - `toAnthropic(input)`: converts a tool, tool array, or `Armorer` to Anthropic Messages tools (`AnthropicTool` or `AnthropicTool[]`)
 - Types: `AnthropicInputSchema`, `AnthropicTool`, `JSONSchemaProperty`
 
-### Subpath export: `armorer/gemini`
+### Subpath export: `armorer/adapters/gemini` (also `armorer/gemini`)
 
 - `toGemini(input)`: converts a tool, tool array, or `Armorer` to Gemini function declarations (`GeminiFunctionDeclaration` or array)
 - Type helper: `GeminiTool` for wrapper objects with `functionDeclarations`
@@ -435,8 +435,8 @@ Claude Agent SDK adapter for integrating Armorer tools with `@anthropic-ai/claud
 
 Functions:
 
-- `toClaudeAgentSdkTools(input, options?)`: converts tools to Claude Agent SDK tool format
-- `createClaudeAgentSdkServer(input, options?)`: creates an MCP server with tool metadata
+- `toClaudeAgentSdkTools(input, options?)`: async converter for Claude Agent SDK tool format
+- `createClaudeAgentSdkServer(input, options?)`: async MCP server builder with tool metadata
 - `createClaudeToolGate(options)`: creates a permission gate function for tool access control
 
 Types:
@@ -481,7 +481,7 @@ Types:
 Usage:
 
 ```typescript
-import { createArmorer } from 'armorer';
+import { createArmorer } from 'armorer/runtime';
 import { createSearchTool } from 'armorer/tools';
 
 const armorer = createArmorer();

@@ -26,7 +26,9 @@ describe('Anthropic Agent SDK MCP integration', () => {
       armorer,
     );
 
-    const mcp = createMCP(armorer, { serverInfo: { name: 'armorer-tools', version: '0.1.0' } });
+    const mcp = createMCP(armorer, {
+      serverInfo: { name: 'armorer-tools', version: '0.1.0' },
+    });
 
     const config = {
       type: 'sdk',
@@ -68,7 +70,9 @@ describe('Anthropic Agent SDK MCP integration', () => {
       armorer,
     );
 
-    const mcp = createMCP(armorer, { serverInfo: { name: 'armorer-tools', version: '0.1.0' } });
+    const mcp = createMCP(armorer, {
+      serverInfo: { name: 'armorer-tools', version: '0.1.0' },
+    });
 
     let stderrOutput = '';
     const result = await query({

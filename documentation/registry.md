@@ -272,7 +272,7 @@ For detailed examples including OpenAI and Pinecone integration, see the [Embedd
 You can use `isArmorer()` to check if an object is an Armorer registry:
 
 ```typescript
-import { isArmorer, createArmorer } from 'armorer';
+import { isArmorer, createArmorer } from 'armorer/runtime';
 
 const registry = createArmorer();
 if (isArmorer(registry)) {
@@ -289,7 +289,7 @@ This is useful when working with functions that accept multiple types and you ne
 You can transform tool configurations during registration using middleware. Middleware functions receive a tool configuration and return a (possibly modified) configuration. Middleware is applied in order before the tool is built.
 
 ```typescript
-import { createArmorer, createMiddleware } from 'armorer';
+import { createArmorer, createMiddleware } from 'armorer/runtime';
 
 // Create middleware to add metadata
 const addSourceMetadata = createMiddleware((config) => ({
@@ -471,7 +471,7 @@ const restored = createArmorer(serialized);
 Use `combineArmorers` to merge multiple registries into a single fresh registry:
 
 ```typescript
-import { combineArmorers, createArmorer, createTool } from 'armorer';
+import { combineArmorers, createArmorer, createTool } from 'armorer/runtime';
 
 const mathArmorer = createArmorer();
 mathArmorer.register(addTool, subtractTool);

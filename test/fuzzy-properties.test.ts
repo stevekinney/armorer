@@ -108,11 +108,7 @@ function mutateString(value: string, edits: number, rng: () => number): string {
   return chars.join('');
 }
 
-function pickUniqueIndices(
-  length: number,
-  count: number,
-  rng: () => number,
-): number[] {
+function pickUniqueIndices(length: number, count: number, rng: () => number): number[] {
   const result = new Set<number>();
   while (result.size < Math.min(count, length)) {
     result.add(Math.floor(rng() * length));

@@ -6,7 +6,7 @@ import { createTool } from '../../create-tool';
 import { createClaudeAgentSdkServer, createClaudeToolGate } from './index';
 
 describe('claude-agent-sdk adapter', () => {
-  it('creates SDK tools with mutating and dangerous lists', () => {
+  it('creates SDK tools with mutating and dangerous lists', async () => {
     const armorer = createArmorer();
     createTool(
       {
@@ -45,7 +45,7 @@ describe('claude-agent-sdk adapter', () => {
     );
 
     const { toolNames, mutatingToolNames, dangerousToolNames } =
-      createClaudeAgentSdkServer(armorer, {
+      await createClaudeAgentSdkServer(armorer, {
         name: 'test-tools',
         version: '0.0.0',
       });

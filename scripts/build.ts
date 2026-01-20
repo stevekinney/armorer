@@ -2,14 +2,16 @@ import { $ } from 'bun';
 
 const entrypoints = [
   './src/index.ts',
+  './src/core/index.ts',
+  './src/runtime/index.ts',
   './src/lazy/index.ts',
   './src/utilities/index.ts',
   './src/registry/index.ts',
-  './src/mcp/index.ts',
+  './src/integrations/mcp/index.ts',
   './src/adapters/openai/index.ts',
   './src/adapters/anthropic/index.ts',
   './src/adapters/gemini/index.ts',
-  './src/adapters/claude-agent-sdk/index.ts',
+  './src/integrations/claude-agent-sdk/index.ts',
   './src/tools/index.ts',
 ];
 

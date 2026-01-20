@@ -1,6 +1,11 @@
-import type { Armorer, ArmorerTool, ToolConfig } from '../../index';
-import { toJSONSchema } from '../../to-json-schema';
-import { isSingleInput, normalizeToToolConfigs } from '../shared';
+import type { SerializedToolDefinition } from '../../core/serialization';
+import type { AnyToolDefinition } from '../../core/tool-definition';
+import {
+  type AdapterInput,
+  isSingleInput,
+  normalizeToSerializedDefinitions,
+  type ToolRegistryLike,
+} from '../shared';
 import type { AnthropicTool } from './types';
 
 export type { AnthropicInputSchema, AnthropicTool, JSONSchemaProperty } from './types';
@@ -10,7 +15,7 @@ export type { AnthropicInputSchema, AnthropicTool, JSONSchemaProperty } from './
  *
  * @example
  * ```ts
- * import { toAnthropic } from 'armorer/anthropic';
+ * import { toAnthropic } from 'armorer/adapters/anthropic';
  *
  * // Single tool
  * const tool = toAnthropic(myTool);
@@ -29,21 +34,23 @@ export type { AnthropicInputSchema, AnthropicTool, JSONSchemaProperty } from './
  * });
  * ```
  */
-export function toAnthropic(tool: ArmorerTool | ToolConfig): AnthropicTool;
-export function toAnthropic(tools: (ArmorerTool | ToolConfig)[]): AnthropicTool[];
-export function toAnthropic(registry: Armorer): AnthropicTool[];
 export function toAnthropic(
-  input: ArmorerTool | ToolConfig | (ArmorerTool | ToolConfig)[] | Armorer,
-): AnthropicTool | AnthropicTool[] {
-  const configs = normalizeToToolConfigs(input);
-  const converted = configs.map(convertToAnthropic);
+  tool: SerializedToolDefinition | AnyToolDefinition,
+): AnthropicTool;
+export function toAnthropic(
+  tools: (SerializedToolDefinition | AnyToolDefinition)[],
+): AnthropicTool[];
+export function toAnthropic(registry: ToolRegistryLike): AnthropicTool[];
+export function toAnthropic(input: AdapterInput): AnthropicTool | AnthropicTool[];
+export function toAnthropic(input: AdapterInput): AnthropicTool | AnthropicTool[] {
+  const definitions = normalizeToSerializedDefinitions(input);
+  const converted = definitions.map(convertToAnthropic);
 
   return isSingleInput(input) ? converted[0]! : converted;
 }
 
-function convertToAnthropic(config: ToolConfig): AnthropicTool {
-  const jsonSchema = toJSONSchema(config);
-  const params = jsonSchema.parameters;
+function convertToAnthropic(tool: SerializedToolDefinition): AnthropicTool {
+  const params = tool.inputSchema as Record<string, unknown>;
 
   const inputSchema: AnthropicTool['input_schema'] = {
     type: 'object',
@@ -60,8 +67,8 @@ function convertToAnthropic(config: ToolConfig): AnthropicTool {
   }
 
   return {
-    name: jsonSchema.name,
-    description: jsonSchema.description,
+    name: tool.identity.name,
+    description: tool.display.description,
     input_schema: inputSchema,
   };
 }

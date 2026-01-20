@@ -14,10 +14,10 @@ bun add @anthropic-ai/claude-agent-sdk
 
 ## Converting Tools
 
-Use `toClaudeAgentSdkTools` to convert Armorer tools to Claude Agent SDK tools:
+Use `toClaudeAgentSdkTools` to convert Armorer tools to Claude Agent SDK tools. This helper is async because the SDK is loaded lazily:
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createArmorer, createTool } from 'armorer/runtime';
 import { toClaudeAgentSdkTools } from 'armorer/claude-agent-sdk';
 import { z } from 'zod';
 
@@ -35,13 +35,13 @@ createTool(
 );
 
 // Convert to Claude Agent SDK tools
-const sdkTools = toClaudeAgentSdkTools(armorer);
+const sdkTools = await toClaudeAgentSdkTools(armorer);
 
 // Or convert a single tool
-const singleToolSdk = toClaudeAgentSdkTools(myTool);
+const singleToolSdk = await toClaudeAgentSdkTools(myTool);
 
 // Or convert an array of tools
-const toolsSdk = toClaudeAgentSdkTools([tool1, tool2]);
+const toolsSdk = await toClaudeAgentSdkTools([tool1, tool2]);
 ```
 
 ### Custom Tool Configuration
@@ -49,7 +49,7 @@ const toolsSdk = toClaudeAgentSdkTools([tool1, tool2]);
 Override tool properties during conversion:
 
 ```typescript
-const sdkTools = toClaudeAgentSdkTools(armorer, {
+const sdkTools = await toClaudeAgentSdkTools(armorer, {
   toolConfig: (tool) => ({
     name: `custom_${tool.name}`,
     description: `Enhanced: ${tool.description}`,
@@ -62,10 +62,10 @@ const sdkTools = toClaudeAgentSdkTools(armorer, {
 
 ## Creating an MCP Server
 
-Use `createClaudeAgentSdkServer` to create a complete MCP server from your tools:
+Use `createClaudeAgentSdkServer` to create a complete MCP server from your tools (async):
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createArmorer, createTool } from 'armorer/runtime';
 import { createClaudeAgentSdkServer } from 'armorer/claude-agent-sdk';
 import { z } from 'zod';
 
@@ -85,7 +85,7 @@ createTool(
 );
 
 const { sdkServer, tools, toolNames, mutatingToolNames, dangerousToolNames } =
-  createClaudeAgentSdkServer(armorer, {
+  await createClaudeAgentSdkServer(armorer, {
     name: 'my-tools',
     version: '1.0.0',
   });
@@ -108,7 +108,7 @@ The server result includes:
 Use `createClaudeToolGate` to implement permission-based tool access control. This is useful for CLI applications or agent systems that need to restrict tool usage based on flags like `--apply` or `--dangerous`.
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createArmorer, createTool } from 'armorer/runtime';
 import { createClaudeToolGate } from 'armorer/claude-agent-sdk';
 import { z } from 'zod';
 

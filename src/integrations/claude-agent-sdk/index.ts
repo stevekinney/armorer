@@ -1,14 +1,15 @@
-import { createSdkMcpServer, tool as sdkTool } from '@anthropic-ai/claude-agent-sdk';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ZodTypeAny } from 'zod';
 
-import { isArmorer } from '../../create-armorer';
-import type { Armorer, ArmorerTool, ToolResult } from '../../index';
-import { isTool } from '../../is-tool';
-import { getSchemaShape } from '../../schema-utilities';
+import { getSchemaShape } from '../../core/schema-utilities';
+import type { Armorer, ArmorerTool, ToolResult } from '../../runtime';
+import { isArmorer } from '../../runtime/create-armorer';
+import { isTool } from '../../runtime/is-tool';
 
-export type ClaudeAgentSdkTool = ReturnType<typeof sdkTool>;
-export type ClaudeAgentSdkServer = ReturnType<typeof createSdkMcpServer>;
+type ClaudeAgentSdkModule = typeof import('@anthropic-ai/claude-agent-sdk');
+
+export type ClaudeAgentSdkTool = ReturnType<ClaudeAgentSdkModule['tool']>;
+export type ClaudeAgentSdkServer = ReturnType<ClaudeAgentSdkModule['createSdkMcpServer']>;
 
 export type ClaudeAgentSdkToolConfig = {
   name?: string;
@@ -55,11 +56,12 @@ export type ClaudeToolGateOptions = {
 
 export type ClaudeToolGateDecision = { behavior: 'allow' | 'deny'; message?: string };
 
-export function toClaudeAgentSdkTools(
+export async function toClaudeAgentSdkTools(
   input: Armorer | ArmorerTool | ArmorerTool[],
   options: ClaudeAgentSdkToolOptions = {},
-): ClaudeAgentSdkTool[] {
+): Promise<ClaudeAgentSdkTool[]> {
   const tools = normalizeToTools(input);
+  const { tool: sdkTool } = await loadClaudeAgentSdk();
 
   return tools.map((tool) => {
     const override = options.toolConfig?.(tool);
@@ -79,11 +81,12 @@ export function toClaudeAgentSdkTools(
   });
 }
 
-export function createClaudeAgentSdkServer(
+export async function createClaudeAgentSdkServer(
   input: Armorer | ArmorerTool | ArmorerTool[],
   options: CreateClaudeAgentSdkServerOptions = {},
-): ClaudeAgentSdkServerResult {
+): Promise<ClaudeAgentSdkServerResult> {
   const tools = normalizeToTools(input);
+  const { tool: sdkTool, createSdkMcpServer } = await loadClaudeAgentSdk();
   const toolNames: string[] = [];
   const mutatingToolNames: string[] = [];
   const dangerousToolNames: string[] = [];
@@ -244,7 +247,8 @@ function isDangerous(tool: ArmorerTool): boolean {
 
 function toSdkToolResult(result: ToolResult): CallToolResult {
   if (result.outcome === 'error') {
-    const message = result.error ?? stringifyResult(result.content);
+    const message =
+      result.error?.message ?? result.errorMessage ?? stringifyResult(result.content);
     return {
       content: toTextContent(message),
       isError: true,
@@ -288,4 +292,26 @@ function toStructuredContent(value: unknown): Record<string, unknown> | undefine
 function toTextContent(text: string): CallToolResult['content'] {
   if (!text.length) return [];
   return [{ type: 'text' as const, text }];
+}
+
+let cachedClaudeAgentSdk: ClaudeAgentSdkModule | undefined;
+let cachedClaudeAgentSdkPromise: Promise<ClaudeAgentSdkModule> | undefined;
+
+async function loadClaudeAgentSdk(): Promise<ClaudeAgentSdkModule> {
+  if (cachedClaudeAgentSdk) return cachedClaudeAgentSdk;
+  if (!cachedClaudeAgentSdkPromise) {
+    cachedClaudeAgentSdkPromise = import('@anthropic-ai/claude-agent-sdk')
+      .then((module) => {
+        cachedClaudeAgentSdk = module;
+        return module;
+      })
+      .catch((error) => {
+        const hint =
+          'Missing peer dependency "@anthropic-ai/claude-agent-sdk". Install it to use armorer/claude-agent-sdk.';
+        const wrapped = error instanceof Error ? error : new Error(String(error));
+        wrapped.message = `${hint}\n${wrapped.message}`;
+        throw wrapped;
+      });
+  }
+  return cachedClaudeAgentSdkPromise;
 }

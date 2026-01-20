@@ -1,1 +1,1 @@
-export { lazy } from '../create-tool';
+export { lazy } from '../runtime/lazy';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer, createTool } from '../../index';
+import { createRegistry, defineTool } from '../../core';
 import { toOpenAI } from './index';
 
 describe('toOpenAI', () => {
@@ -10,12 +10,10 @@ describe('toOpenAI', () => {
     limit: z.number().optional().describe('Max results'),
   });
 
-  const tool = createTool({
+  const tool = defineTool({
     name: 'search',
     description: 'Search for items',
-    schema,
-    execute: async () => [],
-    tags: ['search', 'utility'],
+    inputSchema: schema,
   });
 
   describe('single tool conversion', () => {
@@ -49,11 +47,6 @@ describe('toOpenAI', () => {
       const result = toOpenAI(tool);
       expect(result.function.parameters.required).toContain('query');
     });
-
-    it('sets additionalProperties to false', () => {
-      const result = toOpenAI(tool);
-      expect(result.function.parameters.additionalProperties).toBe(false);
-    });
   });
 
   describe('array conversion', () => {
@@ -72,25 +65,18 @@ describe('toOpenAI', () => {
 
   describe('registry conversion', () => {
     it('returns array for registry input', () => {
-      const armorer = createArmorer().register(tool);
-      const result = toOpenAI(armorer);
+      const registry = createRegistry();
+      registry.register(tool);
+      const result = toOpenAI(registry);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(1);
     });
 
     it('returns empty array for empty registry', () => {
-      const armorer = createArmorer();
-      const result = toOpenAI(armorer);
+      const registry = createRegistry();
+      const result = toOpenAI(registry);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(0);
-    });
-  });
-
-  describe('tool config conversion', () => {
-    it('works with tool configuration', () => {
-      const result = toOpenAI(tool.configuration);
-      expect(result.type).toBe('function');
-      expect(result.function.name).toBe('search');
     });
   });
 });

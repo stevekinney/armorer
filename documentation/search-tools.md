@@ -24,7 +24,7 @@ import { createSearchTool } from 'armorer/tools';
 ## Basic Usage
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createArmorer, createTool } from 'armorer/runtime';
 import { createSearchTool } from 'armorer/tools';
 import { z } from 'zod';
 
@@ -83,7 +83,7 @@ console.log(results);
 For better search results, configure your armorer with an embedding function:
 
 ```typescript
-import { createArmorer } from 'armorer';
+import { createArmorer } from 'armorer/runtime';
 import { createSearchTool } from 'armorer/tools';
 import OpenAI from 'openai';
 
@@ -241,10 +241,10 @@ armorer.register(searchTool);
 The search tool integrates seamlessly with provider adapters:
 
 ```typescript
-import { toOpenAITools } from 'armorer/openai';
+import { toOpenAI } from 'armorer/adapters/openai';
 
 // Get all tools including the search tool
-const tools = toOpenAITools(armorer);
+const tools = toOpenAI(armorer);
 
 // Use with OpenAI
 const response = await openai.chat.completions.create({
@@ -259,9 +259,9 @@ const response = await openai.chat.completions.create({
 Here's a complete example of using the search tool in an agentic workflow:
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createArmorer, createTool } from 'armorer/runtime';
 import { createSearchTool } from 'armorer/tools';
-import { toOpenAITools } from 'armorer/openai';
+import { toOpenAI } from 'armorer/adapters/openai';
 import OpenAI from 'openai';
 import { z } from 'zod';
 
@@ -333,7 +333,7 @@ Always explain which tools you found and why you chose the one you're using.`,
     const response = await openai.chat.completions.create({
       model: 'gpt-4',
       messages,
-      tools: toOpenAITools(armorer),
+      tools: toOpenAI(armorer),
     });
 
     const choice = response.choices[0];

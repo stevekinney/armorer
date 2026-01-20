@@ -1,137 +1,108 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer, createTool, isArmorer } from '../index';
-import { isSingleInput, isToolConfig, normalizeToToolConfigs } from './shared';
+import { defineTool, serializeToolDefinition } from '../core';
+import {
+  isSerializedToolDefinition,
+  isSingleInput,
+  isToolDefinition,
+  normalizeToSerializedDefinitions,
+} from './shared';
 
 describe('shared adapter utilities', () => {
   const testSchema = z.object({ message: z.string() });
-  const testTool = createTool({
+  const testTool = defineTool({
     name: 'test-tool',
     description: 'A test tool',
-    schema: testSchema,
-    execute: async () => 'result',
+    inputSchema: testSchema,
   });
 
-  const testConfig = testTool.configuration;
+  const serializedTool = serializeToolDefinition(testTool);
 
-  describe('isArmorer', () => {
-    it('returns true for Armorer instance', () => {
-      const armorer = createArmorer();
-      expect(isArmorer(armorer)).toBe(true);
+  describe('isSerializedToolDefinition', () => {
+    it('returns true for serialized tool definitions', () => {
+      expect(isSerializedToolDefinition(serializedTool)).toBe(true);
     });
 
-    it('returns false for tools', () => {
-      expect(isArmorer(testTool)).toBe(false);
-    });
-
-    it('returns false for tool configs', () => {
-      expect(isArmorer(testConfig)).toBe(false);
-    });
-
-    it('returns false for arrays', () => {
-      expect(isArmorer([testTool])).toBe(false);
-    });
-
-    it('returns false for null', () => {
-      expect(isArmorer(null)).toBe(false);
+    it('returns false for tool definitions', () => {
+      expect(isSerializedToolDefinition(testTool)).toBe(false);
     });
   });
 
-  describe('isToolConfig', () => {
-    it('returns true for ToolConfig', () => {
-      expect(isToolConfig(testConfig)).toBe(true);
+  describe('isToolDefinition', () => {
+    it('returns true for tool definitions', () => {
+      expect(isToolDefinition(testTool)).toBe(true);
     });
 
-    it('returns false for ArmorerTool', () => {
-      expect(isToolConfig(testTool)).toBe(false);
-    });
-
-    it('returns false for Armorer', () => {
-      const armorer = createArmorer();
-      expect(isToolConfig(armorer)).toBe(false);
+    it('returns false for serialized tools', () => {
+      expect(isToolDefinition(serializedTool)).toBe(false);
     });
   });
 
-  describe('normalizeToToolConfigs', () => {
-    it('handles single tool', () => {
-      const configs = normalizeToToolConfigs(testTool);
+  describe('normalizeToSerializedDefinitions', () => {
+    it('handles single tool definition', () => {
+      const configs = normalizeToSerializedDefinitions(testTool);
       expect(configs).toHaveLength(1);
-      expect(configs[0]?.name).toBe('test-tool');
+      expect(configs[0]?.identity.name).toBe('test-tool');
     });
 
-    it('handles single config', () => {
-      const configs = normalizeToToolConfigs(testConfig);
+    it('handles single serialized tool', () => {
+      const configs = normalizeToSerializedDefinitions(serializedTool);
       expect(configs).toHaveLength(1);
-      expect(configs[0]?.name).toBe('test-tool');
+      expect(configs[0]?.identity.name).toBe('test-tool');
     });
 
     it('handles array of tools', () => {
-      const configs = normalizeToToolConfigs([testTool, testTool]);
+      const configs = normalizeToSerializedDefinitions([testTool, testTool]);
       expect(configs).toHaveLength(2);
     });
 
-    it('handles array of configs', () => {
-      const configs = normalizeToToolConfigs([testConfig, testConfig]);
+    it('handles array of serialized tools', () => {
+      const configs = normalizeToSerializedDefinitions([serializedTool, serializedTool]);
       expect(configs).toHaveLength(2);
     });
 
-    it('handles mixed array', () => {
-      const configs = normalizeToToolConfigs([testTool, testConfig]);
-      expect(configs).toHaveLength(2);
-    });
-
-    it('handles Armorer registry', () => {
-      const armorer = createArmorer().register(testConfig);
-      const configs = normalizeToToolConfigs(armorer);
+    it('handles registry-like list()', () => {
+      const registryLike = { list: () => [testTool] };
+      const configs = normalizeToSerializedDefinitions(registryLike);
       expect(configs).toHaveLength(1);
-      expect(configs[0]?.name).toBe('test-tool');
+      expect(configs[0]?.identity.name).toBe('test-tool');
     });
 
-    it('handles empty registry', () => {
-      const armorer = createArmorer();
-      const configs = normalizeToToolConfigs(armorer);
-      expect(configs).toHaveLength(0);
+    it('handles registry-like tools()', () => {
+      const registryLike = { tools: () => [serializedTool] };
+      const configs = normalizeToSerializedDefinitions(registryLike);
+      expect(configs).toHaveLength(1);
+      expect(configs[0]?.identity.name).toBe('test-tool');
     });
 
-    it('throws Error when registry tools returns non-array', () => {
-      // Create a mock object that looks like an Armorer but returns a non-array
-      const mockQm: Record<string, unknown> = {
-        tools: () => Promise.resolve([]), // Returns Promise, not array
-        register: () => mockQm,
-        execute: () => Promise.resolve({}),
-        getTool: () => undefined,
-        toJSON: () => [],
-      };
-      expect(() => normalizeToToolConfigs(mockQm as any)).toThrow(
-        'Armorer.tools() must return an array.',
+    it('throws Error when registry list returns non-array', () => {
+      const mockRegistry = {
+        list: () => Promise.resolve([]),
+      } as any;
+      expect(() => normalizeToSerializedDefinitions(mockRegistry)).toThrow(
+        'Registry tools() must return an array.',
       );
     });
 
     it('throws TypeError for invalid item in array', () => {
       const invalidItem = { notATool: true };
-      expect(() => normalizeToToolConfigs([invalidItem] as any)).toThrow(TypeError);
-      expect(() => normalizeToToolConfigs([invalidItem] as any)).toThrow(
-        'Invalid tool input: expected ArmorerTool or ToolConfig',
+      expect(() => normalizeToSerializedDefinitions([invalidItem] as any)).toThrow(
+        TypeError,
+      );
+      expect(() => normalizeToSerializedDefinitions([invalidItem] as any)).toThrow(
+        'Invalid tool input: expected ToolDefinition or SerializedToolDefinition',
       );
     });
 
     it('throws TypeError for completely invalid input', () => {
       const invalidInput = 'not a tool';
-      expect(() => normalizeToToolConfigs(invalidInput as any)).toThrow(TypeError);
-      expect(() => normalizeToToolConfigs(invalidInput as any)).toThrow(
-        'Invalid input: expected tool, tool array, or Armorer registry',
+      expect(() => normalizeToSerializedDefinitions(invalidInput as any)).toThrow(
+        TypeError,
       );
-    });
-
-    it('throws TypeError for object that looks like config but is missing execute', () => {
-      const almostConfig = {
-        name: 'fake',
-        description: 'fake',
-        schema: testSchema,
-        // missing execute
-      };
-      expect(() => normalizeToToolConfigs(almostConfig as any)).toThrow(TypeError);
+      expect(() => normalizeToSerializedDefinitions(invalidInput as any)).toThrow(
+        'Invalid tool input: expected ToolDefinition or SerializedToolDefinition',
+      );
     });
   });
 
@@ -140,8 +111,8 @@ describe('shared adapter utilities', () => {
       expect(isSingleInput(testTool)).toBe(true);
     });
 
-    it('returns true for single config', () => {
-      expect(isSingleInput(testConfig)).toBe(true);
+    it('returns true for single serialized tool', () => {
+      expect(isSingleInput(serializedTool)).toBe(true);
     });
 
     it('returns false for array', () => {
@@ -149,8 +120,8 @@ describe('shared adapter utilities', () => {
     });
 
     it('returns false for registry', () => {
-      const armorer = createArmorer();
-      expect(isSingleInput(armorer)).toBe(false);
+      const registryLike = { list: () => [testTool] };
+      expect(isSingleInput(registryLike)).toBe(false);
     });
   });
 });

@@ -1,4 +1,4 @@
-export { combineArmorers } from './combine-armorers';
+export { combineArmorers } from './runtime/combine-armorers';
 export type {
   Armorer,
   ArmorerContext,
@@ -8,10 +8,10 @@ export type {
   SerializedArmorer,
   ToolMiddleware,
   ToolStatusUpdate,
-} from './create-armorer';
-export { createArmorer, createMiddleware, isArmorer } from './create-armorer';
-export type { CreateToolOptions, WithContext } from './create-tool';
-export { createTool, createToolCall, withContext } from './create-tool';
+} from './runtime/create-armorer';
+export { createArmorer, createMiddleware, isArmorer } from './runtime/create-armorer';
+export type { CreateToolOptions, WithContext } from './runtime/create-tool';
+export { createTool, createToolCall, lazy, withContext } from './runtime/create-tool';
 export type {
   AddEventListenerOptionsLike,
   ArmorerTool,
@@ -43,8 +43,8 @@ export type {
   ToolRepairHint,
   ToolValidationReport,
   ToolValidationWarning,
-} from './is-tool';
-export { isTool } from './is-tool';
+} from './runtime/is-tool';
+export { isTool } from './runtime/is-tool';
 
 // Query predicates and ranking helpers
 export {
@@ -62,7 +62,7 @@ export {
   type TextQueryWeights,
   type TextSearchIndex,
   type ToolPredicate,
-} from './query-predicates';
+} from './core/query-predicates';
 
 // Inspector exports
 export type {
@@ -71,7 +71,7 @@ export type {
   RegistryInspection,
   SchemaSummary,
   ToolInspection,
-} from './inspect';
+} from './core/inspect';
 export {
   extractMetadataFlags,
   extractSchemaSummary,
@@ -81,7 +81,12 @@ export {
   RegistryInspectionSchema,
   SchemaSummarySchema,
   ToolInspectionSchema,
-} from './inspect';
+} from './core/inspect';
 
 // Types
-export type { ToolCall, ToolCallInput, ToolConfiguration, ToolResult } from './types';
+export type {
+  ToolCall,
+  ToolCallInput,
+  ToolConfiguration,
+  ToolResult,
+} from './runtime/types';

@@ -1,6 +1,11 @@
-import type { Armorer, ArmorerTool, ToolConfig } from '../../index';
-import { toJSONSchema } from '../../to-json-schema';
-import { isSingleInput, normalizeToToolConfigs } from '../shared';
+import type { SerializedToolDefinition } from '../../core/serialization';
+import type { AnyToolDefinition } from '../../core/tool-definition';
+import {
+  type AdapterInput,
+  isSingleInput,
+  normalizeToSerializedDefinitions,
+  type ToolRegistryLike,
+} from '../shared';
 import type { GeminiFunctionDeclaration, GeminiSchema } from './types';
 
 export type { GeminiFunctionDeclaration, GeminiSchema, GeminiTool } from './types';
@@ -13,7 +18,7 @@ export type { GeminiFunctionDeclaration, GeminiSchema, GeminiTool } from './type
  *
  * @example
  * ```ts
- * import { toGemini } from 'armorer/gemini';
+ * import { toGemini } from 'armorer/adapters/gemini';
  *
  * // Single tool
  * const declaration = toGemini(myTool);
@@ -31,27 +36,30 @@ export type { GeminiFunctionDeclaration, GeminiSchema, GeminiTool } from './type
  * });
  * ```
  */
-export function toGemini(tool: ArmorerTool | ToolConfig): GeminiFunctionDeclaration;
 export function toGemini(
-  tools: (ArmorerTool | ToolConfig)[],
+  tool: SerializedToolDefinition | AnyToolDefinition,
+): GeminiFunctionDeclaration;
+export function toGemini(
+  tools: (SerializedToolDefinition | AnyToolDefinition)[],
 ): GeminiFunctionDeclaration[];
-export function toGemini(registry: Armorer): GeminiFunctionDeclaration[];
+export function toGemini(registry: ToolRegistryLike): GeminiFunctionDeclaration[];
 export function toGemini(
-  input: ArmorerTool | ToolConfig | (ArmorerTool | ToolConfig)[] | Armorer,
+  input: AdapterInput,
+): GeminiFunctionDeclaration | GeminiFunctionDeclaration[];
+export function toGemini(
+  input: AdapterInput,
 ): GeminiFunctionDeclaration | GeminiFunctionDeclaration[] {
-  const configs = normalizeToToolConfigs(input);
-  const converted = configs.map(convertToGemini);
+  const definitions = normalizeToSerializedDefinitions(input);
+  const converted = definitions.map(convertToGemini);
 
   return isSingleInput(input) ? converted[0]! : converted;
 }
 
-function convertToGemini(config: ToolConfig): GeminiFunctionDeclaration {
-  const jsonSchema = toJSONSchema(config);
-
+function convertToGemini(tool: SerializedToolDefinition): GeminiFunctionDeclaration {
   return {
-    name: jsonSchema.name,
-    description: jsonSchema.description,
-    parameters: transformToGeminiSchema(jsonSchema.parameters),
+    name: tool.identity.name,
+    description: tool.display.description,
+    parameters: transformToGeminiSchema(tool.inputSchema as Record<string, unknown>),
   };
 }
 
@@ -60,7 +68,7 @@ function convertToGemini(config: ToolConfig): GeminiFunctionDeclaration {
  * Gemini uses OpenAPI 3.0 style schemas.
  */
 function transformToGeminiSchema(schema: Record<string, unknown>): GeminiSchema {
-  // Remove $schema if present (already done in toJSONSchema, but be safe)
+  // Remove $schema if present to keep Gemini schema clean.
   const { $schema, ...rest } = schema;
 
   return rest as GeminiSchema;

@@ -1,6 +1,11 @@
-import type { Armorer, ArmorerTool, ToolConfig } from '../../index';
-import { toJSONSchema } from '../../to-json-schema';
-import { isSingleInput, normalizeToToolConfigs } from '../shared';
+import type { SerializedToolDefinition } from '../../core/serialization';
+import type { AnyToolDefinition } from '../../core/tool-definition';
+import {
+  type AdapterInput,
+  isSingleInput,
+  normalizeToSerializedDefinitions,
+  type ToolRegistryLike,
+} from '../shared';
 import type { JSONSchema, OpenAITool } from './types';
 
 export type { JSONSchema, OpenAIFunction, OpenAITool } from './types';
@@ -10,7 +15,7 @@ export type { JSONSchema, OpenAIFunction, OpenAITool } from './types';
  *
  * @example
  * ```ts
- * import { toOpenAI } from 'armorer/openai';
+ * import { toOpenAI } from 'armorer/adapters/openai';
  *
  * // Single tool
  * const tool = toOpenAI(myTool);
@@ -29,28 +34,37 @@ export type { JSONSchema, OpenAIFunction, OpenAITool } from './types';
  * });
  * ```
  */
-export function toOpenAI(tool: ArmorerTool | ToolConfig): OpenAITool;
-export function toOpenAI(tools: (ArmorerTool | ToolConfig)[]): OpenAITool[];
-export function toOpenAI(registry: Armorer): OpenAITool[];
+export function toOpenAI(tool: SerializedToolDefinition | AnyToolDefinition): OpenAITool;
 export function toOpenAI(
-  input: ArmorerTool | ToolConfig | (ArmorerTool | ToolConfig)[] | Armorer,
-): OpenAITool | OpenAITool[] {
-  const configs = normalizeToToolConfigs(input);
-  const converted = configs.map(convertToOpenAI);
+  tools: (SerializedToolDefinition | AnyToolDefinition)[],
+): OpenAITool[];
+export function toOpenAI(registry: ToolRegistryLike): OpenAITool[];
+export function toOpenAI(input: AdapterInput): OpenAITool | OpenAITool[];
+export function toOpenAI(input: AdapterInput): OpenAITool | OpenAITool[] {
+  const definitions = normalizeToSerializedDefinitions(input);
+  const converted = definitions.map(convertToOpenAI);
 
   return isSingleInput(input) ? converted[0]! : converted;
 }
 
-function convertToOpenAI(config: ToolConfig): OpenAITool {
-  const jsonSchema = toJSONSchema(config);
-
+function convertToOpenAI(tool: SerializedToolDefinition): OpenAITool {
+  const parameters = stripSchemaId(tool.inputSchema as JSONSchema);
   return {
     type: 'function',
     function: {
-      name: jsonSchema.name,
-      description: jsonSchema.description,
-      parameters: jsonSchema.parameters as JSONSchema,
-      strict: jsonSchema.strict,
+      name: tool.identity.name,
+      description: tool.display.description,
+      parameters,
+      strict: true,
     },
   };
+}
+
+function stripSchemaId(schema: JSONSchema): JSONSchema {
+  if (!schema || typeof schema !== 'object') return schema;
+  const copy = { ...(schema as Record<string, unknown>) } as JSONSchema;
+  if ('$schema' in copy) {
+    delete (copy as Record<string, unknown>)['$schema'];
+  }
+  return copy;
 }

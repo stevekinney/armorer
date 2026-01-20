@@ -133,7 +133,12 @@ describe('createMCP', () => {
         metadata: {
           mcp: {
             title: 'meta-title',
-            outputSchema: z.object({ ok: z.boolean() }),
+            outputSchema: {
+              type: 'object',
+              properties: { ok: { type: 'boolean' } },
+              required: ['ok'],
+              additionalProperties: false,
+            },
             meta: { source: 'metadata' },
           },
         },
@@ -250,8 +255,18 @@ describe('createMCP', () => {
           mcp: {
             title: 'meta-title',
             description: 'meta-description',
-            inputSchema: z.object({ fromMeta: z.boolean() }),
-            outputSchema: z.object({ meta: z.boolean() }),
+            inputSchema: {
+              type: 'object',
+              properties: { fromMeta: { type: 'boolean' } },
+              required: ['fromMeta'],
+              additionalProperties: false,
+            },
+            outputSchema: {
+              type: 'object',
+              properties: { meta: { type: 'boolean' } },
+              required: ['meta'],
+              additionalProperties: false,
+            },
             meta: { source: 'metadata' },
           },
         },
@@ -536,11 +551,9 @@ describe('createMCP', () => {
 
     try {
       const controller = new AbortController();
-      const call = client.callTool(
-        { name: 'wait', arguments: {} },
-        undefined,
-        { signal: controller.signal },
-      );
+      const call = client.callTool({ name: 'wait', arguments: {} }, undefined, {
+        signal: controller.signal,
+      });
       controller.abort('stop');
       await expect(call).rejects.toBeDefined();
     } finally {

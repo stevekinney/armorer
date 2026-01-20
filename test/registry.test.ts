@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
+import { createRegistry, defineTool } from '../src/core';
 import { createArmorer } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
 import { queryTools, reindexSearchIndex, searchTools } from '../src/registry';
@@ -244,5 +245,73 @@ describe('registry helpers', () => {
 
     const results = searchTools(armorer, { rank: { text: 'query' } });
     expect(results).toHaveLength(1);
+  });
+
+  describe('core registry versioning and aliases', () => {
+    const makeDefinition = (name: string, version: string, deprecated = false) =>
+      defineTool({
+        name,
+        version,
+        description: `${name} tool`,
+        inputSchema: z.object({ value: z.string() }),
+        lifecycle: deprecated ? { deprecated: true } : undefined,
+      });
+
+    it('requires a version for get when using identity or string', () => {
+      const registry = createRegistry();
+      registry.register(makeDefinition('alpha', '1.0.0'));
+      expect(() => registry.get({ name: 'alpha' })).toThrow(
+        'Tool identity must include a version for get/unregister',
+      );
+      expect(() => registry.get('default:alpha')).toThrow(
+        'Tool identity must include a version for get/unregister',
+      );
+    });
+
+    it('resolves highest semver by default', () => {
+      const registry = createRegistry();
+      registry.register(makeDefinition('alpha', '1.0.0'));
+      registry.register(makeDefinition('alpha', '2.1.0'));
+
+      const resolved = registry.resolve({ name: 'alpha' });
+      expect(resolved?.identity.version).toBe('2.1.0');
+    });
+
+    it('falls back to registration order for non-semver versions', () => {
+      const registry = createRegistry();
+      registry.register(makeDefinition('beta', 'alpha'));
+      registry.register(makeDefinition('beta', 'beta'));
+
+      const resolved = registry.resolve({ name: 'beta' });
+      expect(resolved?.identity.version).toBe('beta');
+    });
+
+    it('skips deprecated tools unless allowDeprecated is true', () => {
+      const registry = createRegistry();
+      registry.register(makeDefinition('gamma', '1.0.0'));
+      registry.register(makeDefinition('gamma', '2.0.0', true));
+
+      const resolved = registry.resolve({ name: 'gamma' });
+      expect(resolved?.identity.version).toBe('1.0.0');
+
+      const resolvedAllow = registry.resolve(
+        { name: 'gamma' },
+        { allowDeprecated: true },
+      );
+      expect(resolvedAllow?.identity.version).toBe('2.0.0');
+    });
+
+    it('resolves aliases and detects cycles', () => {
+      const registry = createRegistry();
+      const primary = makeDefinition('delta', '1.0.0');
+      registry.register(primary, { aliases: ['default:delta-alias@1.0.0'] });
+      expect(registry.resolve('default:delta-alias@1.0.0')?.id).toBe(primary.id);
+
+      const cycleRegistry = createRegistry();
+      const aliasOwner = makeDefinition('alias', '1.0.0');
+      cycleRegistry.register(primary, { aliases: [aliasOwner.id] });
+      cycleRegistry.register(aliasOwner, { aliases: [primary.id] });
+      expect(() => cycleRegistry.resolve(primary.id)).toThrow('Alias cycle detected');
+    });
   });
 });

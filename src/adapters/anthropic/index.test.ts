@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer, createTool } from '../../index';
+import { createRegistry, defineTool, serializeToolDefinition } from '../../core';
 import { toAnthropic } from './index';
 
 describe('toAnthropic', () => {
@@ -10,12 +10,10 @@ describe('toAnthropic', () => {
     limit: z.number().optional().describe('Max results'),
   });
 
-  const tool = createTool({
+  const tool = defineTool({
     name: 'search',
     description: 'Search for items',
-    schema,
-    execute: async () => [],
-    tags: ['search', 'utility'],
+    inputSchema: schema,
   });
 
   describe('single tool conversion', () => {
@@ -44,16 +42,6 @@ describe('toAnthropic', () => {
       const result = toAnthropic(tool);
       expect(result.input_schema.required).toContain('query');
     });
-
-    it('sets additionalProperties to false', () => {
-      const result = toAnthropic(tool);
-      expect(result.input_schema.additionalProperties).toBe(false);
-    });
-
-    it('does not include type wrapper', () => {
-      const result = toAnthropic(tool);
-      expect(result).not.toHaveProperty('type');
-    });
   });
 
   describe('array conversion', () => {
@@ -72,23 +60,25 @@ describe('toAnthropic', () => {
 
   describe('registry conversion', () => {
     it('returns array for registry input', () => {
-      const armorer = createArmorer().register(tool);
-      const result = toAnthropic(armorer);
+      const registry = createRegistry();
+      registry.register(tool);
+      const result = toAnthropic(registry);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(1);
     });
 
     it('returns empty array for empty registry', () => {
-      const armorer = createArmorer();
-      const result = toAnthropic(armorer);
+      const registry = createRegistry();
+      const result = toAnthropic(registry);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(0);
     });
   });
 
-  describe('tool config conversion', () => {
-    it('works with tool configuration', () => {
-      const result = toAnthropic(tool.configuration);
+  describe('serialized tool conversion', () => {
+    it('works with serialized tool definitions', () => {
+      const serialized = serializeToolDefinition(tool);
+      const result = toAnthropic(serialized);
       expect(result.name).toBe('search');
       expect(result.input_schema.type).toBe('object');
     });

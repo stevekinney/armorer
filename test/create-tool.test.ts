@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createTool, createToolCall, withContext } from '../src/create-tool';
-import { isTool } from '../src/is-tool';
-import { lazy } from '../src/lazy';
+import { createTool, createToolCall, isTool, lazy, withContext } from '../src/runtime';
 
 describe('createTool', () => {
   it('creates a callable tool function with metadata and execute()', async () => {
@@ -147,9 +145,7 @@ describe('createTool', () => {
     const result = await tool({ value: 'hi' });
     expect(result).toBe('HI');
 
-    const execResult = await tool.execute(
-      createToolCall('lazy-exec', { value: 'ok' }),
-    );
+    const execResult = await tool.execute(createToolCall('lazy-exec', { value: 'ok' }));
     expect(execResult.result).toBe('OK');
     expect(resolvedCount).toBe(1);
   });
@@ -164,10 +160,8 @@ describe('createTool', () => {
       }),
     });
 
-    const result = await tool.execute(
-      createToolCall('lazy-reject', { value: 'x' }),
-    );
-    expect(result.error).toContain('lazy load failed');
+    const result = await tool.execute(createToolCall('lazy-reject', { value: 'x' }));
+    expect(result.error?.message).toContain('lazy load failed');
   });
 
   it('returns an error when lazy execute resolves to non-function', async () => {
@@ -179,7 +173,7 @@ describe('createTool', () => {
     });
 
     const result = await tool.execute(createToolCall('lazy-bad', { value: 'x' }));
-    expect(result.error).toContain(
+    expect(result.error?.message).toContain(
       'execute must be a function or a promise that resolves to a function',
     );
   });
@@ -304,7 +298,8 @@ describe('createTool', () => {
     // Missing required property returns a ToolResult failure shape
     const res = await tool.execute(createToolCall('invalid-test', {} as any));
     expect(res.toolName).toBe('invalid-test');
-    expect(typeof res.error === 'string' || res.error === undefined).toBe(true);
+    expect(res.error?.category).toBe('validation');
+    expect(res.error?.code).toBe('VALIDATION_ERROR');
   });
 
   it('supports AbortSignal cancellation before execution begins', async () => {
@@ -327,7 +322,7 @@ describe('createTool', () => {
 
     expect(runs).toBe(0);
     expect(result.result).toBeUndefined();
-    expect(result.error?.toLowerCase()).toContain('cancel');
+    expect(result.error?.message?.toLowerCase()).toContain('cancel');
   });
 
   it('supports AbortSignal cancellation during execution and surfaces reason', async () => {
@@ -349,7 +344,7 @@ describe('createTool', () => {
     const result = await pending;
 
     expect(result.result).toBeUndefined();
-    expect(result.error?.toLowerCase()).toContain('stop now'.toLowerCase());
+    expect(result.error?.message?.toLowerCase()).toContain('stop now');
   });
 
   it('cancels if the signal aborts during execute-start listeners', async () => {
@@ -373,7 +368,7 @@ describe('createTool', () => {
     });
 
     expect(runs).toBe(0);
-    expect(result.error).toContain('abort after start');
+    expect(result.error?.message).toContain('abort after start');
   });
 
   it('cancels if the signal aborts after validation succeeds', async () => {
@@ -397,7 +392,7 @@ describe('createTool', () => {
     });
 
     expect(runs).toBe(0);
-    expect(result.error).toContain('abort after validate');
+    expect(result.error?.message).toContain('abort after validate');
   });
 
   it('cancels if the signal is aborted before raceWithSignal attaches listeners', async () => {
@@ -414,7 +409,7 @@ describe('createTool', () => {
     const result = await tool.execute(createToolCall('abort-before-race', { a: 'x' }), {
       signal: controller.signal,
     });
-    expect(result.error).toContain('abort inside execute');
+    expect(result.error?.message).toContain('abort inside execute');
   });
 
   it('resolves normally when a signal is provided but never aborted', async () => {
@@ -447,7 +442,7 @@ describe('createTool', () => {
     const result = await tool.execute(createToolCall('reject-with-signal', { a: 'x' }), {
       signal: controller.signal,
     });
-    expect(result.error).toContain('boom');
+    expect(result.error?.message).toContain('boom');
   });
 
   it('formats structured cancellation reasons from AbortController', async () => {
@@ -466,7 +461,7 @@ describe('createTool', () => {
     });
     controller.abort({ why: 'structured', nested: true });
     const result = await pending;
-    expect(result.error).toBe('Cancelled: {"why":"structured","nested":true}');
+    expect(result.error?.message).toBe('Cancelled: {"why":"structured","nested":true}');
   });
 
   it('falls back to a generic cancellation message when reason serialization fails', async () => {
@@ -487,7 +482,7 @@ describe('createTool', () => {
     reason.self = reason;
     controller.abort(reason);
     const result = await pending;
-    expect(result.error).toBe('Cancelled');
+    expect(result.error?.message).toBe('Cancelled');
   });
 
   it('exposes JSON metadata with parameters JSON Schema', () => {
@@ -502,20 +497,16 @@ describe('createTool', () => {
     });
 
     const meta = tool.toJSON();
-    expect(meta.type).toBe('function');
-    expect(meta.name).toBe('json-meta');
-    expect(meta.description).toBe('JSON view');
-    expect(meta.strict).toBe(true);
-    expect(meta).not.toHaveProperty('schema');
+    expect(meta.schemaVersion).toBe('2020-12');
+    expect(meta.id).toBe('default:json-meta');
+    expect(meta.identity).toEqual({ namespace: 'default', name: 'json-meta' });
+    expect(meta.display.description).toBe('JSON view');
     expect(() => JSON.stringify(meta)).not.toThrow();
 
     // Parameters JSON Schema assertions
-    const params = meta.parameters as Record<string, unknown>;
+    const params = meta.inputSchema as Record<string, unknown>;
     expect(params).toBeDefined();
     expect(params['type']).toBe('object');
-
-    // additionalProperties is forced to false by the override
-    expect(params['additionalProperties']).toBe(false);
 
     // required includes only required properties
     const properties = (params['properties'] ?? {}) as Record<string, unknown>;
@@ -527,9 +518,6 @@ describe('createTool', () => {
         expect(required.has(k)).toBe(true);
       }
     }
-
-    // $schema is removed by the override
-    expect('$schema' in params).toBe(false);
   });
 
   it('throws if tags are not kebab-case', () => {
@@ -589,9 +577,7 @@ describe('createTool', () => {
             return null;
           },
         }),
-      ).toThrow(
-        /Tool schema must be a Zod object schema or an object of Zod schemas/,
-      );
+      ).toThrow(/Tool schema must be a Zod object schema or an object of Zod schemas/);
     });
 
     it('throws when schema is null', () => {
@@ -604,9 +590,7 @@ describe('createTool', () => {
             return null;
           },
         }),
-      ).toThrow(
-        /Tool schema must be a Zod object schema or an object of Zod schemas/,
-      );
+      ).toThrow(/Tool schema must be a Zod object schema or an object of Zod schemas/);
     });
 
     it('throws when schema is a number', () => {
@@ -619,9 +603,7 @@ describe('createTool', () => {
             return null;
           },
         }),
-      ).toThrow(
-        /Tool schema must be a Zod object schema or an object of Zod schemas/,
-      );
+      ).toThrow(/Tool schema must be a Zod object schema or an object of Zod schemas/);
     });
 
     it('throws when schema is a non-object Zod schema', () => {
@@ -985,7 +967,7 @@ describe('isTool', () => {
     });
 
     const result = await (tool as any).executeWith({ params: { a: 'x' } });
-    expect(result.error).toBe('nope');
+    expect(result.error?.message).toBe('nope');
     expect(denied).toBe(1);
   });
 
@@ -1110,8 +1092,8 @@ describe('isTool', () => {
     });
 
     const res = await (tool as any).executeWith({ params: { a: 'x' }, timeoutMs: 1 });
-    expect(typeof res.error === 'string').toBe(true);
-    expect((res.error ?? '').toUpperCase()).toContain('TIMEOUT');
+    expect(res.error?.category).toBe('timeout');
+    expect(res.error?.code).toBe('TIMEOUT');
   });
 
   it('executeWith supports AbortSignal cancellation', async () => {
@@ -1136,7 +1118,7 @@ describe('isTool', () => {
 
     expect(result.toolCallId).toBe('c1');
     expect(result.result).toBeUndefined();
-    expect(result.error?.toLowerCase()).toContain('too-late');
+    expect(result.error?.message?.toLowerCase()).toContain('too-late');
   });
 
   it('executeWith resolves before timeout (clears timer)', async () => {
@@ -1162,7 +1144,9 @@ describe('isTool', () => {
       },
     });
     const res = await (tool as any).executeWith({ params: { a: 'x' }, timeoutMs: 1000 });
-    expect(typeof res.error).toBe('string');
+    expect(res.error?.category).toBe('internal');
+    expect(res.error?.code).toBe('INTERNAL_ERROR');
+    expect(res.error?.message).toContain('bad');
   });
 
   it('getOwnPropertyDescriptor falls through to callable for non-bag property', () => {

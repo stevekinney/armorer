@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer, createMiddleware } from '../src/create-armorer';
-import { createTool, createToolCall } from '../src/create-tool';
-import type { ToolConfig } from '../src/is-tool';
-import { lazy } from '../src/lazy';
 import { queryTools, reindexSearchIndex, searchTools } from '../src/registry';
+import {
+  createArmorer,
+  createMiddleware,
+  createTool,
+  createToolCall,
+  lazy,
+  type ToolConfig,
+} from '../src/runtime';
 
 const makeConfiguration = (overrides?: Partial<ToolConfig>): ToolConfig => ({
   name: 'sum',
@@ -49,7 +53,9 @@ describe('createArmorer', () => {
 
   it('supports lazy execute functions in configs', async () => {
     const executePromise = Promise.resolve().then(
-      () => async ({ a, b }: { a: number; b: number }) => a + b + 1,
+      () =>
+        async ({ a, b }: { a: number; b: number }) =>
+          a + b + 1,
     );
     const armorer = createArmorer([
       makeConfiguration({
@@ -111,7 +117,7 @@ describe('createArmorer', () => {
       name: 'sum-lazy-fail',
       arguments: { a: 1, b: 2 },
     });
-    expect(result.error).toContain('config lazy load failed');
+    expect(result.error?.message).toContain('config lazy load failed');
   });
 
   it('passes diagnostics through tool configs', async () => {
@@ -270,7 +276,7 @@ describe('createArmorer', () => {
       arguments: {},
     });
 
-    expect(result.error).toContain('not allowed');
+    expect(result.error?.message).toContain('not allowed');
   });
 
   it('enforces allowDangerous for dangerous tools', async () => {
@@ -289,7 +295,7 @@ describe('createArmorer', () => {
       arguments: {},
     });
 
-    expect(result.error).toContain('Dangerous tool');
+    expect(result.error?.message).toContain('Dangerous tool');
   });
 
   it('enforces session budgets for max calls', async () => {
@@ -313,8 +319,8 @@ describe('createArmorer', () => {
     });
 
     expect(first.result).toBe('ok');
-    expect(second.errorCategory).toBe('denied');
-    expect(second.error).toContain('Budget exceeded');
+    expect(second.error?.category).toBe('conflict');
+    expect(second.error?.message).toContain('Budget exceeded');
   });
 
   it('enforces session budgets for max duration', async () => {
@@ -332,8 +338,8 @@ describe('createArmorer', () => {
       arguments: {},
     });
 
-    expect(result.errorCategory).toBe('denied');
-    expect(result.error).toContain('Budget exceeded');
+    expect(result.error?.category).toBe('conflict');
+    expect(result.error?.message).toContain('Budget exceeded');
   });
 
   it('createTool accepts object schemas', () => {
@@ -436,7 +442,7 @@ describe('createArmorer', () => {
       name: 'sum-lazy-bad',
       arguments: { a: 1, b: 2 },
     });
-    expect(result.error).toContain(
+    expect(result.error?.message).toContain(
       'ToolConfig.execute must be a function or a promise that resolves to a function',
     );
   });
@@ -495,7 +501,10 @@ describe('createArmorer', () => {
     const schemaMatches = queryTools(armorer, {
       schema: { matches: z.object({ a: z.number() }) },
     });
-    expect(schemaMatches.map((tool) => tool.name).sort()).toEqual(['double', 'increment']);
+    expect(schemaMatches.map((tool) => tool.name).sort()).toEqual([
+      'double',
+      'increment',
+    ]);
 
     const predicateMatches = queryTools(armorer, {
       predicate: (tool) => tool.tags?.includes('text') ?? false,
@@ -537,7 +546,10 @@ describe('createArmorer', () => {
 
   it('returns all tools when no query criteria is provided', () => {
     const armorer = createArmorer();
-    armorer.register(makeConfiguration({ name: 'foo' }), makeConfiguration({ name: 'bar' }));
+    armorer.register(
+      makeConfiguration({ name: 'foo' }),
+      makeConfiguration({ name: 'bar' }),
+    );
 
     const allTools = queryTools(armorer);
     expect(allTools.map((tool) => tool.name).sort()).toEqual(['bar', 'foo']);
@@ -560,7 +572,10 @@ describe('createArmorer', () => {
 
   it('throws when query input is not an object', () => {
     const armorer = createArmorer();
-    armorer.register(makeConfiguration({ name: 'alpha' }), makeConfiguration({ name: 'beta' }));
+    armorer.register(
+      makeConfiguration({ name: 'alpha' }),
+      makeConfiguration({ name: 'beta' }),
+    );
 
     expect(() => queryTools(armorer, 42 as unknown as any)).toThrow(
       'query expects a ToolQuery object',
@@ -587,7 +602,10 @@ describe('createArmorer', () => {
 
   it('ignores predicate errors while filtering', () => {
     const armorer = createArmorer();
-    armorer.register(makeConfiguration({ name: 'ok' }), makeConfiguration({ name: 'nope' }));
+    armorer.register(
+      makeConfiguration({ name: 'ok' }),
+      makeConfiguration({ name: 'nope' }),
+    );
 
     const matches = queryTools(armorer, {
       predicate: (tool) => {
@@ -818,7 +836,7 @@ describe('createArmorer', () => {
       name: 'fragile',
       arguments: { a: 1, b: 2 },
     });
-    expect(String(result.error)).toContain('kaboom');
+    expect(result.error?.message).toContain('kaboom');
   });
 
   describe('getMissingTools', () => {
@@ -836,7 +854,10 @@ describe('createArmorer', () => {
 
     it('returns only the missing tool names when some are not registered', () => {
       const armorer = createArmorer();
-      armorer.register(makeConfiguration({ name: 'toolA' }), makeConfiguration({ name: 'toolC' }));
+      armorer.register(
+        makeConfiguration({ name: 'toolA' }),
+        makeConfiguration({ name: 'toolC' }),
+      );
 
       const missing = armorer.getMissingTools(['toolA', 'toolB', 'toolC', 'toolD']);
       expect(missing).toEqual(['toolB', 'toolD']);
@@ -882,7 +903,10 @@ describe('createArmorer', () => {
 
     it('returns false when any tool is not registered', () => {
       const armorer = createArmorer();
-      armorer.register(makeConfiguration({ name: 'toolA' }), makeConfiguration({ name: 'toolB' }));
+      armorer.register(
+        makeConfiguration({ name: 'toolA' }),
+        makeConfiguration({ name: 'toolB' }),
+      );
 
       expect(armorer.hasAllTools(['toolA', 'toolB', 'toolC'])).toBe(false);
     });
@@ -1037,7 +1061,11 @@ describe('createArmorer', () => {
       const armorer = createArmorer();
       armorer.register(
         makeConfiguration({ name: 'double', description: 'double it', tags: ['math'] }),
-        makeConfiguration({ name: 'increment', description: 'increase by one', tags: ['math'] }),
+        makeConfiguration({
+          name: 'increment',
+          description: 'increase by one',
+          tags: ['math'],
+        }),
       );
 
       const results = searchTools(armorer, { rank: { text: 'double' }, limit: 1 });

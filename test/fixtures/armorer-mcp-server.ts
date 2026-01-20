@@ -18,6 +18,8 @@ createTool(
   armorer,
 );
 
-const mcp = createMCP(armorer, { serverInfo: { name: 'armorer-tools', version: '0.1.0' } });
+const mcp = createMCP(armorer, {
+  serverInfo: { name: 'armorer-tools', version: '0.1.0' },
+});
 await mcp.connect(new StdioServerTransport());
 await new Promise(() => {});

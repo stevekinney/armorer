@@ -1,6 +1,6 @@
-import { describe, expect,it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 
-import { errorString,normalizeError } from '../src/errors';
+import { errorString, normalizeError } from '../src/errors';
 
 describe('errors', () => {
   it('normalizes Error with code/name and formats string', () => {

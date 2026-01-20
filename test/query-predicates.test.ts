@@ -80,12 +80,10 @@ describe('textMatches', () => {
   });
 
   it('supports field-restricted text queries', () => {
-    expect(textMatches({ query: 'alpha', fields: ['name'] })(baseTool as any)).toBe(
-      true,
+    expect(textMatches({ query: 'alpha', fields: ['name'] })(baseTool as any)).toBe(true);
+    expect(textMatches({ query: 'handles', fields: ['tags'] })(baseTool as any)).toBe(
+      false,
     );
-    expect(
-      textMatches({ query: 'handles', fields: ['tags'] })(baseTool as any),
-    ).toBe(false);
   });
 
   it('tokenizes queries for camelCase schema keys', () => {
@@ -106,14 +104,10 @@ describe('textMatches', () => {
 
   it('supports fuzzy matching with thresholds', () => {
     expect(
-      textMatches({ query: 'alpa', mode: 'fuzzy', threshold: 0.6 })(
-        baseTool as any,
-      ),
+      textMatches({ query: 'alpa', mode: 'fuzzy', threshold: 0.6 })(baseTool as any),
     ).toBe(true);
     expect(
-      textMatches({ query: 'alpa', mode: 'fuzzy', threshold: 0.95 })(
-        baseTool as any,
-      ),
+      textMatches({ query: 'alpa', mode: 'fuzzy', threshold: 0.95 })(baseTool as any),
     ).toBe(false);
   });
 

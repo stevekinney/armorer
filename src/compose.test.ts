@@ -222,7 +222,7 @@ describe('pipe()', () => {
       const result = await pipeline.executeWith({ params: { str: '5' } });
 
       expect(result.error).toBeDefined();
-      expect(result.error).toContain('Pipeline failed at step 1 (failing)');
+      expect(result.error?.message).toContain('Pipeline failed at step 1 (failing)');
     });
   });
 

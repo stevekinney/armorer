@@ -1,9 +1,13 @@
 import { z } from 'zod';
 
+import {
+  searchTools,
+  type ToolQueryInput,
+  type ToolSearchOptions,
+} from '../../core/registry';
 import type { Armorer } from '../create-armorer';
 import { createTool } from '../create-tool';
 import type { ArmorerTool } from '../is-tool';
-import { searchTools, type ToolSearchOptions } from '../registry';
 
 /**
  * Options for configuring the search tool.
@@ -173,7 +177,9 @@ export function createSearchTool(
           };
         }
 
-        const results = await Promise.resolve(searchTools(armorer, searchOptions));
+        const results = await Promise.resolve(
+          searchTools(armorer as unknown as ToolQueryInput, searchOptions),
+        );
 
         return results.map((match) => ({
           name: match.tool.name,
