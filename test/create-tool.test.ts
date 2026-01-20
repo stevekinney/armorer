@@ -1059,6 +1059,275 @@ describe('isTool', () => {
     expect(result.result).toBe('X');
   });
 
+  it('supports boolean policy decisions and includes input digests', async () => {
+    const tool = createTool({
+      name: 'policy-boolean',
+      description: 'policy boolean',
+      schema: z.object({ a: z.string() }),
+      digests: true,
+      policy: {
+        beforeExecute: () => false,
+      },
+      async execute() {
+        return 'ok';
+      },
+    });
+
+    const result = await (tool as any).executeWith({ params: { a: 'x' } });
+    expect(result.error?.message).toBe('Policy denied');
+    expect(result.inputDigest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('logs when policy afterExecute throws', async () => {
+    const tool = createTool({
+      name: 'policy-log',
+      description: 'policy log',
+      schema: z.object({ a: z.string() }),
+      policy: {
+        afterExecute: () => {
+          throw new Error('after failed');
+        },
+      },
+      async execute({ a }) {
+        return a.toUpperCase();
+      },
+    });
+
+    let logs = 0;
+    tool.addEventListener('log' as any, (evt) => {
+      logs += 1;
+      expect((evt.detail as any).level).toBe('warn');
+    });
+
+    const result = await (tool as any).executeWith({ params: { a: 'x' } });
+    expect(result.result).toBe('X');
+    expect(logs).toBe(1);
+  });
+
+  it('throws when output validation mode is throw', async () => {
+    const tool = createTool({
+      name: 'output-throw',
+      description: 'output throws',
+      schema: z.object({ a: z.string() }),
+      outputSchema: z.object({ ok: z.boolean() }),
+      outputValidationMode: 'throw',
+      async execute() {
+        return { ok: 'nope' };
+      },
+    });
+
+    const result = await (tool as any).executeWith({ params: { a: 'x' } });
+    expect(result.error?.category).toBe('validation');
+    expect(result.error?.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('injects policyContext into error paths', async () => {
+    let calls = 0;
+    const tool = createTool({
+      name: 'policy-error-context',
+      description: 'policy error context',
+      schema: z.object({ a: z.string() }),
+      digests: true,
+      policyContext: (context) => {
+        calls += 1;
+        return { traceId: context.toolCall.id };
+      },
+      async execute() {
+        throw new Error('boom');
+      },
+    });
+
+    const result = await (tool as any).executeWith({ params: { a: 'x' } });
+    expect(result.error?.message).toContain('boom');
+    expect(result.inputDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(calls).toBe(2);
+  });
+
+  it('formats cancellation reasons for numbers', async () => {
+    const tool = createTool({
+      name: 'cancel-number',
+      description: 'cancel number',
+      schema: z.object({ a: z.string() }),
+      digests: true,
+      async execute() {
+        return 'never';
+      },
+    });
+
+    const controller = new AbortController();
+    controller.abort(404);
+    const result = await (tool as any).executeWith({
+      params: { a: 'x' },
+      signal: controller.signal,
+    });
+    expect(result.error?.message).toBe('Cancelled: 404');
+    expect(result.inputDigest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('formats cancellation reasons for symbols', async () => {
+    const tool = createTool({
+      name: 'cancel-symbol',
+      description: 'cancel symbol',
+      schema: z.object({ a: z.string() }),
+      async execute() {
+        return 'never';
+      },
+    });
+
+    const controller = new AbortController();
+    controller.abort(Symbol('halt'));
+    const result = await (tool as any).executeWith({
+      params: { a: 'x' },
+      signal: controller.signal,
+    });
+    expect(result.error?.message).toBe('Cancelled: halt');
+  });
+
+  it('uses tool.run to execute with a provided context', async () => {
+    const tool = createTool({
+      name: 'run-tool',
+      description: 'run',
+      schema: z.object({ value: z.string() }),
+      async execute({ value }, context) {
+        return `${value}:${context.toolCall?.name}`;
+      },
+    });
+
+    const result = await tool.run(
+      { value: 'ok' },
+      {
+        dispatch: tool.dispatchEvent,
+        toolCall: createToolCall('run-tool', { value: 'ok' }),
+        configuration: tool.configuration,
+      },
+    );
+    expect(result).toBe('ok:run-tool');
+  });
+
+  it('falls back to callable properties via proxy get', () => {
+    const tool = createTool({
+      name: 'proxy-get',
+      description: 'proxy get',
+      schema: z.object({ a: z.string() }),
+      async execute() {
+        return 'x';
+      },
+    });
+
+    expect(typeof (tool as any).length).toBe('number');
+  });
+
+  it('adds ids when executing ToolCalls without ids', async () => {
+    const tool = createTool({
+      name: 'missing-id',
+      description: 'missing id',
+      schema: z.object({ a: z.string() }),
+      async execute({ a }) {
+        return a;
+      },
+    });
+
+    const result = await (tool as any).execute({
+      id: '',
+      name: 'missing-id',
+      arguments: { a: 'ok' },
+    });
+    expect(result.toolCallId).toBeDefined();
+  });
+
+  it('classifies transient errors by code and message', async () => {
+    const tool = createTool({
+      name: 'transient-code',
+      description: 'transient code',
+      schema: z.object({ a: z.string() }),
+      async execute() {
+        const error = new Error('boom') as Error & { code?: string };
+        error.code = 'ECONNRESET';
+        throw error;
+      },
+    });
+
+    const result = await (tool as any).executeWith({ params: { a: 'x' } });
+    expect(result.error?.category).toBe('transient');
+
+    const rateLimited = createTool({
+      name: 'transient-message',
+      description: 'transient message',
+      schema: z.object({ a: z.string() }),
+      async execute() {
+        throw new Error('Rate limit exceeded');
+      },
+    });
+
+    const resultRate = await (rateLimited as any).executeWith({ params: { a: 'x' } });
+    expect(resultRate.error?.category).toBe('transient');
+  });
+
+  it('computes digests for array outputs and error inputs', async () => {
+    const tool = createTool({
+      name: 'digest-array',
+      description: 'digest array',
+      schema: z.object({ err: z.any() }),
+      digests: { input: true, output: true, algorithm: 'sha256' },
+      async execute() {
+        return [1, 2, 3];
+      },
+    });
+
+    const result = await (tool as any).executeWith({
+      params: { err: new Error('nope') },
+    });
+    expect(result.inputDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.outputDigest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('uses digest options objects to control input/output', async () => {
+    const tool = createTool({
+      name: 'digest-options',
+      description: 'digest options',
+      schema: z.object({ value: z.string() }),
+      digests: { input: false, output: true },
+      async execute({ value }) {
+        return [value];
+      },
+    });
+
+    const result = await (tool as any).executeWith({ params: { value: 'x' } });
+    expect(result.inputDigest).toBeUndefined();
+    expect(result.outputDigest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('throws when tags are not strings', () => {
+    expect(() =>
+      createTool({
+        name: 'bad-tags-type',
+        description: 'bad tags',
+        schema: z.object({ a: z.string() }),
+        tags: ['ok', 123 as unknown as string],
+        async execute() {
+          return 'ok';
+        },
+      }),
+    ).toThrow('tag must be a string');
+  });
+
+  it('wraps non-Error rejections when timeout is applied', async () => {
+    const tool = createTool({
+      name: 'timeout-reject',
+      description: 'timeout rejection',
+      schema: z.object({ a: z.string() }),
+      async execute() {
+        throw 'boom';
+      },
+    });
+
+    const result = await (tool as any).executeWith({
+      params: { a: 'x' },
+      timeoutMs: 100,
+    });
+    expect(result.error?.message).toContain('boom');
+  });
+
   it('enforces per-tool concurrency limits', async () => {
     let active = 0;
     let max = 0;

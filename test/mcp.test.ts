@@ -561,4 +561,305 @@ describe('createMCP', () => {
       await server.close();
     }
   });
+
+  it('does not override explicit readOnlyHint annotations', async () => {
+    const armorer = createArmorer();
+    createTool(
+      {
+        name: 'readonly-override',
+        description: 'read-only with explicit annotation',
+        schema: z.object({}),
+        metadata: { readOnly: true },
+        async execute() {
+          return { ok: true };
+        },
+      },
+      armorer,
+    );
+
+    const { client, server } = await connect(armorer, {
+      toolConfig: () => ({
+        annotations: { readOnlyHint: false },
+        execution: { taskSupport: 'optional' },
+      }),
+    });
+
+    try {
+      const tools = await client.listTools();
+      const tool = tools.tools.find((entry) => entry.name === 'readonly-override');
+      expect(tool?.annotations?.readOnlyHint).toBe(false);
+      expect(tool?.execution).toBeDefined();
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('applies registrars provided as arrays', async () => {
+    const armorer = createArmorer();
+
+    const { client, server } = await connect(armorer, {
+      resources: [
+        (mcp) => {
+          mcp.registerResource(
+            'array-resource',
+            'armorer://array-resource',
+            { title: 'Array Resource' },
+            async () => ({
+              contents: [{ uri: 'armorer://array-resource', text: 'hi' }],
+            }),
+          );
+        },
+      ],
+      prompts: [
+        (mcp) => {
+          mcp.registerPrompt(
+            'array-prompt',
+            { description: 'array prompt' },
+            async () => ({
+              messages: [
+                {
+                  role: 'assistant',
+                  content: { type: 'text', text: 'array hello' },
+                },
+              ],
+            }),
+          );
+        },
+      ],
+    });
+
+    try {
+      const resources = await client.listResources();
+      expect(resources.resources.some((entry) => entry.name === 'array-resource')).toBe(
+        true,
+      );
+
+      const prompts = await client.listPrompts();
+      expect(prompts.prompts.some((entry) => entry.name === 'array-prompt')).toBe(true);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('converts JSON schema variants and raw shapes for MCP tools', async () => {
+    const armorer = createArmorer();
+
+    const baseTool = (name: string) =>
+      createTool(
+        {
+          name,
+          description: 'schema conversion',
+          schema: z.object({ fromTool: z.boolean() }),
+          async execute() {
+            return { ok: true };
+          },
+        },
+        armorer,
+      );
+
+    baseTool('any-of');
+    baseTool('one-of');
+    baseTool('all-of');
+    baseTool('raw-shape');
+    baseTool('invalid-schema');
+
+    const { client, server } = await connect(armorer, {
+      toolConfig: (tool) => {
+        switch (tool.name) {
+          case 'any-of':
+            return {
+              inputSchema: {
+                anyOf: [
+                  { enum: ['alpha', 'beta'] },
+                  { enum: ['ok', { bad: true }] },
+                  { const: 42 },
+                  {
+                    type: 'array',
+                    items: [{ type: 'string' }, { type: 'number' }],
+                  },
+                  {
+                    type: 'array',
+                    items: { type: 'boolean' },
+                  },
+                  {
+                    type: 'object',
+                    properties: { foo: { type: 'string' } },
+                    required: ['foo'],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: 'object',
+                    additionalProperties: { type: 'string' },
+                  },
+                ],
+                nullable: true,
+              },
+            };
+          case 'one-of':
+            return {
+              inputSchema: {
+                oneOf: [
+                  { type: ['string', 'number'] },
+                  { type: 'integer' },
+                  { type: 'null' },
+                ],
+              },
+            };
+          case 'all-of':
+            return {
+              inputSchema: {
+                allOf: [
+                  {
+                    type: 'object',
+                    properties: { foo: { type: 'string' } },
+                    required: ['foo'],
+                    additionalProperties: false,
+                  },
+                  {
+                    additionalProperties: { type: 'number' },
+                  },
+                ],
+              },
+            };
+          case 'raw-shape':
+            return {
+              inputSchema: { raw: z.string(), count: z.number() },
+            };
+          case 'invalid-schema':
+            return {
+              inputSchema: 123 as unknown as object,
+            };
+          default:
+            return {};
+        }
+      },
+    });
+
+    try {
+      const tools = await client.listTools();
+      const anyOf = tools.tools.find((entry) => entry.name === 'any-of');
+      const oneOf = tools.tools.find((entry) => entry.name === 'one-of');
+      const allOf = tools.tools.find((entry) => entry.name === 'all-of');
+      const rawShape = tools.tools.find((entry) => entry.name === 'raw-shape');
+      const invalidSchema = tools.tools.find((entry) => entry.name === 'invalid-schema');
+
+      expect(anyOf?.inputSchema).toBeDefined();
+      expect(oneOf?.inputSchema).toBeDefined();
+      expect(allOf?.inputSchema).toBeDefined();
+      expect(rawShape?.inputSchema?.properties).toHaveProperty('raw');
+      expect(invalidSchema?.inputSchema?.properties).toHaveProperty('fromTool');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('uses formatResult when provided', async () => {
+    const armorer = createArmorer();
+    createTool(
+      {
+        name: 'custom-format',
+        description: 'format',
+        schema: z.object({}),
+        async execute() {
+          return { ok: true };
+        },
+      },
+      armorer,
+    );
+
+    const { client, server } = await connect(armorer, {
+      formatResult: () => ({
+        content: [{ type: 'text', text: 'formatted' }],
+      }),
+    });
+
+    try {
+      const result = await client.callTool({ name: 'custom-format', arguments: {} });
+      expect(result.content?.[0]?.text).toBe('formatted');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('returns empty content for undefined results', async () => {
+    const armorer = createArmorer();
+    createTool(
+      {
+        name: 'empty-result',
+        description: 'returns nothing',
+        schema: z.object({}),
+        async execute() {
+          return undefined;
+        },
+      },
+      armorer,
+    );
+
+    const { client, server } = await connect(armorer);
+
+    try {
+      const result = await client.callTool({ name: 'empty-result', arguments: {} });
+      expect(result.content).toEqual([]);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('stringifies unserializable results', async () => {
+    const armorer = createArmorer();
+    createTool(
+      {
+        name: 'bigint-result',
+        description: 'returns bigint',
+        schema: z.object({}),
+        async execute() {
+          return 1n;
+        },
+      },
+      armorer,
+    );
+
+    const { client, server } = await connect(armorer);
+
+    try {
+      const result = await client.callTool({ name: 'bigint-result', arguments: {} });
+      expect(result.content?.[0]?.text).toBe('[unserializable]');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('marks tools as errors when executeWith throws', async () => {
+    const tool = {
+      name: 'throwing-exec',
+      description: 'throws in executeWith',
+      schema: z.object({}),
+      metadata: undefined,
+      tags: [],
+      executeWith: async () => {
+        throw new Error('explode');
+      },
+    };
+    const armorer = {
+      tools: () => [tool],
+      addEventListener: () => {},
+    } as unknown as ReturnType<typeof createArmorer>;
+
+    const { client, server } = await connect(armorer);
+
+    try {
+      const result = await client.callTool({ name: 'throwing-exec', arguments: {} });
+      expect(result.isError).toBe(true);
+      expect(result.content?.[0]?.text).toContain('explode');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
 });

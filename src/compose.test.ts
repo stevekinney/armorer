@@ -3,8 +3,8 @@ import { z } from 'zod';
 
 import type { ComposedTool } from './compose-types';
 import { createArmorer } from './create-armorer';
-import { createTool } from './create-tool';
-import { isTool } from './is-tool';
+import { createTool, createToolCall } from './create-tool';
+import { isTool, type MinimalAbortSignal } from './is-tool';
 import {
   bind,
   compose,
@@ -110,6 +110,62 @@ describe('pipe()', () => {
       // double expects a number, but badTool returns a string
       // eslint-disable-next-line @typescript-eslint/await-thenable
       await expect(pipeline({ str: 'test' })).rejects.toThrow();
+    });
+  });
+
+  describe('signal handling', () => {
+    const runWithAbortReason = async (reason: unknown) => {
+      let resolveStep: ((value: { value: number }) => void) | undefined;
+      let resolveReady: (() => void) | undefined;
+      const ready = new Promise<void>((resolve) => {
+        resolveReady = resolve;
+      });
+      const delayed = createTool({
+        name: 'delayed',
+        description: 'delays first step',
+        schema: z.object({ str: z.string() }),
+        execute: async () =>
+          new Promise<{ value: number }>((resolve) => {
+            resolveStep = resolve;
+            resolveReady?.();
+          }),
+      });
+      const pipeline = pipe(delayed, double);
+      const controller = new AbortController();
+      const pending = pipeline.execute(createToolCall(pipeline.name, { str: '5' }), {
+        signal: controller.signal,
+      });
+      await ready;
+      if (!resolveStep) {
+        throw new Error('Missing delayed step resolver');
+      }
+      resolveStep({ value: 1 });
+      controller.abort(reason);
+      return pending;
+    };
+
+    it('wraps string abort reasons as errors', async () => {
+      const result = await runWithAbortReason('stop-now');
+      expect(result.outcome).toBe('error');
+      expect(result.error?.message).toContain('stop-now');
+    });
+
+    it('uses Error abort reasons directly', async () => {
+      const result = await runWithAbortReason(new Error('cancelled'));
+      expect(result.outcome).toBe('error');
+      expect(result.error?.message).toContain('cancelled');
+    });
+
+    it('stringifies object abort reasons', async () => {
+      const result = await runWithAbortReason({ code: 'HALT' });
+      expect(result.outcome).toBe('error');
+      expect(result.error?.message).toContain('HALT');
+    });
+
+    it('falls back when abort reasons are not serializable', async () => {
+      const result = await runWithAbortReason(1n);
+      expect(result.outcome).toBe('error');
+      expect(result.error?.message).toContain('1');
     });
   });
 
@@ -416,6 +472,34 @@ describe('tap()', () => {
     expect(tapped.tags).toEqual(['fast']);
     expect((tapped as any).metadata).toEqual({ tier: 'premium' });
   });
+
+  it('forwards signal and timeout to the wrapped tool', async () => {
+    const observed: {
+      signal?: MinimalAbortSignal | undefined;
+      timeoutMs?: number | undefined;
+    } = {};
+    const tool = createTool({
+      name: 'tap-context',
+      description: 'captures context',
+      schema: z.object({ value: z.number() }),
+      async execute(_params, context) {
+        observed.signal = context.signal;
+        observed.timeoutMs = context.timeoutMs;
+        return { value: 1 };
+      },
+    });
+
+    const tapped = tap(tool, async () => {});
+    const controller = new AbortController();
+    await (tapped as any).executeWith({
+      params: { value: 1 },
+      signal: controller.signal,
+      timeoutMs: 99,
+    });
+
+    expect(observed.signal).toBe(controller.signal);
+    expect(observed.timeoutMs).toBe(99);
+  });
 });
 
 describe('when()', () => {
@@ -448,6 +532,34 @@ describe('when()', () => {
 
     const result = await conditional({ value: 0 });
     expect(result).toEqual({ value: 0 });
+  });
+
+  it('forwards execution options to branch tools', async () => {
+    const observed: {
+      signal?: MinimalAbortSignal | undefined;
+      timeoutMs?: number | undefined;
+    } = {};
+    const capture = createTool({
+      name: 'capture',
+      description: 'captures context',
+      schema: z.object({ value: z.number() }),
+      async execute(_params, context) {
+        observed.signal = context.signal;
+        observed.timeoutMs = context.timeoutMs;
+        return { value: 1 };
+      },
+    });
+
+    const conditional = when(() => true, capture);
+    const controller = new AbortController();
+    await (conditional as any).executeWith({
+      params: { value: 1 },
+      signal: controller.signal,
+      timeoutMs: 55,
+    });
+
+    expect(observed.signal).toBe(controller.signal);
+    expect(observed.timeoutMs).toBe(55);
   });
 });
 
@@ -500,6 +612,36 @@ describe('parallel()', () => {
     // eslint-disable-next-line @typescript-eslint/await-thenable
     await expect(combined({ value: 1 })).rejects.toThrow('boom');
     expect(errors).toEqual([{ stepIndex: 1, stepName: 'fail' }]);
+  });
+
+  it('forwards signal and timeout to each tool', async () => {
+    const observed: Array<{
+      signal?: MinimalAbortSignal | undefined;
+      timeoutMs?: number | undefined;
+    }> = [];
+    const capture = createTool({
+      name: 'capture',
+      description: 'captures context',
+      schema: z.object({ value: z.number() }),
+      async execute(_params, context) {
+        observed.push({ signal: context.signal, timeoutMs: context.timeoutMs });
+        return { value: 1 };
+      },
+    });
+
+    const combined = parallel(capture, capture);
+    const controller = new AbortController();
+    await (combined as any).executeWith({
+      params: { value: 1 },
+      signal: controller.signal,
+      timeoutMs: 25,
+    });
+
+    expect(observed).toHaveLength(2);
+    for (const entry of observed) {
+      expect(entry.signal).toBe(controller.signal);
+      expect(entry.timeoutMs).toBe(25);
+    }
   });
 });
 

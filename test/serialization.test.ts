@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
 import {
+  assertJsonValue,
   createRegistry,
   defineTool,
   type JsonValue,
@@ -96,5 +97,32 @@ describe('serialization', () => {
       'default:alias-a@1.0.0',
       'default:alias-b@1.0.0',
     ]);
+  });
+
+  it('rejects non-JSON primitives and circular references', () => {
+    expect(() => assertJsonValue({ value: Number.POSITIVE_INFINITY })).toThrow(
+      'Non-finite number at metadata.value',
+    );
+    expect(() => assertJsonValue({ value: 10n })).toThrow(
+      'BigInt is not valid JSON at metadata.value',
+    );
+    expect(() => assertJsonValue({ value: () => 'nope' })).toThrow(
+      'Function is not valid JSON at metadata.value',
+    );
+    expect(() => assertJsonValue({ value: Symbol('nope') })).toThrow(
+      'Symbol is not valid JSON at metadata.value',
+    );
+
+    const circularArray: unknown[] = [];
+    circularArray.push(circularArray);
+    expect(() => assertJsonValue(circularArray)).toThrow(
+      'Circular reference detected at metadata[0]',
+    );
+
+    const circularObject: Record<string, unknown> = {};
+    circularObject.self = circularObject;
+    expect(() => assertJsonValue(circularObject)).toThrow(
+      'Circular reference detected at metadata.self',
+    );
   });
 });

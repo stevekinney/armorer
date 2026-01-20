@@ -4,6 +4,11 @@ import { z } from 'zod';
 import { combineArmorers, createArmorer } from '../src/runtime';
 
 describe('combineArmorers', () => {
+  it('throws when no armorers are provided', () => {
+    const combine = combineArmorers as unknown as () => ReturnType<typeof createArmorer>;
+    expect(() => combine()).toThrow('combineArmorers() requires at least 1 Armorer');
+  });
+
   it('combines tools from multiple armorers', async () => {
     const a = createArmorer();
     a.register({

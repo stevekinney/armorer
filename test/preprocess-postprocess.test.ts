@@ -92,6 +92,31 @@ describe('preprocess', () => {
     const preprocessed = preprocess(tool, async (input) => input);
     expect(preprocessed.tags).toBeUndefined();
   });
+
+  it('forwards signal and timeout to the wrapped tool', async () => {
+    const observed: { signal?: AbortSignal; timeoutMs?: number } = {};
+    const tool = createTool({
+      name: 'context-forward',
+      description: 'captures context',
+      schema: z.object({ value: z.number() }),
+      async execute(_params, context) {
+        observed.signal = context.signal;
+        observed.timeoutMs = context.timeoutMs;
+        return 1;
+      },
+    });
+
+    const preprocessed = preprocess(tool, async (input) => input);
+    const controller = new AbortController();
+    await (preprocessed as any).executeWith({
+      params: { value: 1 },
+      signal: controller.signal,
+      timeoutMs: 123,
+    });
+
+    expect(observed.signal).toBe(controller.signal);
+    expect(observed.timeoutMs).toBe(123);
+  });
 });
 
 describe('postprocess', () => {
@@ -192,6 +217,31 @@ describe('postprocess', () => {
 
     const postprocessed = postprocess(tool, async (output) => output);
     expect(postprocessed.schema).toBe(schema);
+  });
+
+  it('forwards signal and timeout to the wrapped tool', async () => {
+    const observed: { signal?: AbortSignal; timeoutMs?: number } = {};
+    const tool = createTool({
+      name: 'context-forward',
+      description: 'captures context',
+      schema: z.object({ value: z.number() }),
+      async execute(_params, context) {
+        observed.signal = context.signal;
+        observed.timeoutMs = context.timeoutMs;
+        return 1;
+      },
+    });
+
+    const postprocessed = postprocess(tool, async (output) => output);
+    const controller = new AbortController();
+    await (postprocessed as any).executeWith({
+      params: { value: 1 },
+      signal: controller.signal,
+      timeoutMs: 321,
+    });
+
+    expect(observed.signal).toBe(controller.signal);
+    expect(observed.timeoutMs).toBe(321);
   });
 });
 

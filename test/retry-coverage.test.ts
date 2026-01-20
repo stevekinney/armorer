@@ -64,4 +64,55 @@ describe('retry coverage edges', () => {
     const wrapped = retry(failing, { attempts: 1 });
     await expect(wrapped({ value: 1 })).rejects.toThrow('[object Object]');
   });
+
+  it('throws when the signal is already aborted', async () => {
+    const failing = makeRawTool(async () => {
+      throw new Error('boom');
+    });
+    const wrapped = retry(failing, { attempts: 2 });
+    const controller = new AbortController();
+    controller.abort('cancelled');
+
+    await expect(
+      (wrapped as any).execute(
+        { value: 1 },
+        {
+          signal: controller.signal,
+          timeoutMs: 10,
+        },
+      ),
+    ).rejects.toThrow('cancelled');
+  });
+
+  it('aborts after a failed attempt when the signal is triggered', async () => {
+    const failing = makeRawTool(async () => {
+      throw new Error('boom');
+    });
+    const wrapped = retry(failing, { attempts: 2 });
+
+    let checks = 0;
+    const signal = {
+      get aborted() {
+        checks += 1;
+        return checks > 1;
+      },
+      reason: 'stop',
+    };
+
+    await expect((wrapped as any).rawExecute({ value: 1 }, { signal })).rejects.toThrow(
+      'stop',
+    );
+  });
+
+  it('aborts during retry delays when the signal is triggered', async () => {
+    const failing = makeRawTool(async () => {
+      throw new Error('boom');
+    });
+    const wrapped = retry(failing, { attempts: 3, delayMs: 50 });
+    const controller = new AbortController();
+    const pending = (wrapped as any).execute({ value: 1 }, { signal: controller.signal });
+
+    setTimeout(() => controller.abort('delay-stop'), 5);
+    await expect(pending).rejects.toThrow('delay-stop');
+  });
 });

@@ -1518,6 +1518,208 @@ describe('createArmorer', () => {
     });
   });
 
+  describe('configuration edges', () => {
+    it('createTool applies optional configuration fields', () => {
+      const armorer = createArmorer([], { telemetry: true });
+      const tool = armorer.createTool({
+        name: 'configured',
+        description: 'configured tool',
+        schema: z.object({}),
+        outputSchema: z.object({ ok: z.boolean() }),
+        policy: { beforeExecute: () => ({ allow: true }) },
+        policyContext: () => ({ source: 'tool' }),
+        digests: { input: false, output: true },
+        outputValidationMode: 'throw',
+        concurrency: 2,
+        execute: async () => ({ ok: true }),
+      });
+
+      expect(tool.configuration.outputSchema).toBeDefined();
+      expect(tool.configuration.policy).toBeDefined();
+      expect(tool.configuration.policyContext).toBeDefined();
+      expect(tool.configuration.digests).toEqual({ input: false, output: true });
+      expect(tool.configuration.outputValidationMode).toBe('throw');
+      expect(tool.configuration.concurrency).toBe(2);
+    });
+
+    it('passes signal and timeout through execute', async () => {
+      const observed: { signal?: AbortSignal; timeoutMs?: number } = {};
+      const armorer = createArmorer();
+      armorer.register({
+        name: 'capture',
+        description: 'captures context',
+        schema: z.object({}),
+        async execute(_params, context) {
+          observed.signal = context?.signal;
+          observed.timeoutMs = context?.timeoutMs;
+          return 'ok';
+        },
+      });
+
+      const controller = new AbortController();
+      await armorer.execute(
+        { name: 'capture', arguments: {} },
+        { signal: controller.signal, timeoutMs: 42 },
+      );
+
+      expect(observed.signal).toBe(controller.signal);
+      expect(observed.timeoutMs).toBe(42);
+    });
+
+    it('uses metadata concurrency when provided', async () => {
+      const armorer = createArmorer([], { concurrency: 10 });
+      armorer.register({
+        name: 'meta-concurrency',
+        description: 'metadata concurrency',
+        schema: z.object({}),
+        metadata: { concurrency: 3 },
+        execute: async () => 'ok',
+      });
+
+      const tool = armorer.getTool('meta-concurrency');
+      expect(tool?.configuration.concurrency).toBe(3);
+    });
+
+    it('ignores non-positive concurrency values', () => {
+      const armorer = createArmorer([], { concurrency: 0 });
+      armorer.register({
+        name: 'no-concurrency',
+        description: 'invalid concurrency',
+        schema: z.object({}),
+        execute: async () => 'ok',
+      });
+
+      const tool = armorer.getTool('no-concurrency');
+      expect(tool?.configuration.concurrency).toBeUndefined();
+    });
+
+    it('honors boolean policy decisions', async () => {
+      const armorer = createArmorer([], {
+        policy: {
+          beforeExecute: () => false,
+        },
+      });
+      armorer.register({
+        name: 'policy-bool',
+        description: 'boolean policy',
+        schema: z.object({}),
+        execute: async () => 'ok',
+      });
+
+      const result = await armorer.execute({
+        name: 'policy-bool',
+        arguments: {},
+      });
+      expect(result.error?.message).toBe('Policy denied');
+    });
+
+    it('merges registry and tool policy contexts', async () => {
+      const armorer = createArmorer([], {
+        policyContext: { fromRegistry: true },
+      });
+      armorer.register({
+        name: 'policy-merge',
+        description: 'policy merge',
+        schema: z.object({}),
+        policyContext: async () => ({ fromTool: true }),
+        policy: {
+          beforeExecute({ policyContext }) {
+            expect(policyContext).toEqual({ fromRegistry: true, fromTool: true });
+            return { allow: true };
+          },
+        },
+        execute: async () => 'ok',
+      });
+
+      const result = await armorer.execute({
+        name: 'policy-merge',
+        arguments: {},
+      });
+      expect(result.result).toBe('ok');
+    });
+
+    it('denies mutating tools based on tags in read-only mode', async () => {
+      const armorer = createArmorer([], { readOnly: true });
+      armorer.register({
+        name: 'tag-mutating',
+        description: 'tag mutating',
+        tags: ['mutating'],
+        schema: z.object({}),
+        execute: async () => 'ok',
+      });
+
+      const result = await armorer.execute({
+        name: 'tag-mutating',
+        arguments: {},
+      });
+      expect(result.error?.message).toContain('Mutating tool');
+    });
+
+    it('denies dangerous tools based on tags when allowDangerous is false', async () => {
+      const armorer = createArmorer([], { allowDangerous: false });
+      armorer.register({
+        name: 'tag-dangerous',
+        description: 'tag dangerous',
+        tags: ['dangerous'],
+        schema: z.object({}),
+        execute: async () => 'ok',
+      });
+
+      const result = await armorer.execute({
+        name: 'tag-dangerous',
+        arguments: {},
+      });
+      expect(result.error?.message).toContain('Dangerous tool');
+    });
+
+    it('retries cached embeddings after a rejection', async () => {
+      let calls = 0;
+      const embed = async (texts: string[]) => {
+        calls += 1;
+        if (calls === 1) {
+          throw new Error('embed failed');
+        }
+        return texts.map(() => [1, 0, 0]);
+      };
+      const armorer = createArmorer([], { embed });
+      armorer.register(makeConfiguration({ name: 'retry-embed' }));
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      armorer.register(makeConfiguration({ name: 'retry-embed' }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(calls).toBeGreaterThanOrEqual(2);
+    });
+
+    it('skips embedding updates when a tool is replaced mid-warm', async () => {
+      let resolveEmbeddings: ((value: number[][]) => void) | undefined;
+      let lastTexts: string[] = [];
+      const embed = (texts: string[]) =>
+        new Promise<number[][]>((resolve) => {
+          lastTexts = texts;
+          resolveEmbeddings = resolve;
+        });
+
+      const armorer = createArmorer([], { embed });
+      armorer.register(makeConfiguration({ name: 'swap' }));
+      armorer.register(makeConfiguration({ name: 'swap', description: 'second' }));
+
+      resolveEmbeddings?.(lastTexts.map(() => [1, 0]));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(armorer.getTool('swap')?.description).toBe('second');
+    });
+
+    it('throws when deserializing with async middleware', () => {
+      const asyncMiddleware = async (config: ToolConfig) => config;
+      expect(() =>
+        createArmorer([makeConfiguration()], { middleware: [asyncMiddleware as any] }),
+      ).toThrow(
+        'Async middleware is not supported when deserializing. Provide synchronous middleware only.',
+      );
+    });
+  });
+
   describe('createMiddleware helper', () => {
     it('creates a typed middleware function', () => {
       const middleware = createMiddleware((config) => ({
