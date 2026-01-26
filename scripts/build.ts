@@ -15,6 +15,8 @@ const entrypoints = [
   './src/tools/index.ts',
 ];
 
+const root = './src';
+
 // Clean dist folder
 await $`rm -rf dist`;
 
@@ -22,6 +24,7 @@ await $`rm -rf dist`;
 await Bun.build({
   entrypoints,
   outdir: './dist',
+  root,
   target: 'bun',
   format: 'esm',
   naming: '[dir]/[name].js',
@@ -36,6 +39,7 @@ await $`bunx tsc --declaration --emitDeclarationOnly --project tsconfig.build.js
 await Bun.build({
   entrypoints,
   outdir: './dist',
+  root,
   target: 'node',
   format: 'cjs',
   naming: '[dir]/[name].cjs',
