@@ -195,7 +195,7 @@ export function createRegistry(options: RegistryOptions = {}): ToolRegistry {
 }
 
 function normalizeDefinition(definition: ToolDefinition): ToolDefinition {
-  const identity = normalizeIdentity(definition.identity ?? { name: definition.name });
+  const identity = normalizeIdentity(definition.identity);
   const id = formatToolId(identity);
   if (definition.id === id && definition.identity === identity) {
     return definition;
@@ -204,8 +204,6 @@ function normalizeDefinition(definition: ToolDefinition): ToolDefinition {
     ...definition,
     identity,
     id,
-    name: identity.name,
-    description: definition.display?.description ?? definition.description,
   };
 }
 

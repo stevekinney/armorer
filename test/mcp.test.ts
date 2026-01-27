@@ -255,7 +255,7 @@ describe('createMCP', () => {
           mcp: {
             title: 'meta-title',
             description: 'meta-description',
-            inputSchema: {
+            schema: {
               type: 'object',
               properties: { fromMeta: { type: 'boolean' } },
               required: ['fromMeta'],
@@ -281,7 +281,7 @@ describe('createMCP', () => {
       toolConfig: () => ({
         title: 'override-title',
         description: 'override-description',
-        inputSchema: z.object({ fromConfig: z.string() }),
+        schema: z.object({ fromConfig: z.string() }),
         outputSchema: z.object({ config: z.boolean() }),
         meta: { source: 'config' },
       }),
@@ -318,7 +318,7 @@ describe('createMCP', () => {
 
     const { client, server } = await connect(armorer, {
       toolConfig: () => ({
-        inputSchema: z.string(),
+        schema: z.string(),
       }),
     });
 
@@ -670,7 +670,7 @@ describe('createMCP', () => {
         switch (tool.name) {
           case 'any-of':
             return {
-              inputSchema: {
+              schema: {
                 anyOf: [
                   { enum: ['alpha', 'beta'] },
                   { enum: ['ok', { bad: true }] },
@@ -699,7 +699,7 @@ describe('createMCP', () => {
             };
           case 'one-of':
             return {
-              inputSchema: {
+              schema: {
                 oneOf: [
                   { type: ['string', 'number'] },
                   { type: 'integer' },
@@ -709,7 +709,7 @@ describe('createMCP', () => {
             };
           case 'all-of':
             return {
-              inputSchema: {
+              schema: {
                 allOf: [
                   {
                     type: 'object',
@@ -725,11 +725,11 @@ describe('createMCP', () => {
             };
           case 'raw-shape':
             return {
-              inputSchema: { raw: z.string(), count: z.number() },
+              schema: { raw: z.string(), count: z.number() },
             };
           case 'invalid-schema':
             return {
-              inputSchema: 123 as unknown as object,
+              schema: 123 as unknown as object,
             };
           default:
             return {};

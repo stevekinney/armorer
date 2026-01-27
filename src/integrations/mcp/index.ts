@@ -15,12 +15,14 @@ import type {
 import { z } from 'zod';
 
 import { isZodSchema } from '../../core/schema-utilities';
-import type { Armorer, ArmorerTool, ToolResult } from '../../runtime';
+import type { Armorer } from '../../runtime/create-armorer';
+import type { ArmorerTool, ToolExecuteWithOptions } from '../../runtime/is-tool';
+import type { ToolResult } from '../../runtime/types';
 
 export type MCPToolConfig = {
   title?: string;
   description?: string;
-  inputSchema?: AnySchema;
+  schema?: AnySchema;
   outputSchema?: AnySchema;
   annotations?: ToolAnnotations;
   execution?: ToolExecution;
@@ -64,12 +66,12 @@ export function createMCP(armorer: Armorer, options: CreateMCPOptions = {}): Mcp
         }
       : config?.annotations;
     const resolvedInputSchema =
-      resolveMcpSchema(config?.inputSchema) ?? (tool.schema as AnySchema);
+      resolveMcpSchema(config?.schema) ?? (tool.schema as AnySchema);
     const resolvedOutputSchema = resolveMcpSchema(config?.outputSchema);
     const registeredConfig: {
       title?: string;
       description?: string;
-      inputSchema?: AnySchema;
+      inputSchema: AnySchema;
       outputSchema?: AnySchema;
       annotations?: ToolAnnotations;
       execution?: ToolExecution;
@@ -94,13 +96,14 @@ export function createMCP(armorer: Armorer, options: CreateMCPOptions = {}): Mcp
       registeredConfig._meta = meta;
     }
 
-    const existing = registered.get(tool.name);
+    const toolName = tool.name;
+    const existing = registered.get(toolName);
     if (existing) {
       existing.remove();
     }
 
     const registeredTool = server.registerTool(
-      tool.name,
+      toolName,
       registeredConfig,
       async (
         args: unknown,
@@ -109,7 +112,10 @@ export function createMCP(armorer: Armorer, options: CreateMCPOptions = {}): Mcp
         const params = args ?? {};
         let result: ToolResult;
         try {
-          result = await tool.executeWith({
+          const runnable = tool as unknown as {
+            executeWith: (options: ToolExecuteWithOptions) => Promise<ToolResult>;
+          };
+          result = await runnable.executeWith({
             params,
             callId: String(extra.requestId),
             signal: extra.signal,
@@ -125,7 +131,7 @@ export function createMCP(armorer: Armorer, options: CreateMCPOptions = {}): Mcp
       },
     );
 
-    registered.set(tool.name, registeredTool);
+    registered.set(toolName, registeredTool);
   };
 
   for (const tool of armorer.tools()) {
@@ -207,7 +213,7 @@ export function toolConfigFromMetadata(tool: ArmorerTool): MCPToolConfig | undef
   const resolved: MCPToolConfig = {};
   if (config.title !== undefined) resolved.title = config.title;
   if (config.description !== undefined) resolved.description = config.description;
-  if (config.inputSchema !== undefined) resolved.inputSchema = config.inputSchema;
+  if (config.schema !== undefined) resolved.schema = config.schema;
   if (config.outputSchema !== undefined) resolved.outputSchema = config.outputSchema;
   let annotations = config.annotations ? { ...config.annotations } : undefined;
   if (metadata.readOnly === true) {

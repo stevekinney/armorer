@@ -13,7 +13,7 @@ describe('toGemini', () => {
   const tool = defineTool({
     name: 'search',
     description: 'Search for items',
-    inputSchema: schema,
+    schema: schema,
   });
 
   describe('single tool conversion', () => {

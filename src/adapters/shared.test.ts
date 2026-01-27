@@ -14,7 +14,7 @@ describe('shared adapter utilities', () => {
   const testTool = defineTool({
     name: 'test-tool',
     description: 'A test tool',
-    inputSchema: testSchema,
+    schema: testSchema,
   });
 
   const serializedTool = serializeToolDefinition(testTool);

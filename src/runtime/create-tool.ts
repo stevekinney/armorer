@@ -74,6 +74,7 @@ export interface CreateToolOptions<
   execute:
     | ((params: TParameters, context: TContext) => Promise<TReturn>)
     | Promise<(params: TParameters, context: TContext) => Promise<TReturn>>;
+  dryRun?: (params: TParameters, context: TContext) => Promise<unknown>;
   timeoutMs?: number;
   tags?: NormalizeTagsOption<Tags>;
   metadata?: M;
@@ -269,12 +270,12 @@ export function createTool<
     ...(metadataValue !== undefined ? { metadata: metadataValue } : {}),
     ...(resolvedRisk !== undefined ? { risk: resolvedRisk } : {}),
     ...(lifecycle !== undefined ? { lifecycle } : {}),
-    inputSchema: normalizedSchema,
+    schema: normalizedSchema,
     ...(outputSchema !== undefined ? { outputSchema } : {}),
   }) as AnyToolDefinition;
 
-  const schema = definition.inputSchema as unknown as ToolParametersSchema;
-  const typedSchema = definition.inputSchema as unknown as z.ZodType<TParameters>;
+  const schema = definition.schema as unknown as ToolParametersSchema;
+  const typedSchema = definition.schema as unknown as z.ZodType<TParameters>;
 
   const buildPolicyContext = (
     toolCall: ToolCall,
@@ -753,11 +754,11 @@ export function createTool<
 
   const callable = async (params: unknown) => executeParams(params as TParameters);
 
-  const configuration: ToolConfig = {
+  const configuration = {
     ...definition,
     parameters: typedSchema,
-    execute: async (params) => executeParams(params as TParameters),
-  };
+    execute: async (params: unknown) => executeParams(params as TParameters),
+  } as unknown as ToolConfig;
   if (policyHooks) {
     configuration.policy = policyHooks;
   }
@@ -784,14 +785,11 @@ export function createTool<
     id: configuration.id,
     identity: configuration.identity,
     display: configuration.display,
-    name: configuration.name,
-    description: configuration.description,
-    inputSchema: configuration.inputSchema,
+    name: configuration.identity.name,
+    description: configuration.display.description,
     schema: configuration.schema,
     parameters: typedSchema,
     outputSchema: configuration.outputSchema,
-    risk: configuration.risk,
-    lifecycle: configuration.lifecycle,
     execute,
     run: async (params: unknown, context: TContext) => {
       const resolved = await resolveExecute();
@@ -800,6 +798,13 @@ export function createTool<
     rawExecute: async (params: unknown, context: TContext) => {
       const resolved = await resolveExecute();
       return resolved(params as TParameters, context);
+    },
+    dryRun: async (params: unknown, context: TContext) => {
+      if (definition.dryRun) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+        return definition.dryRun(params as any, context);
+      }
+      throw new Error('Tool does not support dryRun');
     },
     configuration,
     // Event listener methods
@@ -818,8 +823,9 @@ export function createTool<
       return hub.completed;
     },
     toJSON,
-    toString: () => `**${configuration.name}**: ${configuration.description}`,
-    [Symbol.toPrimitive]: () => configuration.name,
+    toString: () =>
+      `**${configuration.identity.name}**: ${configuration.display.description}`,
+    [Symbol.toPrimitive]: () => configuration.identity.name,
     tags: configuration.tags,
     metadata: configuration.metadata,
   };

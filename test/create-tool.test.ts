@@ -504,7 +504,7 @@ describe('createTool', () => {
     expect(() => JSON.stringify(meta)).not.toThrow();
 
     // Parameters JSON Schema assertions
-    const params = meta.inputSchema as Record<string, unknown>;
+    const params = meta.schema as Record<string, unknown>;
     expect(params).toBeDefined();
     expect(params['type']).toBe('object');
 

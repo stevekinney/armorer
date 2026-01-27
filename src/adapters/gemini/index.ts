@@ -59,7 +59,7 @@ function convertToGemini(tool: SerializedToolDefinition): GeminiFunctionDeclarat
   return {
     name: tool.identity.name,
     description: tool.display.description,
-    parameters: transformToGeminiSchema(tool.inputSchema as Record<string, unknown>),
+    parameters: transformToGeminiSchema(tool.schema as Record<string, unknown>),
   };
 }
 

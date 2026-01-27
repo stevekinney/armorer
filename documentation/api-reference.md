@@ -4,125 +4,100 @@
 
 Reference for exported functions, types, and subpath APIs. New code should prefer `armorer/core` for tool specs and registry/search, and `armorer/runtime` for execution and composition.
 
-### Runtime export: `armorer/runtime` (root `armorer` still works)
+### Runtime export: `armorer/runtime`
 
 #### `createTool(options)`
 
-Creates a tool with Zod validation, events, and a callable interface.
+Creates an executable tool with Zod validation, events, and a callable proxy interface.
 
 Options (`CreateToolOptions`):
 
-- `name`: string
-- `description`: string
-- `schema?`: Zod object schema for input validation (`ToolParametersSchema`) or a plain object shape; defaults to `z.object({})`
-- `execute`: async `(params: TInput, context: ToolContext) => TOutput`, a `Promise` that resolves to that function, or `lazy(() => import(...))` to defer dynamic imports
-- `tags?`: kebab-case strings, de-duped
-- `metadata?`: `ToolMetadata` bag used for filtering and inspection
-- `timeoutMs?`: number (default timeout applied when executing the tool)
+- `name`: string (maps to `identity.name`)
+- `description`: string (maps to `display.description`)
+- `schema?`: Zod object schema for input validation or a plain object shape; defaults to `z.object({})`.
+- `execute`: async `(params: TInput, context: ToolContext) => TOutput`.
+- `dryRun?`: async `(params: TInput, context: ToolContext) => Promise<unknown>` - optional handler for previewing effects.
+- `tags?`: kebab-case strings, de-duped.
+- `metadata?`: `ToolMetadata` bag used for filtering and inspection.
+- `timeoutMs?`: number.
+- `concurrency?`: number (per-tool concurrency limit).
 
 Returns: `ArmorerTool`.
 
 Exposed properties and methods:
 
-- `tool(params)` call signature
-- `name`, `description`, `schema`, `tags`, `metadata`, `configuration`
-- `execute(call, options?)`: returns `ToolResult`
-- `execute(params, options?)`: returns raw output (same as `tool(params)`)
-- `executeWith(options: ToolExecuteWithOptions)`: returns `ToolResult` with `callId`, `timeoutMs`, and `signal` support
-- `rawExecute(params, context)`: low-level invoke with full `ToolContext`
-- `addEventListener`, `dispatchEvent`, `on`, `once`, `subscribe`, `toObservable`, `events`
-- `complete()`, `completed`
-- Runtime helpers: `toJSON()` (serializable JSON schema output), `toString()`, `Symbol.toPrimitive`
+- `tool(params)` call signature.
+- `identity`: `{ name, namespace, version }`.
+- `display`: `{ title, description, examples }`.
+- `schema`: the Zod schema.
+- `tags`, `metadata`, `configuration`.
+- `execute(call | params, options?)`: returns `ToolResult` (for call) or raw output (for params).
+- `dryRun(params, context)`: direct access to dry-run logic.
+- `addEventListener`, `dispatchEvent`, `on`, `once`, `subscribe`, `toObservable`, `events`.
+- `complete()`, `completed`.
 
 ```typescript
-function createTool<
-  TInput extends Record<string, unknown> = Record<string, never>,
-  TOutput = unknown,
-  E extends ToolEventsMap = DefaultToolEvents,
-  Tags extends readonly string[] = readonly string[],
-  M extends ToolMetadata | undefined = undefined,
-  TContext extends ToolContext<E> = ToolContext<E>,
-  TParameters extends Record<string, unknown> = TInput,
-  TReturn = TOutput,
->(
-  options: CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
+function createTool<...>(
+  options: CreateToolOptions<...>,
   armorer?: Armorer,
 ): ArmorerTool;
 ```
 
-You can also pass an optional `armorer` as the second argument to automatically register the tool:
-
-```typescript
-const armorer = createArmorer();
-const tool = createTool({ name: 'my-tool', ... }, armorer);
-// Tool is automatically registered with the armorer
-```
-
-If the armorer has `context` set, it will be merged into the tool's execution context automatically.
-
-#### `lazy(loader)`
-
-Defers loading an async execute function until the first call. Import from `armorer/lazy`. The loader is memoized; if it rejects, the next call retries.
-
-Signature:
-
-```typescript
-function lazy<TExecute extends (...args: any[]) => Promise<any>>(
-  loader: () => PromiseLike<TExecute> | TExecute,
-): TExecute;
-```
-
-#### `createToolCall(toolName, args, id?)`
-
-Creates a `ToolCall` with `arguments` populated and a generated id if omitted.
-
-```typescript
-function createToolCall<Args>(
-  toolName: string,
-  args: Args,
-  id?: string,
-): ToolCall & { arguments: Args };
-```
-
-#### `withContext(context, options?)`
-
-Build tools that receive additional context merged into `ToolContext`.
-
-Usage forms:
-
-- Builder: `const build = withContext(ctx); const tool = build(options);`
-- Immediate: `const tool = withContext(ctx, options);`
-
-The `execute` function receives `ToolContext & Ctx`. The helper type `WithContext<Ctx>` models that merge.
-
-#### `combineArmorers(...armorers)`
-
-Merges multiple Armorer instances into a fresh Armorer. Tools are copied via `toJSON()` and registered into a new armorer. If multiple armorers define the same tool name, the last one wins. Contexts are shallow-merged in the same order.
-
-```typescript
-function combineArmorers(...armorers: [Armorer, ...Armorer[]]): Armorer;
-```
-
 #### `createArmorer(serialized?, options?)`
 
-Creates a registry of tools. `serialized` can be a `SerializedArmorer` created by `armorer.toJSON()`.
+Creates an execution engine and tool registry.
 
 Options (`ArmorerOptions`):
 
-- `signal?`: `MinimalAbortSignal` used to clear listeners on abort
-- `context?`: `ArmorerContext` merged into tool execution context
-- `embed?`: `(texts: string[]) => number[][] | Promise<number[][]>` for semantic search
-- `toolFactory?`: `(configuration, { dispatchEvent, baseContext, buildDefaultTool }) => ArmorerTool`
-- `getTool?`: `(configuration: Omit<ToolConfig, 'execute'>) => ToolConfig['execute']` - Called when a tool configuration doesn't have an execute method (typically when deserializing)
-- `middleware?`: Array of `ToolMiddleware` functions to transform tool configurations during registration (must be synchronous when deserializing)
+- `context?`: `ArmorerContext` merged into all tool execution contexts.
+- `middleware?`: Array of `ToolMiddleware` functions.
+- `policy?`: Global policy hooks.
+- `telemetry?`: boolean - enable detailed execution events.
 
-#### `createMiddleware(fn)`
+### Instrumentation export: `armorer/instrumentation`
 
-Creates a typed middleware function for transforming tool configurations during registration:
+#### `instrument(armorer, options?)`
+
+Auto-instruments an Armorer instance with OpenTelemetry tracing.
 
 ```typescript
-function createMiddleware(fn: (config: ToolConfig) => ToolConfig): ToolMiddleware;
+import { instrument } from 'armorer/instrumentation';
+unregister = instrument(armorer);
 ```
+
+### Middleware export: `armorer/middleware`
+
+#### `createCacheMiddleware(options)`
+
+Caches tool results based on input hash.
+
+#### `createRateLimitMiddleware(options)`
+
+Limits tool execution frequency.
+
+#### `createTimeoutMiddleware(ms)`
+
+Enforces a hard execution timeout.
+
+### Testing export: `armorer/test`
+
+#### `createMockTool(options)`
+
+Creates a mock tool with `.mockResolve()` and `.mockReject()` helpers and a `.calls` history.
+
+#### `createTestRegistry()`
+
+Creates an Armorer instance that records all execution history in a `.history` array.
+
+### Core export: `armorer/core`
+
+#### `defineTool(options)`
+
+Defines a static tool specification (identity, display, schema) without execution logic. Recommended for shared libraries.
+
+#### `serializeToolDefinition(tool)`
+
+Converts a tool definition to a provider-neutral JSON-serializable format.
 
 Registry surface (`Armorer`):
 

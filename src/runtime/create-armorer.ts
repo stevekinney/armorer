@@ -186,13 +186,20 @@ export interface ArmorerEvents {
   'tool.started': {
     tool: ArmorerTool;
     call: ToolCall;
+    // Original event properties
+    toolCall: ToolCallWithArguments;
+    configuration: ToolConfig;
     params: unknown;
     startedAt: number;
     inputDigest?: string;
+    dryRun?: boolean;
   };
   'tool.finished': {
     tool: ArmorerTool;
     call: ToolCall;
+    // Original event properties
+    toolCall: ToolCallWithArguments;
+    configuration: ToolConfig;
     status: 'success' | 'error' | 'denied' | 'cancelled';
     durationMs: number;
     startedAt: number;
@@ -204,6 +211,7 @@ export interface ArmorerEvents {
     inputDigest?: string;
     outputDigest?: string;
     outputValidation?: { success: boolean; error?: unknown };
+    dryRun?: boolean;
   };
   'budget-exceeded': { tool: ArmorerTool; call: ToolCall; reason: string };
   progress: { tool: ArmorerTool; call: ToolCall; percent?: number; message?: string };
@@ -429,17 +437,17 @@ export function createArmorer(
       ...(options.metadata !== undefined ? { metadata: options.metadata } : {}),
       ...(options.risk !== undefined ? { risk: options.risk } : {}),
       ...(options.lifecycle !== undefined ? { lifecycle: options.lifecycle } : {}),
-      inputSchema: schema,
+      schema: schema,
       ...(options.outputSchema !== undefined
         ? { outputSchema: options.outputSchema }
         : {}),
     }) as AnyToolDefinition;
 
-    const configuration: ToolConfig = {
+    const configuration = {
       ...definition,
       parameters: schema,
       execute: options.execute as ToolConfig['execute'],
-    };
+    } as unknown as ToolConfig;
     if (options.policy) {
       configuration.policy = options.policy;
     }
@@ -456,9 +464,9 @@ export function createArmorer(
       configuration.concurrency = options.concurrency;
     }
     register(configuration);
-    const tool = registry.get(configuration.name);
+    const tool = registry.get(configuration.identity.name);
     if (!tool) {
-      throw new Error(`Failed to register tool: ${configuration.name}`);
+      throw new Error(`Failed to register tool: ${configuration.identity.name}`);
     }
     return tool as unknown as ArmorerTool<z.ZodType<TInput>, E, TOutput, M>;
   }
@@ -707,8 +715,8 @@ export function createArmorer(
       registryConcurrency,
     );
     const options: Parameters<typeof createToolFactory>[0] = {
-      name: configuration.name,
-      description: configuration.description,
+      name: configuration.identity.name,
+      description: configuration.display.description,
       ...(configuration.identity?.namespace !== undefined
         ? { namespace: configuration.identity.namespace }
         : {}),
@@ -738,6 +746,12 @@ export function createArmorer(
         });
       },
     };
+    if (configuration.dryRun) {
+      options.dryRun = configuration.dryRun as (
+        params: unknown,
+        context: unknown,
+      ) => Promise<unknown>;
+    }
     if (configuration.tags) {
       options.tags = configuration.tags;
     }
@@ -775,13 +789,16 @@ export function createArmorer(
     if (!configuration || typeof configuration !== 'object') {
       throw new TypeError('register expects ToolConfig objects');
     }
-    if (typeof configuration.name !== 'string' || !configuration.name.trim()) {
+    const candidate = configuration as unknown as Record<string, unknown>;
+    const name =
+      (candidate['name'] as string | undefined) ?? configuration.identity?.name;
+    if (typeof name !== 'string' || !name.trim()) {
       throw new TypeError('register expects ToolConfig objects');
     }
-    if (typeof configuration.description !== 'string') {
-      throw new TypeError('register expects ToolConfig objects');
-    }
-    const rawSchema = configuration.schema ?? configuration.parameters;
+    const rawSchema =
+      configuration.schema ??
+      configuration.parameters ??
+      (candidate['inputSchema'] as z.ZodTypeAny | undefined);
     if (!rawSchema) {
       throw new TypeError('register expects ToolConfig objects');
     }
@@ -792,11 +809,16 @@ export function createArmorer(
       throw new TypeError('register expects ToolConfig objects');
     }
     const normalizedSchema = normalizeToolSchema(rawSchema);
-    const description = configuration.display?.description ?? configuration.description;
+    const description =
+      (candidate['description'] as string | undefined) ??
+      configuration.display?.description;
+    if (typeof description !== 'string' || !description.trim()) {
+      throw new TypeError('register expects ToolConfig objects');
+    }
     const resolvedRisk =
       configuration.risk ?? deriveRiskFromMetadata(configuration.metadata);
     const definition = defineTool({
-      name: configuration.name,
+      name,
       description,
       ...(configuration.identity?.namespace !== undefined
         ? { namespace: configuration.identity.namespace }
@@ -814,14 +836,22 @@ export function createArmorer(
       ...(configuration.metadata ? { metadata: configuration.metadata } : {}),
       ...(resolvedRisk !== undefined ? { risk: resolvedRisk } : {}),
       ...(configuration.lifecycle ? { lifecycle: configuration.lifecycle } : {}),
-      inputSchema: normalizedSchema,
+      schema: normalizedSchema,
       ...(configuration.outputSchema ? { outputSchema: configuration.outputSchema } : {}),
+      ...(configuration.dryRun
+        ? {
+            dryRun: configuration.dryRun as (
+              params: unknown,
+              context: unknown,
+            ) => Promise<unknown>,
+          }
+        : {}),
     }) as AnyToolDefinition;
-    const result: ToolConfig = {
+    const result = {
       ...definition,
       parameters: normalizedSchema,
       execute: configuration.execute,
-    };
+    } as unknown as ToolConfig;
     if (configuration.policy) {
       result.policy = configuration.policy;
     }
@@ -851,10 +881,11 @@ export function createArmorer(
   }
 
   function registerConfiguration(configuration: ToolConfig): void {
-    const tool = buildTool(configuration);
+    const normalized = normalizeConfiguration(configuration);
+    const tool = buildTool(normalized);
     const existing = registry.get(tool.name);
     emit('registering', tool);
-    storedConfigurations.set(configuration.name, configuration);
+    storedConfigurations.set(normalized.identity.name, normalized);
     if (existing) {
       unregisterToolIndexes(api, existing, registry.size);
     }
@@ -862,7 +893,7 @@ export function createArmorer(
     registerToolIndexes(api, tool, registry.size);
     if (embedder) {
       warmToolEmbeddings(tool, embedder, (resolvedTool) => {
-        if (registry.get(resolvedTool.name) !== resolvedTool) {
+        if (registry.get(resolvedTool.identity.name) !== resolvedTool) {
           return;
         }
         registerToolIndexes(api, resolvedTool, registry.size);

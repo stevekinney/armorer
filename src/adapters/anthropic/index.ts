@@ -50,7 +50,7 @@ export function toAnthropic(input: AdapterInput): AnthropicTool | AnthropicTool[
 }
 
 function convertToAnthropic(tool: SerializedToolDefinition): AnthropicTool {
-  const params = tool.inputSchema as Record<string, unknown>;
+  const params = tool.schema as Record<string, unknown>;
 
   const inputSchema: AnthropicTool['input_schema'] = {
     type: 'object',

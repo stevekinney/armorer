@@ -39,6 +39,7 @@ export interface ToolResult {
   inputDigest?: string;
   outputDigest?: string;
   outputValidation?: { success: boolean; error?: string };
+  dryRun?: boolean;
 }
 
 /**

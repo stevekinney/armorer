@@ -160,8 +160,8 @@ export function inspectTool(
   detailLevel: InspectorDetailLevel = 'standard',
 ): ToolInspection {
   const result: ToolInspection = {
-    name: tool.name,
-    description: tool.description,
+    name: tool.identity.name,
+    description: tool.display.description,
     tags: tool.tags ? [...tool.tags] : [],
   };
 

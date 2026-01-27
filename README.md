@@ -28,9 +28,12 @@ Armorer turns tool calling into a structured, observable, and searchable workflo
 - Semantic search with vector embeddings (OpenAI, Pinecone, etc.)
 - Provider adapters for OpenAI, Anthropic, and Gemini
 - Tool composition utilities (pipe/compose/bind/when/parallel/retry)
+- **Dry Run Support**: Preview tool effects before execution
+- **OpenTelemetry Instrumentation**: Native tracing for agentic loops
+- **Built-in Middleware**: Caching, Rate Limiting, and Timeouts
+- **Testing Utilities**: Mock tools and test registries for easy verification
 - MCP server integration for exposing tools over MCP
 - Claude Agent SDK adapter with tool gating
-- Registry middleware for tool configuration transformation
 - Concurrency controls and execution tracing hooks
 - Pre-configured search tool for semantic tool discovery in agentic workflows
 
@@ -40,33 +43,17 @@ Armorer splits tool definitions from execution so you can import only what you n
 
 - `armorer/core`: tool specs, registry/search, ToolError model, serialization, and minimal context types
 - `armorer/runtime`: execution, policies, createTool/createArmorer, composition utilities (pipe/parallel/retry)
-- `armorer/adapters/*`: provider formatting (OpenAI/Anthropic/Gemini) built on serialized core definitions
-- `armorer/mcp` and `armorer/claude-agent-sdk`: optional integrations (install peer deps when needed)
+- `armorer/instrumentation`: OpenTelemetry auto-instrumentation
+- `armorer/middleware`: standard middleware (cache, rate-limit, timeout)
+- `armorer/test`: testing utilities (mock tools, test registry)
+- `armorer/adapters/*`: provider formatting (OpenAI/Anthropic/Gemini)
+- `armorer/mcp` and `armorer/claude-agent-sdk`: optional integrations
 
 ```typescript
 import { defineTool, createRegistry } from 'armorer/core';
 import { createArmorer, createTool } from 'armorer/runtime';
-```
-
-The root import (`armorer`) still works for now, but new code should prefer the subpaths above.
-
-## Installation
-
-```bash
-# npm
-npm install armorer zod
-
-# bun
-bun add armorer zod
-
-# pnpm
-pnpm add armorer zod
-```
-
-Optional integrations:
-
-```bash
-npm install @modelcontextprotocol/sdk @anthropic-ai/claude-agent-sdk
+import { instrument } from 'armorer/instrumentation';
+import { createCacheMiddleware } from 'armorer/middleware';
 ```
 
 ## Quick Start
@@ -98,6 +85,74 @@ const toolCall = await armorer.execute({
 });
 
 console.log(toolCall.result); // 8
+```
+
+## Safety and Dry Run
+
+Armorer supports `dryRun` to preview the effects of a tool without executing it.
+
+```ts
+const deleteFile = createTool({
+  name: 'fs.delete',
+  description: 'Delete a file',
+  schema: z.object({ path: z.string() }),
+  async execute({ path }) {
+    await fs.unlink(path);
+    return { deleted: true };
+  },
+  async dryRun({ path }) {
+    return { effect: `Would delete file at ${path}` };
+  },
+});
+
+const result = await deleteFile.execute({ path: 'log.txt' }, { dryRun: true });
+console.log(result.dryRun); // true
+console.log(result.content); // { effect: "Would delete file at log.txt" }
+```
+
+## Observability (OpenTelemetry)
+
+Native instrumentation for distributed tracing.
+
+```ts
+import { createArmorer } from 'armorer/runtime';
+import { instrument } from 'armorer/instrumentation';
+
+const armorer = createArmorer();
+instrument(armorer); // Auto-wires all tool calls to OTel Spans
+```
+
+## Middleware
+
+Batteries-included middleware for production needs.
+
+```ts
+import { createArmorer } from 'armorer/runtime';
+import { createCacheMiddleware, createRateLimitMiddleware } from 'armorer/middleware';
+
+const armorer = createArmorer([], {
+  middleware: [
+    createCacheMiddleware({ ttlMs: 60000 }),
+    createRateLimitMiddleware({ limit: 100, windowMs: 60000 }),
+  ],
+});
+```
+
+## Testing
+
+Utilities for testing tools and agent logic.
+
+```ts
+import { createMockTool, createTestRegistry } from 'armorer/test';
+
+const mock = createMockTool({ name: 'weather' });
+mock.mockResolve({ temp: 72 });
+
+const armorer = createTestRegistry();
+armorer.register(mock);
+
+await armorer.execute({ name: 'weather', arguments: {} });
+console.log(armorer.history[0].call.name); // 'weather'
 ```
 
 ## Safety, Policy, and Metadata

@@ -108,7 +108,7 @@ any overlapping fields. The effective MCP tool config is:
 
 1. `metadata.mcp` (if present and valid)
 2. `toolConfig(tool)` (overrides any fields from metadata)
-3. Runtime defaults: `description` and `inputSchema` fall back to the tool definition
+3. Runtime defaults: `description` and `schema` fall back to the tool definition
 
 If `meta` is set by either config, it is exposed as `_meta`. When no `meta` is set,
 the tool's `metadata` object is used as `_meta` (if it's a plain object).

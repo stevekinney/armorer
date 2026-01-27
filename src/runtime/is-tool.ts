@@ -12,7 +12,7 @@ import { z } from 'zod';
 import type { ToolContext as CoreToolContext } from '../core/context';
 import type { ToolErrorCategory } from '../core/errors';
 import type { JsonObject } from '../core/serialization/json';
-import type { AnyToolDefinition as ToolDefinition } from '../core/tool-definition';
+import type { ToolDefinition } from '../core/tool-definition';
 import type { ToolCall, ToolResult } from './types';
 
 export type ToolParametersSchema = z.ZodTypeAny;
@@ -33,13 +33,14 @@ export type MinimalAbortSignal = EventMinimalAbortSignal | AbortSignal;
  * from z.infer<T> while remaining compatible with all tool signatures.
  * Runtime schema validation provides actual type safety.
  */
-export interface ToolConfig extends ToolDefinition {
+export interface ToolConfig extends ToolDefinition<Record<string, unknown>, unknown> {
   parameters?: ToolParametersSchema;
   outputSchema?: z.ZodTypeAny;
   metadata?: ToolMetadata;
   execute:
     | ((params: unknown, context?: unknown) => Promise<unknown>)
     | Promise<(params: unknown, context?: unknown) => Promise<unknown>>;
+  dryRun?: (params: unknown, context?: unknown) => Promise<unknown>;
   policy?: ToolPolicyHooks;
   policyContext?: ToolPolicyContextProvider;
   digests?: ToolDigestOptions;
@@ -159,7 +160,7 @@ export type OutputValidationResult = {
 
 export type DefaultToolEvents = {
   'status-update': { status: string };
-  'execute-start': { params: unknown } & ToolEventDetailContext;
+  'execute-start': { params: unknown; dryRun?: boolean } & ToolEventDetailContext;
   'validate-success': { params: unknown; parsed: unknown } & ToolEventDetailContext;
   'validate-error': {
     params: unknown;
@@ -167,14 +168,19 @@ export type DefaultToolEvents = {
     report?: ToolValidationReport;
     repairHints?: ToolRepairHint[];
   } & ToolEventDetailContext;
-  'execute-success': { result: unknown } & ToolEventDetailContext;
-  'execute-error': { error: unknown } & ToolEventDetailContext;
-  settled: { result?: unknown; error?: unknown } & ToolEventDetailContext;
+  'execute-success': { result: unknown; dryRun?: boolean } & ToolEventDetailContext;
+  'execute-error': { error: unknown; dryRun?: boolean } & ToolEventDetailContext;
+  settled: {
+    result?: unknown;
+    error?: unknown;
+    dryRun?: boolean;
+  } & ToolEventDetailContext;
   'policy-denied': { params: unknown; reason?: string } & ToolEventDetailContext;
   'tool.started': {
     params: unknown;
     startedAt: number;
     inputDigest?: string;
+    dryRun?: boolean;
   } & ToolEventDetailContext;
   'output-validate-success': {
     result: unknown;
@@ -195,6 +201,7 @@ export type DefaultToolEvents = {
     inputDigest?: string;
     outputDigest?: string;
     outputValidation?: OutputValidationResult;
+    dryRun?: boolean;
   } & ToolEventDetailContext;
   progress: { percent?: number; message?: string };
   'output-chunk': { chunk: unknown };
@@ -218,6 +225,7 @@ export interface RuntimeToolContext<
   configuration: ToolConfig;
   signal?: MinimalAbortSignal;
   timeoutMs?: number;
+  dryRun?: boolean;
 }
 
 export type ToolContext<E extends ToolEventsMap = DefaultToolEvents> =
@@ -226,6 +234,7 @@ export type ToolContext<E extends ToolEventsMap = DefaultToolEvents> =
 export interface ToolExecuteOptions {
   signal?: MinimalAbortSignal;
   timeoutMs?: number;
+  dryRun?: boolean;
 }
 
 /**
@@ -269,7 +278,6 @@ export type ArmorerTool<
   R = unknown,
   M extends ToolMetadata | undefined = ToolMetadata | undefined,
 > = ToolDefinition & {
-  inputSchema: ToolParametersSchema;
   name: string;
   description: string;
   schema: ToolParametersSchema;

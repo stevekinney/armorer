@@ -48,7 +48,7 @@ export function toOpenAI(input: AdapterInput): OpenAITool | OpenAITool[] {
 }
 
 function convertToOpenAI(tool: SerializedToolDefinition): OpenAITool {
-  const parameters = stripSchemaId(tool.inputSchema as JSONSchema);
+  const parameters = stripSchemaId(tool.schema as JSONSchema);
   return {
     type: 'function',
     function: {

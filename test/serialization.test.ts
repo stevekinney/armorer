@@ -21,7 +21,7 @@ describe('serialization', () => {
     const tool = defineTool({
       name: 'bad-meta',
       description: 'bad metadata',
-      inputSchema: schema,
+      schema: schema,
       metadata: { when: new Date() } as unknown as Record<string, unknown>,
     });
 
@@ -34,7 +34,7 @@ describe('serialization', () => {
     const tool = defineTool({
       name: 'bad-undefined',
       description: 'bad undefined',
-      inputSchema: schema,
+      schema: schema,
       metadata: { nested: { value: undefined } } as unknown as Record<string, unknown>,
     });
 
@@ -47,26 +47,26 @@ describe('serialization', () => {
     const tool = defineTool({
       name: 'search',
       description: 'search tool',
-      inputSchema: schema,
+      schema: schema,
     });
     const serialized = serializeToolDefinition(tool);
 
     expect(serialized.schemaVersion).toBe('2020-12');
-    expect(serialized.inputSchema).toHaveProperty('type', 'object');
-    expect((serialized.inputSchema as Record<string, unknown>).safeParse).toBeUndefined();
+    expect(serialized.schema).toHaveProperty('type', 'object');
+    expect((serialized.schema as Record<string, unknown>).safeParse).toBeUndefined();
   });
 
   it('keeps serialized metadata deterministic', () => {
     const toolA = defineTool({
       name: 'sorted',
       description: 'sorted tool',
-      inputSchema: schema,
+      schema: schema,
       metadata: { z: 1, a: 2 },
     });
     const toolB = defineTool({
       name: 'sorted',
       description: 'sorted tool',
-      inputSchema: schema,
+      schema: schema,
       metadata: { a: 2, z: 1 },
     });
 
@@ -85,7 +85,7 @@ describe('serialization', () => {
     const tool = defineTool({
       name: 'alias-tool',
       description: 'alias tool',
-      inputSchema: schema,
+      schema: schema,
       version: '1.0.0',
     });
     registry.register(tool, {

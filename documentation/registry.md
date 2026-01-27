@@ -65,6 +65,14 @@ const results = await armorer.execute([
 // Execute with AbortSignal support
 const controller = new AbortController();
 const results = await armorer.execute(calls, { signal: controller.signal });
+
+// Dry Run: Preview effects without executing the main logic
+const preview = await armorer.execute(
+  { name: 'fs.delete', arguments: { path: 'file.txt' } },
+  { dryRun: true },
+);
+console.log(preview.dryRun); // true
+console.log(preview.content); // "Would delete file.txt" (returned by tool's dryRun handler)
 ```
 
 When executing multiple tool calls, they are executed in parallel using `Promise.all()`. The return value is an array of `ToolResult` objects in the same order as the input calls. You can listen to events from individual tools using `armorer.addEventListener`:
@@ -72,22 +80,101 @@ When executing multiple tool calls, they are executed in parallel using `Promise
 ```typescript
 // Listen for progress events from any tool during parallel execution
 armorer.addEventListener('progress', (event) => {
-  console.log(`Tool ${event.detail.tool.name}: ${event.detail.percent}%`);
+  console.log(`Tool ${event.detail.tool.identity.name}: ${event.detail.percent}%`);
 });
 
 // Listen for execution events
 armorer.addEventListener('execute-start', (event) => {
-  console.log(`Starting: ${event.detail.tool.name}`);
+  console.log(`Starting: ${event.detail.tool.identity.name}`);
 });
 
 armorer.addEventListener('execute-success', (event) => {
-  console.log(`Completed: ${event.detail.tool.name}`, event.detail.result);
+  console.log(`Completed: ${event.detail.tool.identity.name}`, event.detail.result);
+});
+```
+
+### Instrumentation (OpenTelemetry)
+
+Armorer provides native OpenTelemetry instrumentation via the `armorer/instrumentation` module.
+
+```typescript
+import { createArmorer } from 'armorer/runtime';
+import { instrument } from 'armorer/instrumentation';
+
+const armorer = createArmorer();
+const unregister = instrument(armorer);
+
+// All subsequent calls via armorer.execute() will create OTel Spans
+```
+
+### Middleware
+
+Armorer supports middleware to wrap tool execution logic. This is useful for cross-cutting concerns like caching, rate limiting, and timeouts.
+
+```typescript
+import { createArmorer } from 'armorer/runtime';
+import { createCacheMiddleware, createRateLimitMiddleware } from 'armorer/middleware';
+
+const armorer = createArmorer([], {
+  middleware: [
+    // Cache results for 1 minute
+    createCacheMiddleware({ ttlMs: 60000 }),
+    // Limit to 10 calls per minute per tool
+    createRateLimitMiddleware({ limit: 10, windowMs: 60000 }),
+  ],
+});
+```
+
+Available middleware in `armorer/middleware`:
+
+- `createCacheMiddleware(options)`
+- `createRateLimitMiddleware(options)`
+- `createTimeoutMiddleware(ms)`
+
+### Testing
+
+Testing agentic systems is easier with mock tools and test registries from `armorer/test`.
+
+```typescript
+import { createMockTool, createTestRegistry } from 'armorer/test';
+
+// Create a mock tool with canned responses
+const weatherMock = createMockTool({ name: 'get_weather' });
+weatherMock.mockResolve({ temp: 72 });
+
+const armorer = createTestRegistry();
+armorer.register(weatherMock);
+
+// Execute your agent logic using the test registry
+// ...
+
+// Assert on execution history
+console.log(armorer.history[0].call.name); // 'get_weather'
+console.log(weatherMock.calls.length); // 1
+```
+
+### Selecting Tools (Search)
+
+Use `searchTools` to rank tools and optionally include match explanations:
+
+```typescript
+import { searchTools } from 'armorer/registry';
+
+const matches = searchTools(armorer, {
+  filter: { tags: { none: ['dangerous'] } },
+  rank: {
+    tags: ['summarize', 'fast'],
+    tagWeights: { fast: 2 },
+    text: { query: 'summarize meeting notes', mode: 'fuzzy', threshold: 0.6 },
+  },
+  explain: true,
+  select: 'summary',
+  limit: 5,
 });
 
-// All tool events are bubbled up when executing multiple tools:
-// - execute-start, validate-success, validate-error
-// - execute-success, execute-error, settled
-// - progress, output-chunk, log, cancelled, status-update
+for (const match of matches) {
+  console.log(match.tool.identity.name, match.score, match.reasons);
+}
 ```
 
 ### Querying Tools

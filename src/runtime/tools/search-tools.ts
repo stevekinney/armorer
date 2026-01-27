@@ -182,8 +182,8 @@ export function createSearchTool(
         );
 
         return results.map((match) => ({
-          name: match.tool.name,
-          description: match.tool.description,
+          name: match.tool.identity.name,
+          description: match.tool.display.description,
           ...(match.tool.tags?.length ? { tags: match.tool.tags } : {}),
           score: match.score,
           ...(explain && match.reasons.length ? { reasons: match.reasons } : {}),

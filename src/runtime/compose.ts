@@ -167,7 +167,7 @@ export function pipe(...tools: AnyTool[]): AnyTool {
   }
 
   const first = tools[0]!;
-  const toolNames = tools.map((t) => t.name);
+  const toolNames = tools.map((t) => t.identity.name);
 
   // Helper to emit events with proper typing (event-emission accepts partial events at runtime)
   const emit = (
@@ -202,7 +202,7 @@ export function pipe(...tools: AnyTool[]): AnyTool {
         // Emit step-start event
         emit(context.dispatch, 'step-start', {
           stepIndex: i,
-          stepName: tool.name,
+          stepName: tool.identity.name,
           input: result,
         });
 
@@ -213,23 +213,26 @@ export function pipe(...tools: AnyTool[]): AnyTool {
           // Emit step-complete event
           emit(context.dispatch, 'step-complete', {
             stepIndex: i,
-            stepName: tool.name,
+            stepName: tool.identity.name,
             output: result,
           });
         } catch (error) {
           // Emit step-error event
           emit(context.dispatch, 'step-error', {
             stepIndex: i,
-            stepName: tool.name,
+            stepName: tool.identity.name,
             error,
           });
 
           // Wrap error with step context
-          throw new PipelineError(`Pipeline failed at step ${i} (${tool.name})`, {
-            stepIndex: i,
-            stepName: tool.name,
-            originalError: error,
-          });
+          throw new PipelineError(
+            `Pipeline failed at step ${i} (${tool.identity.name})`,
+            {
+              stepIndex: i,
+              stepName: tool.identity.name,
+              originalError: error,
+            },
+          );
         }
       }
 
@@ -322,15 +325,15 @@ export function bind<TTool extends AnyTool, TBound extends BindParams<TTool>>(
   bound: TBound,
   options: BindOptions = {},
 ): AnyTool {
-  const inputSchema = resolveBoundSchema(tool.schema, bound);
-  const name = options.name ?? `bind(${tool.name})`;
-  const description = options.description ?? `Bound tool: ${tool.description}`;
+  const schema = resolveBoundSchema(tool.schema, bound);
+  const name = options.name ?? `bind(${tool.identity.name})`;
+  const description = options.description ?? `Bound tool: ${tool.display.description}`;
   const tags = tool.tags && tool.tags.length ? tool.tags : undefined;
 
   const toolOptions: Parameters<typeof createTool>[0] = {
     name,
     description,
-    schema: inputSchema as z.ZodType<BindInput<TTool, TBound>>,
+    schema: schema as z.ZodType<BindInput<TTool, TBound>>,
     async execute(params) {
       const merged = mergeBoundParams(params, bound);
       return tool(merged as InferToolInput<TTool>);

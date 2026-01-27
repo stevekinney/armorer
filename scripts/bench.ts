@@ -135,13 +135,13 @@ function makeToolConfig(index: number): ToolConfig {
     description: `${verb} ${domain} with ${tagA} output and ${tier} tier`,
     tags: [tagA, tagB, domain],
     metadata: { tier, owner, group: domain },
-    inputSchema: schema,
+    schema: schema,
   });
   return {
     ...definition,
     parameters: schema,
-    execute: async () => null,
-  };
+    execute: () => Promise.resolve(null),
+  } as unknown as ToolConfig;
 }
 
 function vectorFromText(text: string, dimension: number): number[] {

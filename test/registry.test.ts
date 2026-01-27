@@ -253,7 +253,7 @@ describe('registry helpers', () => {
         name,
         version,
         description: `${name} tool`,
-        inputSchema: z.object({ value: z.string() }),
+        schema: z.object({ value: z.string() }),
         lifecycle: deprecated ? { deprecated: true } : undefined,
       });
 

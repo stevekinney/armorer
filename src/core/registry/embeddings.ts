@@ -143,11 +143,11 @@ export function getQueryEmbedding(
 
 function buildEmbeddingInputs(tool: ToolDefinition): EmbeddingInput[] {
   const inputs: EmbeddingInput[] = [];
-  const name = tool.name?.trim();
+  const name = tool.identity.name.trim();
   if (name) {
     inputs.push({ field: 'name', text: name });
   }
-  const description = tool.description?.trim();
+  const description = tool.display.description.trim();
   if (description) {
     inputs.push({ field: 'description', text: description });
   }

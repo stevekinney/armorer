@@ -5,16 +5,22 @@ import {
   buildTextSearchIndex,
   type NormalizedTextQuery,
   normalizeTextQuery,
+  schemaHasKeys,
+  schemaMatches,
   scoreTextMatchFromIndex,
   scoreTextMatchValueFromIndex,
+  tagsMatchAll,
+  tagsMatchAny,
+  tagsMatchNone,
   type TextQuery,
   type TextQueryField,
   type TextSearchIndex,
   type ToolPredicate,
 } from '../query-predicates';
 import type { ToolRisk } from '../risk';
-import { getSchemaKeys, schemasLooselyMatch, type ToolSchema } from '../schema-utilities';
+import { getSchemaKeys, type ToolSchema } from '../schema-utilities';
 import type { JsonObject } from '../serialization/json';
+import { normalizeTags } from '../tag-utilities';
 import type { AnyToolDefinition as ToolDefinition } from '../tool-definition';
 import {
   type Embedder,
@@ -340,13 +346,11 @@ export function queryTools(
 ): QuerySelectionResult {
   const resolved = resolveTools(input);
 
-  // Compute cache key once to ensure consistency between lookup and storage
   const cacheKey = resolved.registry
     ? createQueryCacheKey(criteria, resolved.tools.length)
     : null;
   const shouldCache = cacheKey && !cacheKey.startsWith('no-cache:');
 
-  // Use cache if registry is available and hasn't changed
   if (shouldCache) {
     const registryCache = queryCache.get(resolved.registry!);
     if (registryCache) {
@@ -369,7 +373,6 @@ export function queryTools(
   const paged = applyPagination(tools, criteria?.limit, criteria?.offset);
   const results = selectQueryResults(paged, criteria);
 
-  // Cache results if registry is available and query is cacheable
   if (shouldCache) {
     let registryCache = queryCache.get(resolved.registry!);
     if (!registryCache) {
@@ -473,7 +476,6 @@ export function registerToolIndexes(
   searchIndex.set(tool, textIndex);
   toolLookupCache.set(tool, buildToolLookup(tool));
 
-  // Clear query cache when registry changes
   queryCache.delete(registry);
 
   const inverted = registryInvertedIndex.get(registry);
@@ -512,7 +514,6 @@ export function unregisterToolIndexes(
   tool: ToolDefinition,
   toolsCount?: number,
 ): void {
-  // Clear query cache when registry changes
   queryCache.delete(registry);
   const cachedText = searchIndex.get(tool) ?? buildTextSearchIndex(tool);
 
@@ -1775,12 +1776,7 @@ function buildTextPredicate(
     if (!queryEmbedding) {
       return false;
     }
-    const embeddingScore = scoreEmbeddingMatch(
-      tool,
-      normalized,
-      queryEmbedding,
-      'similarity',
-    );
+    const embeddingScore = scoreEmbeddingMatch(tool, normalized, queryEmbedding);
     if (!embeddingScore) {
       return false;
     }
@@ -1936,12 +1932,7 @@ function scoreToolMatchValue(
       score += textScore * textWeight;
     }
     if (queryEmbedding && (!embeddingCandidates || embeddingCandidates.has(tool))) {
-      const embeddingScore = scoreEmbeddingMatch(
-        tool,
-        normalizedText,
-        queryEmbedding,
-        'score',
-      );
+      const embeddingScore = scoreEmbeddingMatch(tool, normalizedText, queryEmbedding);
       if (embeddingScore) {
         score += embeddingScore.score * textWeight;
       }
@@ -1988,25 +1979,25 @@ function buildToolMatch(
   };
   let score = 0;
   const reasons: string[] = [];
-  const matches: ToolMatchDetails | undefined = explain ? {} : undefined;
+  const matches: ToolMatchDetails = {};
 
   if (tagSet.size) {
     const tagMatches = collectTagMatches(tool, tagSet);
     if (tagMatches.length) {
       score += scoreTagMatches(tagMatches, tagWeight, tagWeights);
       reasons.push(...tagMatches.map((tag) => `tag:${tag}`));
-      if (matches) {
+      if (explain) {
         matches.tags = mergeUnique(matches.tags, tagMatches);
       }
     }
   }
 
-  if (normalizedText) {
+  if (normalizedText && textWeight !== 0) {
     const textScore = scoreTextMatchFromIndex(ensureIndex(), normalizedText);
-    if (textScore.score) {
+    if (textScore.score > 0) {
       score += textScore.score * textWeight;
       reasons.push(...textScore.reasons.map((reason) => `text:${reason}`));
-      if (matches) {
+      if (explain) {
         matches.fields = mergeUnique(matches.fields, textScore.fields);
         matches.tags = mergeUnique(matches.tags, textScore.tagMatches);
         matches.schemaKeys = mergeUnique(matches.schemaKeys, textScore.schemaMatches);
@@ -2017,18 +2008,13 @@ function buildToolMatch(
       }
     }
     if (queryEmbedding && (!embeddingCandidates || embeddingCandidates.has(tool))) {
-      const embeddingScore = scoreEmbeddingMatch(
-        tool,
-        normalizedText,
-        queryEmbedding,
-        'score',
-      );
+      const embeddingScore = scoreEmbeddingMatch(tool, normalizedText, queryEmbedding);
       if (embeddingScore) {
         score += embeddingScore.score * textWeight;
         reasons.push(
           `embedding:${embeddingScore.field}:${embeddingScore.similarity.toFixed(2)}`,
         );
-        if (matches) {
+        if (explain) {
           matches.embedding = {
             field: embeddingScore.field,
             score: embeddingScore.similarity,
@@ -2054,7 +2040,7 @@ function buildToolMatch(
       if (rankResult.reasons?.length) {
         reasons.push(...rankResult.reasons);
       }
-      if (matches && rankResult.matches) {
+      if (explain && rankResult.matches) {
         mergeMatchDetails(matches, rankResult.matches);
       }
     } else if (typeof rankResult === 'number') {
@@ -2062,167 +2048,211 @@ function buildToolMatch(
     }
   }
 
-  return matches ? { tool, score, reasons, matches } : { tool, score, reasons };
+  if (score < 0) {
+    return null;
+  }
+
+  const result: ToolMatch<ToolDefinition> = { tool, score, reasons };
+  if (explain) {
+    result.matches = matches;
+  }
+  return result;
 }
 
 function createMatchComparator(
   tieBreaker: ToolTieBreaker,
 ): (a: ToolMatch<ToolDefinition>, b: ToolMatch<ToolDefinition>) => number {
-  if (tieBreaker === 'none') {
-    return (a, b) => (b.score !== a.score ? b.score - a.score : 0);
-  }
   if (typeof tieBreaker === 'function') {
     return (a, b) => {
-      if (b.score !== a.score) {
-        return b.score - a.score;
-      }
+      const diff = b.score - a.score;
+      if (diff !== 0) return diff;
       return tieBreaker(a, b);
     };
   }
-  return (a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
-    }
-    return a.tool.name.localeCompare(b.tool.name);
-  };
-}
-
-function requireHeapItem<T>(heap: T[], index: number): T {
-  const item = heap[index];
-  if (item === undefined) {
-    throw new Error('Heap invariant violated');
+  if (tieBreaker === 'name') {
+    return (a, b) => {
+      const diff = b.score - a.score;
+      if (diff !== 0) return diff;
+      return a.tool.identity.name.localeCompare(b.tool.identity.name);
+    };
   }
-  return item;
+  return (a, b) => b.score - a.score;
 }
 
-function swapHeap<T>(heap: T[], indexA: number, indexB: number): void {
-  const itemA = requireHeapItem(heap, indexA);
-  const itemB = requireHeapItem(heap, indexB);
-  heap[indexA] = itemB;
-  heap[indexB] = itemA;
-}
-
-function selectTopMatches(
-  matches: ToolMatch<ToolDefinition>[],
+function selectTopMatches<T>(
+  items: T[],
   limit: number,
-  compare: (a: ToolMatch<ToolDefinition>, b: ToolMatch<ToolDefinition>) => number,
-): ToolMatch<ToolDefinition>[] {
-  if (limit <= 0) {
-    return [];
-  }
-  if (matches.length <= limit) {
-    return matches.slice();
-  }
-  const heap: ToolMatch<ToolDefinition>[] = [];
-  const compareHeap = (a: ToolMatch<ToolDefinition>, b: ToolMatch<ToolDefinition>) =>
-    compare(b, a);
-
-  for (const match of matches) {
-    if (heap.length < limit) {
-      heapPush(heap, match, compareHeap);
-      continue;
-    }
-    if (compare(match, requireHeapItem(heap, 0)) < 0) {
-      heapReplace(heap, match, compareHeap);
-    }
-  }
-
-  return heap;
-}
-
-function heapPush<T>(heap: T[], item: T, compare: (a: T, b: T) => number): void {
-  heap.push(item);
-  let index = heap.length - 1;
-  while (index > 0) {
-    const parent = Math.floor((index - 1) / 2);
-    if (compare(requireHeapItem(heap, index), requireHeapItem(heap, parent)) >= 0) {
-      break;
-    }
-    swapHeap(heap, index, parent);
-    index = parent;
-  }
-}
-
-function heapReplace<T>(heap: T[], item: T, compare: (a: T, b: T) => number): void {
-  heap[0] = item;
-  let index = 0;
-  const length = heap.length;
-  while (true) {
-    const left = index * 2 + 1;
-    const right = left + 1;
-    if (left >= length) {
-      break;
-    }
-    let smallest = left;
-    if (
-      right < length &&
-      compare(requireHeapItem(heap, right), requireHeapItem(heap, left)) < 0
-    ) {
-      smallest = right;
-    }
-    if (compare(requireHeapItem(heap, smallest), requireHeapItem(heap, index)) >= 0) {
-      break;
-    }
-    swapHeap(heap, index, smallest);
-    index = smallest;
-  }
-}
-
-function selectQueryResults(
-  tools: ToolDefinition[],
-  options?: ToolQueryOptions,
-): QuerySelectionResult {
-  const selection = options?.select ?? 'tool';
-  if (selection === 'name') {
-    return tools.map((tool) => tool.name);
-  }
-  if (selection === 'config') {
-    return tools.map((tool) => tool);
-  }
-  if (selection === 'summary') {
-    return tools.map((tool) => createToolSummary(tool, options));
-  }
-  return tools;
+  compare: (a: T, b: T) => number,
+): T[] {
+  return items.sort(compare).slice(0, limit);
 }
 
 function selectMatchResults(
   matches: ToolMatch<ToolDefinition>[],
-  options?: ToolSearchOptions,
+  options: ToolSearchOptions,
 ): ToolMatch<unknown>[] {
-  const selection = options?.select ?? 'tool';
-  if (selection === 'tool') {
+  const select = options.select;
+  if (!select || select === 'tool') {
     return matches;
   }
-  return matches.map((match) => {
-    const tool = match.tool;
-    if (selection === 'name') {
-      return { ...match, tool: tool.name } as ToolMatch<string>;
-    }
-    if (selection === 'config') {
-      return { ...match, tool } as ToolMatch<ToolDefinition>;
-    }
-    return {
+  if (select === 'name') {
+    return matches.map((match) => ({
       ...match,
-      tool: createToolSummary(tool, options),
-    } as ToolMatch<ToolSummary>;
-  });
+      tool: (match.tool as unknown as { name: string }).name,
+    }));
+  }
+  if (select === 'config') {
+    return matches;
+  }
+  if (select === 'summary') {
+    const includeConfig = options.includeToolConfiguration ?? options.includeToolConfig;
+    return matches.map((match) => ({
+      ...match,
+      tool: createToolSummary(match.tool, includeConfig, options.includeSchema),
+    }));
+  }
+  return matches;
+}
+
+function selectQueryResults(
+  tools: ToolDefinition[],
+  criteria: ToolQuery | undefined,
+): QuerySelectionResult {
+  const select = criteria?.select;
+  if (!select || select === 'tool') {
+    return tools;
+  }
+  if (select === 'name') {
+    return tools.map((tool) => {
+      return (tool as unknown as { name: string }).name;
+    });
+  }
+  if (select === 'config') {
+    return tools;
+  }
+  if (select === 'summary') {
+    const includeConfig = criteria.includeToolConfiguration ?? criteria.includeToolConfig;
+    return tools.map((tool) =>
+      createToolSummary(tool, includeConfig, criteria.includeSchema),
+    );
+  }
+  return tools;
+}
+
+function createToolSummary(
+  tool: ToolDefinition,
+  includeConfig?: boolean,
+  includeSchema?: boolean,
+): ToolSummary {
+  const summary: ToolSummary = {
+    id: tool.id,
+    identity: tool.identity,
+    name: tool.name,
+    description: tool.description,
+    schemaKeys: getSchemaKeys(tool.schema),
+  };
+  if (tool.tags) summary.tags = tool.tags;
+  if (tool.metadata) summary.metadata = tool.metadata;
+  if (tool.risk) summary.risk = tool.risk;
+  if (tool.lifecycle) {
+    summary.lifecycle = tool.lifecycle;
+    if (tool.lifecycle.deprecated) summary.deprecated = true;
+  }
+  if (includeConfig) {
+    summary.configuration = tool;
+  }
+  if (includeSchema) {
+    summary.schema = tool.schema;
+  }
+  return summary;
+}
+
+function isToolRegistered(registry: ToolRegistryLike, tool: ToolDefinition): boolean {
+  const candidate = registry as unknown as Record<string, unknown>;
+  if (typeof candidate['getTool'] === 'function') {
+    const registryWithGet = registry as unknown as {
+      getTool: (name: string) => ToolDefinition;
+    };
+    return registryWithGet.getTool(tool.name) === tool;
+  }
+  return false;
+}
+
+function isToolDefinition(value: unknown): value is ToolDefinition {
+  if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate['id'] === 'string' &&
+    typeof candidate['identity'] === 'object' &&
+    candidate['identity'] !== null &&
+    typeof (candidate['identity'] as Record<string, unknown>)['name'] === 'string' &&
+    candidate['schema'] !== undefined
+  );
+}
+
+function isToolRegistry(value: unknown): value is ToolRegistryLike {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate['tools'] === 'function' &&
+    typeof candidate['register'] === 'function'
+  );
+}
+
+function emitQuery(
+  dispatch: ToolRegistryLike['dispatchEvent'] | undefined,
+  criteria: ToolQuery | undefined,
+  results: QuerySelectionResult,
+): void {
+  if (!dispatch) return;
+  dispatch({
+    type: 'query',
+    detail: { criteria, results },
+  } as EmissionEvent<QueryEvent>);
+}
+
+function emitSearch(
+  dispatch: ToolRegistryLike['dispatchEvent'] | undefined,
+  options: ToolSearchOptions,
+  results: ToolMatch<unknown>[],
+): void {
+  if (!dispatch) return;
+  dispatch({
+    type: 'search',
+    detail: { options, results },
+  } as EmissionEvent<SearchEvent>);
 }
 
 function collectTagMatches(tool: ToolDefinition, tagSet: Set<string>): string[] {
-  if (!tagSet.size) {
-    return [];
+  if (!tool.tags) return [];
+  return tool.tags.filter((tag) => tagSet.has(tag.toLowerCase()));
+}
+
+function scoreTagMatches(
+  matches: string[],
+  weight: number,
+  weights: Record<string, number>,
+): number {
+  let score = 0;
+  for (const tag of matches) {
+    const tagWeight = weights[tag.toLowerCase()] ?? 1;
+    score += weight * tagWeight;
   }
-  const { tags, tagsLower } = getToolLookup(tool);
-  if (!tags.length) {
-    return [];
-  }
-  const matches = new Set<string>();
-  for (let index = 0; index < tagsLower.length; index += 1) {
-    if (tagSet.has(tagsLower[index] ?? '')) {
-      matches.add(tags[index] ?? '');
-    }
-  }
-  return Array.from(matches);
+  return score;
+}
+
+function scoreTagMatchesValue(
+  tool: ToolDefinition,
+  tagSet: Set<string>,
+  weight: number,
+  weights: Record<string, number>,
+): number {
+  const matches = collectTagMatches(tool, tagSet);
+  return scoreTagMatches(matches, weight, weights);
 }
 
 function buildTagSet(
@@ -2239,355 +2269,54 @@ function buildTagSet(
 function normalizeTagWeights(
   weights: Record<string, number> | undefined,
 ): Record<string, number> {
-  if (!weights) return {};
-  const normalized: Record<string, number> = {};
-  for (const [tag, weight] of Object.entries(weights)) {
-    if (!Number.isFinite(weight)) continue;
-    const key = String(tag).toLowerCase();
-    normalized[key] = weight;
+  const result: Record<string, number> = {};
+  if (!weights) return result;
+  for (const [key, value] of Object.entries(weights)) {
+    result[key.toLowerCase()] = value;
   }
-  return normalized;
+  return result;
 }
 
-function scoreTagMatches(
-  matches: string[],
-  baseWeight: number,
-  tagWeights: Record<string, number>,
-): number {
-  return matches.reduce((total, tag) => {
-    const weight = tagWeights[tag.toLowerCase()] ?? 0;
-    return total + baseWeight + weight;
-  }, 0);
-}
-
-function scoreTagMatchesValue(
-  tool: ToolDefinition,
-  tagSet: Set<string>,
-  baseWeight: number,
-  tagWeights: Record<string, number>,
-): number {
-  if (!tagSet.size) {
-    return 0;
-  }
-  const { tagsLower } = getToolLookup(tool);
-  if (!tagsLower.length) {
-    return 0;
-  }
-  const seen = new Set<string>();
-  let score = 0;
-  for (const tag of tagsLower) {
-    if (!tag || !tagSet.has(tag) || seen.has(tag)) {
-      continue;
-    }
-    seen.add(tag);
-    score += baseWeight + (tagWeights[tag] ?? 0);
-  }
-  return score;
-}
-
-type EmbeddingScore = {
-  score: number;
-  similarity: number;
-  field: TextQueryField;
-};
-
-type EmbeddingScoreMode = 'similarity' | 'score';
-
-function scoreEmbeddingMatch(
-  tool: ToolDefinition,
-  query: NormalizedTextQuery,
-  queryEmbedding: EmbeddingInfo,
-  mode: EmbeddingScoreMode = 'similarity',
-): EmbeddingScore | null {
-  const embeddings = getToolEmbeddings(tool);
-  if (!embeddings?.length) {
-    return null;
-  }
-  if (queryEmbedding.magnitude === 0) {
-    return null;
-  }
-  const fieldOrder = new Map<TextQueryField, number>();
-  query.fields.forEach((field, index) => {
-    fieldOrder.set(field, index);
-  });
-
-  let bestSimilarity = 0;
-  let bestScore = 0;
-  let bestField: TextQueryField | null = null;
-  let bestOrder = Number.POSITIVE_INFINITY;
-  for (const entry of embeddings) {
-    const order = fieldOrder.get(entry.field);
-    if (order === undefined) {
-      continue;
-    }
-    const weight = query.weights[entry.field] ?? 1;
-    if (weight <= 0) {
-      continue;
-    }
-    const similarity = cosineSimilarity(
-      queryEmbedding.vector,
-      queryEmbedding.magnitude,
-      entry.vector,
-      entry.magnitude,
-    );
-    if (similarity <= 0) {
-      continue;
-    }
-    const score = similarity * weight;
-    if (mode === 'similarity') {
-      if (
-        similarity > bestSimilarity ||
-        (similarity === bestSimilarity && order < bestOrder)
-      ) {
-        bestSimilarity = similarity;
-        bestScore = score;
-        bestField = entry.field;
-        bestOrder = order;
-      }
-      continue;
-    }
-    if (
-      score > bestScore ||
-      (score === bestScore &&
-        (similarity > bestSimilarity ||
-          (similarity === bestSimilarity && order < bestOrder)))
-    ) {
-      bestSimilarity = similarity;
-      bestScore = score;
-      bestField = entry.field;
-      bestOrder = order;
-    }
-  }
-  if (!bestField || bestSimilarity <= 0) {
-    return null;
-  }
-  return {
-    field: bestField,
-    similarity: bestSimilarity,
-    score: bestScore,
-  };
-}
-
-function cosineSimilarity(
-  a: EmbeddingVector,
-  aMagnitude: number,
-  b: EmbeddingVector,
-  bMagnitude: number,
-): number {
-  if (a.length !== b.length || a.length === 0) {
-    return 0;
-  }
-  if (aMagnitude === 0 || bMagnitude === 0) {
-    return 0;
-  }
-  let dot = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    const av = a[i];
-    const bv = b[i];
-    if (av === undefined || bv === undefined) {
-      return 0;
-    }
-    dot += av * bv;
-  }
-  return dot / (aMagnitude * bMagnitude);
-}
-
-function mergeUnique<T extends string>(
-  existing: T[] | undefined,
-  additions: readonly T[],
-): T[] {
-  if (!additions.length) {
-    return existing ? [...existing] : [];
-  }
-  const merged = new Set<string>(existing ?? []);
-  for (const item of additions) {
-    merged.add(item);
-  }
-  return Array.from(merged) as T[];
-}
-
-function mergeMatchDetails(target: ToolMatchDetails, source: ToolMatchDetails): void {
-  if (source.fields?.length) {
-    target.fields = mergeUnique(target.fields, source.fields);
-  }
-  if (source.tags?.length) {
-    target.tags = mergeUnique(target.tags, source.tags);
-  }
-  if (source.schemaKeys?.length) {
-    target.schemaKeys = mergeUnique(target.schemaKeys, source.schemaKeys);
-  }
-  if (source.metadataKeys?.length) {
-    target.metadataKeys = mergeUnique(target.metadataKeys, source.metadataKeys);
-  }
-  if (source.embedding) {
-    target.embedding = source.embedding;
-  }
+function normalizeWeight(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1;
+  return value;
 }
 
 function normalizeOffset(value: number | undefined): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return 0;
-  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
   return Math.max(0, Math.floor(value));
 }
 
 function normalizeLimit(value: number | undefined): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return undefined;
-  }
-  return Math.max(0, Math.floor(value));
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  const floored = Math.floor(value);
+  return floored > 0 ? floored : undefined;
 }
 
-function createToolSummary(
-  tool: ToolDefinition,
-  options?: {
-    includeToolConfiguration?: boolean;
-    includeToolConfig?: boolean;
-    includeSchema?: boolean;
-  },
-): ToolSummary {
-  const summary: ToolSummary = {
-    id: tool.id,
-    identity: tool.identity,
-    name: tool.name,
-    description: tool.description,
-    ...(tool.risk ? { risk: tool.risk } : {}),
-    ...(tool.lifecycle ? { lifecycle: tool.lifecycle } : {}),
-    deprecated: tool.lifecycle?.deprecated === true,
-  };
-  if (tool.tags?.length) {
-    summary.tags = tool.tags;
-  }
-  const schemaKeys = getSchemaKeys(tool.schema);
-  if (schemaKeys.length) {
-    summary.schemaKeys = schemaKeys;
-  }
-  if (tool.metadata !== undefined) {
-    summary.metadata = tool.metadata;
-  }
-  if (options?.includeSchema) {
-    summary.schema = tool.schema;
-  }
-  if (options?.includeToolConfiguration || options?.includeToolConfig) {
-    summary.configuration = tool;
-  }
-  return summary;
+function createQueryCacheKey(
+  criteria: ToolQueryCriteria | undefined,
+  toolsCount: number,
+): string | null {
+  if (!criteria) return JSON.stringify({ toolsCount });
+  if (hasFunction(criteria)) return null;
+  return JSON.stringify({ criteria, toolsCount });
 }
 
-function normalizeFilterValues(input: string | readonly string[]): string[] {
-  const values: readonly string[] = Array.isArray(input) ? input : [input];
-  return values.map((value) => value.trim()).filter((value) => value.length > 0);
-}
-
-function riskMatches(risk: ToolRisk | undefined, filter: RiskFilter): boolean {
-  if (filter.readOnly !== undefined) {
-    if (filter.readOnly && risk?.readOnly !== true) return false;
-    if (!filter.readOnly && risk?.readOnly === true) return false;
-  }
-  if (filter.mutates !== undefined) {
-    if (filter.mutates && risk?.mutates !== true) return false;
-    if (!filter.mutates && risk?.mutates === true) return false;
-  }
-  if (filter.dangerous !== undefined) {
-    if (filter.dangerous && risk?.dangerous !== true) return false;
-    if (!filter.dangerous && risk?.dangerous === true) return false;
-  }
-  if (filter.permissions?.length) {
-    const permissions = new Set(risk?.permissions ?? []);
-    for (const permission of filter.permissions) {
-      if (!permissions.has(permission)) return false;
+function hasFunction(obj: Record<string, unknown>): boolean {
+  if (!obj || typeof obj !== 'object') return false;
+  for (const key of Object.keys(obj)) {
+    const value = obj[key];
+    if (typeof value === 'function') return true;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      if (hasFunction(value as Record<string, unknown>)) return true;
     }
   }
-  return true;
+  return false;
 }
 
-function metadataHasKeys(metadata: JsonObject | undefined, keys: readonly string[]) {
-  if (!metadata || typeof metadata !== 'object') {
-    return false;
-  }
-  return keys.every((key) => key in metadata);
-}
-
-function metadataEquals(
-  metadata: JsonObject | undefined,
-  expected: Record<string, unknown>,
-): boolean {
-  if (!metadata || typeof metadata !== 'object') {
-    return false;
-  }
-  const entries = Object.entries(expected);
-  return entries.every(([key, value]) => metadata[key] === value);
-}
-
-function metadataContains(
-  metadata: JsonObject | undefined,
-  expected: Record<string, MetadataPrimitive | readonly MetadataPrimitive[]>,
-): boolean {
-  if (!metadata || typeof metadata !== 'object') {
-    return false;
-  }
-  return Object.entries(expected).every(([key, needle]) => {
-    const value = metadata[key];
-    if (typeof value === 'string' && typeof needle === 'string') {
-      return value.includes(needle);
-    }
-    if (Array.isArray(value)) {
-      const targets: readonly MetadataPrimitive[] = Array.isArray(needle)
-        ? needle
-        : [needle];
-      return targets.every((item) => value.includes(item));
-    }
-    return false;
-  });
-}
-
-function metadataStartsWith(
-  metadata: JsonObject | undefined,
-  expected: Record<string, string>,
-): boolean {
-  if (!metadata || typeof metadata !== 'object') {
-    return false;
-  }
-  return Object.entries(expected).every(([key, prefix]) => {
-    const value = metadata[key];
-    return typeof value === 'string' ? value.startsWith(prefix) : false;
-  });
-}
-
-function metadataInRange(
-  metadata: JsonObject | undefined,
-  ranges: Record<string, MetadataRange>,
-): boolean {
-  if (!metadata || typeof metadata !== 'object') {
-    return false;
-  }
-  return Object.entries(ranges).every(([key, range]) => {
-    const value = metadata[key];
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      return false;
-    }
-    if (typeof range.min === 'number' && value < range.min) {
-      return false;
-    }
-    if (typeof range.max === 'number' && value > range.max) {
-      return false;
-    }
-    return true;
-  });
-}
-
-function normalizeTags(tags: readonly string[]): string[] {
-  return tags.filter(Boolean).map((tag) => String(tag).toLowerCase());
-}
-
-function normalizeWeight(value: number | undefined): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  return 1;
+function normalizeFilterValues(value: string | readonly string[]): string[] {
+  if (Array.isArray(value)) return value as string[];
+  return [value as string];
 }
 
 function normalizeSchemaKeys(keys: readonly string[]): string[] {
@@ -2596,192 +2325,162 @@ function normalizeSchemaKeys(keys: readonly string[]): string[] {
     .filter((key): key is string => Boolean(key));
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isIterable(value: unknown): value is Iterable<ToolDefinition> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    Symbol.iterator in (value as Record<string, unknown>)
-  );
-}
-
-function createQueryCacheKey(
-  criteria: ToolQuery | undefined,
-  toolsCount: number,
-): string {
-  const parts: string[] = [`count:${toolsCount}`];
-  if (!criteria) {
-    return parts.join('|');
-  }
-  if (!isCacheableCriteria(criteria)) {
-    return `no-cache:${Date.now()}`;
-  }
-  parts.push(`criteria:${stableStringify(criteria)}`);
-  return parts.join('|');
-}
-
-function isCacheableCriteria(criteria: ToolQuery): boolean {
-  if (criteria.metadata?.predicate) {
+function riskMatches(risk: ToolRisk | undefined, filter: RiskFilter): boolean {
+  if (!risk) return false;
+  if (filter.readOnly !== undefined && (risk.readOnly === true) !== filter.readOnly) {
     return false;
   }
-  if (criteria.predicate) {
+  if (filter.mutates !== undefined && (risk.mutates === true) !== filter.mutates) {
     return false;
   }
-  if (criteria.schema?.matches) {
+  if (filter.dangerous !== undefined && (risk.dangerous === true) !== filter.dangerous) {
     return false;
   }
-  return isCacheableValue(criteria);
+  return true;
 }
 
-function isCacheableValue(value: unknown): boolean {
-  if (value === null || value === undefined) return true;
-  const valueType = typeof value;
-  if (valueType === 'string' || valueType === 'number' || valueType === 'boolean') {
-    return true;
-  }
-  if (valueType === 'function' || valueType === 'symbol' || valueType === 'bigint') {
-    return false;
-  }
-  if (Array.isArray(value)) {
-    return value.every((entry) => isCacheableValue(entry));
-  }
-  if (!isPlainObject(value)) {
-    return false;
-  }
-  return Object.values(value).every((entry) => isCacheableValue(entry));
-}
-
-function stableStringify(value: unknown): string {
-  if (value === undefined) return 'null';
-  if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => stableStringify(entry)).join(',')}]`;
-  }
-  if (!isPlainObject(value)) {
-    return JSON.stringify(value);
-  }
-  const obj = value;
-  const keys = Object.keys(obj).sort();
-  const entries: string[] = [];
+function metadataHasKeys(
+  metadata: JsonObject | undefined,
+  keys: readonly string[],
+): boolean {
+  if (!metadata) return false;
   for (const key of keys) {
-    const entryValue = obj[key];
-    if (entryValue === undefined) {
-      continue;
+    if (!(key in metadata)) return false;
+  }
+  return true;
+}
+
+function metadataEquals(
+  metadata: JsonObject | undefined,
+  eq: Record<string, unknown>,
+): boolean {
+  if (!metadata) return false;
+  for (const [key, value] of Object.entries(eq)) {
+    if (metadata[key] !== value) return false;
+  }
+  return true;
+}
+
+function metadataContains(
+  metadata: JsonObject | undefined,
+  contains: Record<string, MetadataPrimitive | readonly MetadataPrimitive[]>,
+): boolean {
+  if (!metadata) return false;
+  for (const [key, needle] of Object.entries(contains)) {
+    const value = metadata[key];
+    if (typeof value === 'string' && typeof needle === 'string') {
+      if (!value.includes(needle)) return false;
+    } else if (Array.isArray(value)) {
+      const arrayValue = value as unknown[];
+      if (Array.isArray(needle)) {
+        if (!needle.every((item) => arrayValue.includes(item))) return false;
+      } else {
+        if (!arrayValue.includes(needle)) return false;
+      }
+    } else if (Array.isArray(needle)) {
+      if (!needle.includes(value as MetadataPrimitive)) return false;
+    } else {
+      if (value !== needle) return false;
     }
-    entries.push(`${JSON.stringify(key)}:${stableStringify(entryValue)}`);
   }
-  return `{${entries.join(',')}}`;
+  return true;
 }
 
-function isToolRegistered(registry: ToolRegistryLike, tool: ToolDefinition): boolean {
-  const registryWithGet = registry as ToolRegistryLike & {
-    getTool?: (name: string) => ToolDefinition | undefined;
-  };
-  if (typeof registryWithGet.getTool === 'function') {
-    return registryWithGet.getTool(tool.name) === tool;
+function metadataStartsWith(
+  metadata: JsonObject | undefined,
+  startsWith: Record<string, string>,
+): boolean {
+  if (!metadata) return false;
+  for (const [key, prefix] of Object.entries(startsWith)) {
+    const value = metadata[key];
+    if (typeof value !== 'string') return false;
+    if (!value.startsWith(prefix)) return false;
   }
-  return registry.tools().includes(tool);
+  return true;
 }
 
-function isToolDefinition(value: unknown): value is ToolDefinition {
-  if (!value || (typeof value !== 'object' && typeof value !== 'function')) return false;
-  const candidate = value as ToolDefinition;
-  return (
-    typeof candidate.id === 'string' &&
-    typeof candidate.name === 'string' &&
-    typeof candidate.description === 'string' &&
-    candidate.identity !== undefined &&
-    candidate.schema !== undefined
-  );
+function metadataInRange(
+  metadata: JsonObject | undefined,
+  ranges: Record<string, MetadataRange>,
+): boolean {
+  if (!metadata) return false;
+  for (const [key, range] of Object.entries(ranges)) {
+    const value = metadata[key];
+    if (typeof value !== 'number') return false;
+    if (range.min !== undefined && value < range.min) return false;
+    if (range.max !== undefined && value > range.max) return false;
+  }
+  return true;
 }
 
-function isToolRegistry(value: unknown): value is ToolRegistryLike {
+function mergeUnique<T>(a: T[] | undefined, b: T[] | undefined): T[] {
+  if (!a) return b ?? [];
+  if (!b) return a;
+  const set = new Set(a);
+  for (const item of b) {
+    set.add(item);
+  }
+  return Array.from(set);
+}
+
+function scoreEmbeddingMatch(
+  tool: ToolDefinition,
+  query: NormalizedTextQuery,
+  queryEmbedding: EmbeddingInfo,
+): { score: number; field: TextQueryField; similarity: number } | undefined {
+  const embeddings = getToolEmbeddings(tool);
+  if (!embeddings?.length) return undefined;
+
+  let best: { score: number; field: TextQueryField; similarity: number } | undefined;
+
+  for (const entry of embeddings) {
+    const weight = query.weights[entry.field] ?? 0;
+    if (weight <= 0) continue;
+
+    const sim = cosineSimilarity(
+      queryEmbedding.vector,
+      entry.vector,
+      queryEmbedding.magnitude,
+      entry.magnitude,
+    );
+    if (sim < query.threshold) continue;
+
+    const score = sim * weight;
+    if (!best || score > best.score) {
+      best = { score, field: entry.field, similarity: sim };
+    }
+  }
+
+  return best;
+}
+
+function cosineSimilarity(a: number[], b: number[], magA: number, magB: number): number {
+  if (magA === 0 || magB === 0) return 0;
+  let dot = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i]! * b[i]!;
+  }
+  return dot / (magA * magB);
+}
+
+function isIterable(value: unknown): value is Iterable<unknown> {
+  return typeof value === 'object' && value !== null && Symbol.iterator in value;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return (
     typeof value === 'object' &&
     value !== null &&
-    'tools' in value &&
-    typeof (value as ToolRegistryLike).tools === 'function'
+    Object.getPrototypeOf(value) === Object.prototype
   );
 }
 
-function emitQuery(
-  dispatchEvent: ToolRegistryLike['dispatchEvent'] | undefined,
-  criteria: ToolQuery | undefined,
-  results: QuerySelectionResult,
-): void {
-  if (!dispatchEvent) return;
-  dispatchEvent({
-    type: 'query',
-    detail: { criteria, results },
-  } as EmissionEvent<QueryEvent>);
-}
-
-function emitSearch(
-  dispatchEvent: ToolRegistryLike['dispatchEvent'] | undefined,
-  options: ToolSearchOptions,
-  results: ToolMatch<unknown>[],
-): void {
-  if (!dispatchEvent) return;
-  dispatchEvent({
-    type: 'search',
-    detail: { options, results },
-  } as EmissionEvent<SearchEvent>);
-}
-
-function schemaMatches(schema: ToolSchema): ToolPredicate<ToolDefinition> {
-  return (tool) => schemasLooselyMatch(tool.schema, schema);
-}
-
-function schemaHasKeys(keys: readonly string[]): ToolPredicate<ToolDefinition> {
-  const normalized = keys
-    .map((key) => key.toLowerCase())
-    .filter((key): key is string => Boolean(key));
-  if (!normalized.length) {
-    return () => true;
-  }
-  return (tool) => {
-    const { schemaKeySet } = getToolLookup(tool);
-    if (!schemaKeySet.size) return false;
-    return normalized.every((needle) => schemaKeySet.has(needle));
-  };
-}
-
-function tagsMatchAny(tags: readonly string[]): ToolPredicate<ToolDefinition> {
-  const normalized = normalizeTags(tags);
-  if (!normalized.length) {
-    return () => true;
-  }
-  const tagSet = new Set(normalized);
-  return (tool) => {
-    const { tagsLower } = getToolLookup(tool);
-    return tagsLower.some((tag) => tagSet.has(tag));
-  };
-}
-
-function tagsMatchAll(tags: readonly string[]): ToolPredicate<ToolDefinition> {
-  const normalized = normalizeTags(tags);
-  if (!normalized.length) {
-    return () => true;
-  }
-  return (tool) => {
-    const { tagSet } = getToolLookup(tool);
-    return normalized.every((tag) => tagSet.has(tag));
-  };
-}
-
-function tagsMatchNone(tags: readonly string[]): ToolPredicate<ToolDefinition> {
-  const normalized = normalizeTags(tags);
-  if (!normalized.length) {
-    return () => true;
-  }
-  const forbiddenSet = new Set(normalized);
-  return (tool) => {
-    const { tagsLower } = getToolLookup(tool);
-    return !tagsLower.some((tag) => forbiddenSet.has(tag));
-  };
+function mergeMatchDetails(target: ToolMatchDetails, source: ToolMatchDetails): void {
+  if (source.fields) target.fields = mergeUnique(target.fields, source.fields);
+  if (source.tags) target.tags = mergeUnique(target.tags, source.tags);
+  if (source.schemaKeys)
+    target.schemaKeys = mergeUnique(target.schemaKeys, source.schemaKeys);
+  if (source.metadataKeys)
+    target.metadataKeys = mergeUnique(target.metadataKeys, source.metadataKeys);
+  if (source.embedding) target.embedding = source.embedding;
 }

@@ -1,6 +1,8 @@
+import { z } from 'zod';
+
 import { getSchemaKeys, schemasLooselyMatch, type ToolSchema } from './schema-utilities';
 import type { JsonObject } from './serialization/json';
-import type { AnyToolDefinition as ToolDefinition } from './tool-definition';
+import { type ToolDefinition } from './tool-definition';
 
 type AnyTool = ToolDefinition;
 
@@ -169,13 +171,19 @@ export function normalizeTextQuery(input: TextQuery): NormalizedTextQuery | null
 }
 
 export function buildTextSearchIndex(tool: ToolDefinition): TextSearchIndex {
+  const candidate = tool as unknown as Record<string, unknown>;
+  const name = tool.identity?.name ?? (candidate['name'] as string | undefined) ?? '';
+  const description =
+    tool.display?.description ?? (candidate['description'] as string | undefined) ?? '';
   return {
-    name: normalizeText(tool.name),
-    description: normalizeText(tool.description ?? ''),
-    nameTokens: tokenize(tool.name),
-    descriptionTokens: tokenize(tool.description ?? ''),
+    name: normalizeText(name),
+    description: normalizeText(description),
+    nameTokens: tokenize(name),
+    descriptionTokens: tokenize(description),
     tags: (tool.tags ?? []).map(toToken),
-    schemaKeys: getSchemaKeys(tool.schema).map(toToken),
+    schemaKeys: getSchemaKeys(
+      tool.schema ?? (candidate['inputSchema'] as z.ZodTypeAny | undefined),
+    ).map(toToken),
     metadataKeys: extractMetadataKeys(tool.metadata).map(toToken),
   };
 }
@@ -576,8 +584,25 @@ function normalizeText(value: string): string {
   return normalizeForSearch(value).toLowerCase();
 }
 
-function normalizeForSearch(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+function normalizeForSearch(value: unknown): string {
+  if (typeof value === 'string') {
+    return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+  if (
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    return String(value);
+  }
+  if (value && typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '';
+    }
+  }
+  return '';
 }
 
 function similarity(a: string, b: string): number {

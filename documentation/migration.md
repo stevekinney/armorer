@@ -55,9 +55,9 @@ import { createMCP } from 'armorer/mcp';
 import { createClaudeAgentSdkServer } from 'armorer/claude-agent-sdk';
 ```
 
-## ToolError Model
+## ToolResult Model
 
-`ToolResult.error` is now a structured object:
+`ToolResult.error` is now a structured object. The legacy `errorMessage` and `errorCategory` top-level fields have been **removed**.
 
 ```ts
 const result = await tool.execute(call);
@@ -68,17 +68,21 @@ if (result.error) {
 }
 ```
 
-The `errorMessage` and `errorCategory` fields remain for compatibility, but are deprecated.
+## Tool Definition Model
 
-## Tool IDs and Registry Resolution
+The `ToolDefinition` and `DefineToolOptions` types have been strictly enforced to remove legacy top-level fields.
 
-Core now provides canonical ToolId helpers:
+| Before (Legacy) | After (Recommended)   |
+| --------------- | --------------------- |
+| `name`          | `identity.name`       |
+| `description`   | `display.description` |
+| `schema`        | `schema`              |
 
-```ts
-import { formatToolId, parseToolId, normalizeIdentity } from 'armorer/core';
-```
+The `defineTool` and `createTool` functions now require these modern properties.
 
-`registry.get()` requires a fully qualified ToolId (with version). Use `registry.resolve()` when you want version/alias selection.
+## Zod 4 Requirement
+
+Armorer now requires `zod@^4.0.0`. It utilizes the native `z.toJSONSchema` function for deterministic serialization.
 
 ## JSON Schema / Serialization
 
@@ -94,6 +98,4 @@ OpenAI-specific formatting is now in the adapter:
 import { toOpenAI } from 'armorer/adapters/openai';
 ```
 
-`toClaudeAgentSdkTools` and `createClaudeAgentSdkServer` are now async to allow lazy SDK loading.
-
-`toJSONSchema` was removed; use `serializeToolDefinition` for provider-neutral output or `toOpenAI` for OpenAI tool formatting.
+`toJSONSchema` (OpenAI-shaped) was removed from core; use `toOpenAI` for OpenAI-compatible tool formatting.

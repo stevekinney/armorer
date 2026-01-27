@@ -30,21 +30,20 @@ export type ToolDefinition<
   identity: ToolIdentity;
   id: ToolId;
   display: ToolDisplay;
-  tags?: readonly string[];
-  metadata?: JsonObject;
-  risk?: ToolRisk;
-  lifecycle?: ToolLifecycle;
-  inputSchema: z.ZodTypeAny;
-  outputSchema?: z.ZodTypeAny;
-  /** @deprecated Use inputSchema instead. */
-  schema: z.ZodTypeAny;
-  /** @internal Type marker for inference. */
-  __types?: { input: TInput; output: TOutput };
-  /** @deprecated Use display.description instead. */
-  description: string;
-  /** @deprecated Use identity.name instead. */
   name: string;
+  description: string;
+  tags?: readonly string[] | undefined;
+  metadata?: JsonObject | undefined;
+  risk?: ToolRisk | undefined;
+  lifecycle?: ToolLifecycle | undefined;
+  schema: z.ZodTypeAny;
+  outputSchema?: z.ZodTypeAny | undefined;
+  dryRun?: ((params: TInput, context: unknown) => Promise<unknown>) | undefined;
+  /** @internal Type marker for inference. */
+  __types?: { input: TInput; output: TOutput } | undefined;
 };
+
+export type AnyToolDefinition = ToolDefinition<Record<string, unknown>, unknown>;
 
 export type DefineToolOptions<
   TInput extends object = Record<string, unknown>,
@@ -61,10 +60,9 @@ export type DefineToolOptions<
   metadata?: JsonObject;
   risk?: ToolRisk;
   lifecycle?: ToolLifecycle;
-  inputSchema?: z.ZodType<TInput> | z.ZodRawShape | z.ZodTypeAny;
-  outputSchema?: z.ZodType<TOutput>;
-  /** @deprecated Use inputSchema instead. */
   schema?: z.ZodType<TInput> | z.ZodRawShape | z.ZodTypeAny;
+  outputSchema?: z.ZodType<TOutput>;
+  dryRun?: (params: TInput, context: unknown) => Promise<unknown>;
 };
 
 export function defineTool<
@@ -83,9 +81,9 @@ export function defineTool<
     metadata,
     risk,
     lifecycle,
-    inputSchema,
-    outputSchema,
     schema,
+    outputSchema,
+    dryRun,
   } = options;
 
   const normalizedIdentity = normalizeIdentity({
@@ -93,7 +91,7 @@ export function defineTool<
     ...(namespace !== undefined ? { namespace } : {}),
     ...(version !== undefined ? { version } : {}),
   });
-  const normalizedSchema = normalizeSchema(inputSchema ?? schema);
+  const normalizedSchema = normalizeSchema(schema);
   const resolvedTags = normalizeTags(tags, name);
   const display: ToolDisplay = {
     title: title ?? name,
@@ -107,19 +105,17 @@ export function defineTool<
     identity: normalizedIdentity,
     id,
     display,
+    name: normalizedIdentity.name,
+    description,
     ...(resolvedTags.length ? { tags: resolvedTags } : {}),
     ...(metadata !== undefined ? { metadata } : {}),
     ...(risk !== undefined ? { risk } : {}),
     ...(lifecycle !== undefined ? { lifecycle } : {}),
-    inputSchema: normalizedSchema as z.ZodType<TInput>,
-    ...(outputSchema !== undefined ? { outputSchema } : {}),
     schema: normalizedSchema as z.ZodType<TInput>,
-    name: normalizedIdentity.name,
-    description,
+    ...(outputSchema !== undefined ? { outputSchema } : {}),
+    ...(dryRun ? { dryRun } : {}),
   };
 }
-
-export type AnyToolDefinition = ToolDefinition<Record<string, unknown>, unknown>;
 
 function normalizeSchema(schema: unknown): z.ZodTypeAny {
   if (schema === undefined) {

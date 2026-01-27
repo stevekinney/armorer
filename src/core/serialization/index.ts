@@ -17,12 +17,14 @@ export type SerializedToolDefinition = {
   id: ToolId;
   identity: ToolDefinition['identity'];
   display: ToolDisplay;
+  name: string;
+  description: string;
   tags?: readonly string[];
   metadata?: JsonObject;
   risk?: ToolRisk;
   lifecycle?: ToolLifecycle;
   aliases: ToolId[];
-  inputSchema: JsonSchema;
+  schema: JsonSchema;
   outputSchema?: JsonSchema;
 };
 
@@ -43,7 +45,7 @@ export function serializeToolDefinition(
     ? (sortJsonValue(definition.lifecycle) as JsonObject)
     : undefined;
 
-  const inputSchema = toJsonSchema(definition.inputSchema, 'input');
+  const schema = toJsonSchema(definition.schema, 'input');
   const outputSchema = definition.outputSchema
     ? toJsonSchema(definition.outputSchema, 'output')
     : undefined;
@@ -63,12 +65,14 @@ export function serializeToolDefinition(
         ? { examples: [...definition.display.examples] }
         : {}),
     },
+    name: definition.identity.name,
+    description: definition.display.description,
     ...(definition.tags?.length ? { tags: [...definition.tags] } : {}),
     ...(normalizedMetadata ? { metadata: normalizedMetadata } : {}),
     ...(normalizedRisk ? { risk: normalizedRisk as ToolRisk } : {}),
     ...(normalizedLifecycle ? { lifecycle: normalizedLifecycle as ToolLifecycle } : {}),
     aliases: options?.aliases ? [...options.aliases].sort() : [],
-    inputSchema,
+    schema,
     ...(outputSchema ? { outputSchema } : {}),
   };
 }
