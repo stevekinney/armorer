@@ -2,7 +2,9 @@
 
 ## Overview
 
-Integrate Armorer tools with the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`). This adapter provides utilities to convert Armorer tools into Claude Agent SDK-compatible formats, create MCP servers, and implement tool gating for permission control.
+Integrate Armorer tools with the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`). This integration converts Armorer tools into live, executable SDK tool objects, creates MCP servers, and implements tool gating for permission control.
+
+> **Not the same as `toAnthropic()`**: The [provider adapter](./provider-adapters.md) `toAnthropic()` produces static JSON Schema definitions for the Anthropic Messages API. This integration is different — it produces runnable tool objects that include execution handlers, structured result formatting, tool classification (mutating/dangerous/read-only), and MCP server support. Use `toAnthropic()` when calling the Messages API directly; use this integration when building with the Claude Agent SDK.
 
 ## Prerequisites
 

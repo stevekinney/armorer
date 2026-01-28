@@ -2,9 +2,11 @@
 
 ## Overview
 
-Export tools to OpenAI, Anthropic, and Gemini tool formats.
+Export tools as static JSON Schema definitions for use with LLM provider SDKs. Each adapter is available as a separate subpath export (the legacy `armorer/openai`/`armorer/anthropic`/`armorer/gemini` paths still work).
 
-Export tools in the format expected by different LLM providers. Each adapter is available as a separate subpath export (the legacy `armorer/openai`/`armorer/anthropic`/`armorer/gemini` paths still work).
+These adapters are **schema-only converters**. They serialize your tool definitions (name, description, and Zod schema) into the JSON format each provider expects, but they do not execute tools or handle results. You pass the output directly to the provider SDK when making API calls.
+
+> **Anthropic SDK vs Claude Agent SDK**: The `toAnthropic()` adapter here produces static `input_schema` objects for the [Anthropic Messages API](https://docs.anthropic.com/en/docs/tool-use). If you're building with the **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`), use the separate [Claude Agent SDK integration](./claude-agent-sdk.md) instead — it produces live, executable SDK tool objects with result handling, MCP server support, and tool gating.
 
 ### OpenAI
 
