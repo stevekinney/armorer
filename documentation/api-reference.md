@@ -425,6 +425,24 @@ Types:
 - `ClaudeToolGateOptions`: options for `createClaudeToolGate()`
 - `ClaudeToolGateDecision`: return type of the gate function
 
+### Subpath export: `armorer/openai-agents-sdk`
+
+OpenAI Agents SDK adapter for integrating Armorer tools with `@openai/agents`.
+
+Functions:
+
+- `toOpenAIAgentTools(input, options?)`: async converter for OpenAI Agents SDK tool format
+- `createOpenAIToolGate(options)`: creates a permission gate function for tool access control
+
+Types:
+
+- `OpenAIAgentTool`: return type of OpenAI Agents SDK's `tool()` function
+- `OpenAIAgentToolConfig`: tool configuration override options
+- `OpenAIAgentToolOptions`: options for `toOpenAIAgentTools()`
+- `OpenAIAgentToolsResult`: return type of `toOpenAIAgentTools()`
+- `OpenAIToolGateOptions`: options for `createOpenAIToolGate()`
+- `OpenAIToolGateDecision`: return type of the gate function
+
 ### Subpath export: `armorer/tools`
 
 Pre-configured tools for common agentic workflows.

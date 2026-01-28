@@ -184,6 +184,13 @@ the tool definitions and notifies connected clients with `toolListChanged`.
 
 ### OpenAI Agents SDK (`@openai/agents`)
 
+The OpenAI Agents SDK can consume Armorer tools in two ways:
+
+1. **MCP servers** (shown below) - Run Armorer as an MCP server that the SDK connects to
+2. **Direct integration** - Convert tools directly using the [OpenAI Agents SDK integration](./openai-agents-sdk.md)
+
+The MCP approach is useful when you want to run tools in a separate process or expose them over HTTP. The direct integration is simpler for in-process usage.
+
 #### stdio (local subprocess)
 
 Run an Armorer MCP server as a local process and let the agent SDK spawn it.

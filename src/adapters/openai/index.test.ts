@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createRegistry, defineTool } from '../../core';
+import type { AnyToolDefinition } from '../../core';
+import { createRegistry, defineTool, serializeToolDefinition } from '../../core';
 import { toOpenAI } from './index';
 
 describe('toOpenAI', () => {
@@ -14,44 +15,46 @@ describe('toOpenAI', () => {
     name: 'search',
     description: 'Search for items',
     schema: schema,
-  });
+  }) as AnyToolDefinition;
+
+  const serializedTool = serializeToolDefinition(tool);
 
   describe('single tool conversion', () => {
     it('returns correct type', () => {
-      const result = toOpenAI(tool);
+      const result = toOpenAI(serializedTool);
       expect(result.type).toBe('function');
     });
 
     it('includes function name', () => {
-      const result = toOpenAI(tool);
+      const result = toOpenAI(serializedTool);
       expect(result.function.name).toBe('search');
     });
 
     it('includes function description', () => {
-      const result = toOpenAI(tool);
+      const result = toOpenAI(serializedTool);
       expect(result.function.description).toBe('Search for items');
     });
 
     it('includes strict mode', () => {
-      const result = toOpenAI(tool);
+      const result = toOpenAI(serializedTool);
       expect(result.function.strict).toBe(true);
     });
 
     it('includes parameters object', () => {
-      const result = toOpenAI(tool);
+      const result = toOpenAI(serializedTool);
       expect(result.function.parameters).toHaveProperty('type', 'object');
       expect(result.function.parameters).toHaveProperty('properties');
     });
 
     it('includes required fields', () => {
-      const result = toOpenAI(tool);
+      const result = toOpenAI(serializedTool);
       expect(result.function.parameters.required).toContain('query');
     });
   });
 
   describe('array conversion', () => {
     it('returns array for array input', () => {
-      const result = toOpenAI([tool, tool]);
+      const result = toOpenAI([serializedTool, serializedTool]);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(2);
     });

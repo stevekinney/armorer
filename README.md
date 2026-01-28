@@ -33,7 +33,7 @@ Armorer turns tool calling into a structured, observable, and searchable workflo
 - **Built-in Middleware**: Caching, Rate Limiting, and Timeouts
 - **Testing Utilities**: Mock tools and test registries for easy verification
 - MCP server integration for exposing tools over MCP
-- Claude Agent SDK adapter with tool gating
+- Claude Agent SDK and OpenAI Agents SDK integrations with tool gating
 - Concurrency controls and execution tracing hooks
 - Pre-configured search tool for semantic tool discovery in agentic workflows
 
@@ -47,7 +47,7 @@ Armorer splits tool definitions from execution so you can import only what you n
 - `armorer/middleware`: standard middleware (cache, rate-limit, timeout)
 - `armorer/test`: testing utilities (mock tools, test registry)
 - `armorer/adapters/*`: provider formatting (OpenAI/Anthropic/Gemini)
-- `armorer/mcp` and `armorer/claude-agent-sdk`: optional integrations
+- `armorer/mcp`, `armorer/claude-agent-sdk`, and `armorer/openai-agents-sdk`: optional integrations
 
 ```typescript
 import { defineTool, createRegistry } from 'armorer/core';
@@ -511,6 +511,7 @@ Longer-form docs live in `documentation/`:
 - [Provider Adapters](documentation/provider-adapters.md) - OpenAI, Anthropic, and Gemini integrations
 - [MCP Server](documentation/mcp.md) - Expose tools over Model Context Protocol
 - [Claude Agent SDK](documentation/claude-agent-sdk.md) - Integration with `@anthropic-ai/claude-agent-sdk` including tool gating
+- [OpenAI Agents SDK](documentation/openai-agents-sdk.md) - Integration with `@openai/agents` including tool gating
 - [Public API Reference](documentation/api-reference.md) - Complete API reference with all exports and types
 - [Migration Guide](documentation/migration.md) - Upgrade notes and import changes for core/runtime split
 - [Development](documentation/development.md) - Local development workflows

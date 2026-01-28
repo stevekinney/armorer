@@ -30,6 +30,8 @@ const response = await openai.chat.completions.create({
 });
 ```
 
+> **OpenAI Chat Completions vs OpenAI Agents SDK**: The `toOpenAI()` adapter here produces static tool definitions for the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat). If you're building with the **OpenAI Agents SDK** (`@openai/agents`), use the separate [OpenAI Agents SDK integration](./openai-agents-sdk.md) instead — it produces executable tool objects with result handling and tool gating.
+
 ### Anthropic
 
 ```typescript

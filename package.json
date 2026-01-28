@@ -124,6 +124,18 @@
       "require": "./dist/integrations/claude-agent-sdk/index.cjs",
       "default": "./dist/integrations/claude-agent-sdk/index.js"
     },
+    "./openai-agents-sdk": {
+      "types": "./dist/integrations/openai-agents-sdk/index.d.ts",
+      "import": "./dist/integrations/openai-agents-sdk/index.js",
+      "require": "./dist/integrations/openai-agents-sdk/index.cjs",
+      "default": "./dist/integrations/openai-agents-sdk/index.js"
+    },
+    "./integrations/openai-agents-sdk": {
+      "types": "./dist/integrations/openai-agents-sdk/index.d.ts",
+      "import": "./dist/integrations/openai-agents-sdk/index.js",
+      "require": "./dist/integrations/openai-agents-sdk/index.cjs",
+      "default": "./dist/integrations/openai-agents-sdk/index.js"
+    },
     "./tools": {
       "types": "./dist/tools/index.d.ts",
       "import": "./dist/tools/index.js",
@@ -235,6 +247,7 @@
   "peerDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.6",
     "@modelcontextprotocol/sdk": "^1.25.2",
+    "@openai/agents": "^0.3.7",
     "@opentelemetry/api": "^1.9.0",
     "zod": "^4.0.0"
   },
@@ -243,6 +256,9 @@
       "optional": true
     },
     "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "@openai/agents": {
       "optional": true
     }
   },

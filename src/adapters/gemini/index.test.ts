@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
+import type { AnyToolDefinition } from '../../core';
 import { createRegistry, defineTool, serializeToolDefinition } from '../../core';
 import { toGemini } from './index';
 
@@ -14,39 +15,41 @@ describe('toGemini', () => {
     name: 'search',
     description: 'Search for items',
     schema: schema,
-  });
+  }) as AnyToolDefinition;
+
+  const serializedTool = serializeToolDefinition(tool);
 
   describe('single tool conversion', () => {
     it('includes function name', () => {
-      const result = toGemini(tool);
+      const result = toGemini(serializedTool);
       expect(result.name).toBe('search');
     });
 
     it('includes function description', () => {
-      const result = toGemini(tool);
+      const result = toGemini(serializedTool);
       expect(result.description).toBe('Search for items');
     });
 
     it('includes parameters object', () => {
-      const result = toGemini(tool);
+      const result = toGemini(serializedTool);
       expect(result.parameters).toHaveProperty('type', 'object');
       expect(result.parameters).toHaveProperty('properties');
     });
 
     it('includes required fields', () => {
-      const result = toGemini(tool);
+      const result = toGemini(serializedTool);
       expect(result.parameters.required).toContain('query');
     });
 
     it('does not include $schema property', () => {
-      const result = toGemini(tool);
+      const result = toGemini(serializedTool);
       expect(result.parameters).not.toHaveProperty('$schema');
     });
   });
 
   describe('array conversion', () => {
     it('returns array for array input', () => {
-      const result = toGemini([tool, tool]);
+      const result = toGemini([serializedTool, serializedTool]);
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(2);
     });

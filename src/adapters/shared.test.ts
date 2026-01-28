@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
+import type { AnyToolDefinition } from '../core';
 import { defineTool, serializeToolDefinition } from '../core';
 import {
   isSerializedToolDefinition,
@@ -15,7 +16,7 @@ describe('shared adapter utilities', () => {
     name: 'test-tool',
     description: 'A test tool',
     schema: testSchema,
-  });
+  }) as AnyToolDefinition;
 
   const serializedTool = serializeToolDefinition(testTool);
 
@@ -41,7 +42,7 @@ describe('shared adapter utilities', () => {
 
   describe('normalizeToSerializedDefinitions', () => {
     it('handles single tool definition', () => {
-      const configs = normalizeToSerializedDefinitions(testTool);
+      const configs = normalizeToSerializedDefinitions(serializedTool);
       expect(configs).toHaveLength(1);
       expect(configs[0]?.identity.name).toBe('test-tool');
     });
@@ -53,7 +54,7 @@ describe('shared adapter utilities', () => {
     });
 
     it('handles array of tools', () => {
-      const configs = normalizeToSerializedDefinitions([testTool, testTool]);
+      const configs = normalizeToSerializedDefinitions([serializedTool, serializedTool]);
       expect(configs).toHaveLength(2);
     });
 
@@ -63,7 +64,7 @@ describe('shared adapter utilities', () => {
     });
 
     it('handles registry-like list()', () => {
-      const registryLike = { list: () => [testTool] };
+      const registryLike = { list: () => [serializedTool] };
       const configs = normalizeToSerializedDefinitions(registryLike);
       expect(configs).toHaveLength(1);
       expect(configs[0]?.identity.name).toBe('test-tool');
@@ -108,7 +109,7 @@ describe('shared adapter utilities', () => {
 
   describe('isSingleInput', () => {
     it('returns true for single tool', () => {
-      expect(isSingleInput(testTool)).toBe(true);
+      expect(isSingleInput(serializedTool)).toBe(true);
     });
 
     it('returns true for single serialized tool', () => {
@@ -116,11 +117,11 @@ describe('shared adapter utilities', () => {
     });
 
     it('returns false for array', () => {
-      expect(isSingleInput([testTool])).toBe(false);
+      expect(isSingleInput([serializedTool])).toBe(false);
     });
 
     it('returns false for registry', () => {
-      const registryLike = { list: () => [testTool] };
+      const registryLike = { list: () => [serializedTool] };
       expect(isSingleInput(registryLike)).toBe(false);
     });
   });
