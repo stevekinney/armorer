@@ -92,22 +92,89 @@ console.log(toolCall.result); // 8
 Armorer supports `dryRun` to preview the effects of a tool without executing it.
 
 ```ts
+// Create tool with dry run handler
 const deleteFile = createTool({
-  name: 'fs.delete',
-  description: 'Delete a file',
-  schema: z.object({ path: z.string() }),
-  async execute({ path }) {
-    await fs.unlink(path);
-    return { deleted: true };
-  },
+  // ...
   async dryRun({ path }) {
     return { effect: `Would delete file at ${path}` };
   },
 });
 
+// Execute in dry run mode
 const result = await deleteFile.execute({ path: 'log.txt' }, { dryRun: true });
-console.log(result.dryRun); // true
-console.log(result.content); // { effect: "Would delete file at log.txt" }
+```
+
+## Batch Execution
+
+Execute multiple tools in parallel or sequentially with global controls.
+
+```ts
+const results = await armorer.execute([call1, call2, call3], {
+  concurrency: 5, // Global concurrency limit
+  mode: 'parallel', // 'parallel' | 'sequential'
+  errorMode: 'collect', // 'collect' (default) | 'failFast'
+});
+```
+
+## Output Shaping
+
+Control output size and serialization to keep LLM contexts safe.
+
+```ts
+const tool = createTool({
+  // ...
+  outputShaping: {
+    maxBytes: 1024 * 10, // 10KB limit
+    truncate: { suffix: '... (truncated)' },
+    serialization: 'string', // Ensure output is stringified
+  },
+});
+```
+
+## Approval Flows
+
+Policies can pause execution for human approval or input.
+
+```ts
+const armorer = createArmorer([], {
+  policy: {
+    async beforeExecute(context) {
+      if (context.metadata?.sensitive) {
+        return {
+          status: 'needs_approval',
+          reason: 'Sensitive action requires confirmation',
+        };
+      }
+      return { allow: true };
+    },
+  },
+});
+
+const result = await armorer.execute(sensitiveCall);
+if (result.outcome === 'action_required') {
+  // Present approval UI to user...
+}
+```
+
+## Agent Integration
+
+Armorer provides helpers to integrate with LLM providers like OpenAI.
+
+```typescript
+import { toOpenAI, parseToolCalls, formatToolResults } from 'armorer/adapters/openai';
+
+// 1. Export tools
+const tools = toOpenAI(armorer);
+
+// 2. Call model
+const completion = await openai.chat.completions.create({ tools, ... });
+
+// 3. Parse and execute
+const toolCalls = parseToolCalls(completion.choices[0].message.tool_calls);
+const results = await armorer.execute(toolCalls);
+
+// 4. Format results
+const messages = formatToolResults(results);
 ```
 
 ## Observability (OpenTelemetry)

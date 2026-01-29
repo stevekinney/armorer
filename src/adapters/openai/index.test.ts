@@ -1,85 +1,178 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import type { AnyToolDefinition } from '../../core';
-import { createRegistry, defineTool, serializeToolDefinition } from '../../core';
-import { toOpenAI } from './index';
+import { createArmorer } from '../../runtime/create-armorer';
+import { createTool } from '../../runtime/create-tool';
+import { formatToolResults, parseToolCalls, toOpenAI } from './index';
 
 describe('toOpenAI', () => {
-  const schema = z.object({
-    query: z.string().describe('Search query'),
-    limit: z.number().optional().describe('Max results'),
+  const tool = createTool({
+    name: 'test-tool',
+    description: 'A test tool',
+    schema: z.object({
+      query: z.string().describe('Search query'),
+      limit: z.number().optional().describe('Max results'),
+    }),
+    execute: async (params) => params,
   });
 
-  const tool = defineTool({
-    name: 'search',
-    description: 'Search for items',
-    schema: schema,
-  }) as AnyToolDefinition;
-
-  const serializedTool = serializeToolDefinition(tool);
-
   describe('single tool conversion', () => {
+    const openAI = toOpenAI(tool);
+
     it('returns correct type', () => {
-      const result = toOpenAI(serializedTool);
-      expect(result.type).toBe('function');
+      expect(openAI.type).toBe('function');
     });
 
     it('includes function name', () => {
-      const result = toOpenAI(serializedTool);
-      expect(result.function.name).toBe('search');
+      expect(openAI.function.name).toBe('test-tool');
     });
 
     it('includes function description', () => {
-      const result = toOpenAI(serializedTool);
-      expect(result.function.description).toBe('Search for items');
+      expect(openAI.function.description).toBe('A test tool');
     });
 
     it('includes strict mode', () => {
-      const result = toOpenAI(serializedTool);
-      expect(result.function.strict).toBe(true);
+      expect(openAI.function.strict).toBe(true);
     });
 
     it('includes parameters object', () => {
-      const result = toOpenAI(serializedTool);
-      expect(result.function.parameters).toHaveProperty('type', 'object');
-      expect(result.function.parameters).toHaveProperty('properties');
+      expect(openAI.function.parameters).toHaveProperty('type', 'object');
+      expect(openAI.function.parameters).toHaveProperty('properties');
     });
 
     it('includes required fields', () => {
-      const result = toOpenAI(serializedTool);
-      expect(result.function.parameters.required).toContain('query');
+      expect(openAI.function.parameters.required).toContain('query');
     });
   });
 
   describe('array conversion', () => {
     it('returns array for array input', () => {
-      const result = toOpenAI([serializedTool, serializedTool]);
-      expect(Array.isArray(result)).toBe(true);
-      expect(result).toHaveLength(2);
+      const openAI = toOpenAI([tool]);
+      expect(Array.isArray(openAI)).toBe(true);
+      expect(openAI).toHaveLength(1);
     });
 
     it('returns array for empty array', () => {
-      const result = toOpenAI([]);
-      expect(Array.isArray(result)).toBe(true);
-      expect(result).toHaveLength(0);
+      const openAI = toOpenAI([]);
+      expect(Array.isArray(openAI)).toBe(true);
+      expect(openAI).toHaveLength(0);
     });
   });
 
   describe('registry conversion', () => {
     it('returns array for registry input', () => {
-      const registry = createRegistry();
-      registry.register(tool);
-      const result = toOpenAI(registry);
-      expect(Array.isArray(result)).toBe(true);
-      expect(result).toHaveLength(1);
+      const armorer = createArmorer();
+      armorer.register(tool);
+      const openAI = toOpenAI(armorer);
+      expect(Array.isArray(openAI)).toBe(true);
+      expect(openAI).toHaveLength(1);
+      expect(openAI[0]?.function.name).toBe('test-tool');
     });
 
     it('returns empty array for empty registry', () => {
-      const registry = createRegistry();
-      const result = toOpenAI(registry);
-      expect(Array.isArray(result)).toBe(true);
-      expect(result).toHaveLength(0);
+      const armorer = createArmorer();
+      const openAI = toOpenAI(armorer);
+      expect(Array.isArray(openAI)).toBe(true);
+      expect(openAI).toHaveLength(0);
     });
+  });
+});
+
+describe('parseToolCalls', () => {
+  it('parses valid tool calls', () => {
+    const calls = [
+      {
+        id: 'call_1',
+        type: 'function' as const,
+        function: {
+          name: 'tool1',
+          arguments: '{"foo": "bar"}',
+        },
+      },
+    ];
+    const parsed = parseToolCalls(calls);
+    expect(parsed).toEqual([
+      {
+        id: 'call_1',
+        name: 'tool1',
+        arguments: { foo: 'bar' },
+      },
+    ]);
+  });
+
+  it('handles invalid JSON arguments', () => {
+    const calls = [
+      {
+        id: 'call_1',
+        type: 'function' as const,
+        function: {
+          name: 'tool1',
+          arguments: '{invalid}',
+        },
+      },
+    ];
+    const parsed = parseToolCalls(calls);
+    expect(parsed).toEqual([
+      {
+        id: 'call_1',
+        name: 'tool1',
+        arguments: {},
+      },
+    ]);
+  });
+});
+
+describe('formatToolResults', () => {
+  it('formats single result', () => {
+    const result = {
+      callId: 'call_1',
+      outcome: 'success' as const,
+      content: 'result',
+      toolCallId: 'call_1',
+      toolName: 'tool1',
+      result: 'result',
+    };
+    const messages = formatToolResults(result);
+    expect(messages).toEqual([
+      {
+        role: 'tool',
+        tool_call_id: 'call_1',
+        content: 'result',
+      },
+    ]);
+  });
+
+  it('formats multiple results', () => {
+    const results = [
+      {
+        callId: 'call_1',
+        outcome: 'success' as const,
+        content: 'result1',
+        toolCallId: 'call_1',
+        toolName: 'tool1',
+        result: 'result1',
+      },
+      {
+        callId: 'call_2',
+        outcome: 'success' as const,
+        content: { foo: 'bar' },
+        toolCallId: 'call_2',
+        toolName: 'tool2',
+        result: { foo: 'bar' },
+      },
+    ];
+    const messages = formatToolResults(results);
+    expect(messages).toEqual([
+      {
+        role: 'tool',
+        tool_call_id: 'call_1',
+        content: 'result1',
+      },
+      {
+        role: 'tool',
+        tool_call_id: 'call_2',
+        content: '{"foo":"bar"}',
+      },
+    ]);
   });
 });

@@ -15,12 +15,14 @@ import {
 } from '../core/tag-utilities';
 import type { AnyToolDefinition, ToolLifecycle } from '../core/tool-definition';
 import { defineTool } from '../core/tool-definition';
+import { createConcurrencyLimiter, normalizeConcurrency } from './concurrency';
 import type { Armorer } from './create-armorer';
 import { errorString, normalizeError } from './errors';
 import type {
   ArmorerTool,
   DefaultToolEvents,
   MinimalAbortSignal,
+  OutputShapingOptions,
   OutputValidationMode,
   OutputValidationResult,
   ToolCallWithArguments,
@@ -82,6 +84,7 @@ export interface CreateToolOptions<
   policyContext?: ToolPolicyContextProvider;
   digests?: ToolDigestOptions;
   outputValidationMode?: OutputValidationMode;
+  outputShaping?: OutputShapingOptions;
   concurrency?: number;
   telemetry?: boolean;
   diagnostics?: ToolDiagnostics;
@@ -209,6 +212,7 @@ export function createTool<
     schema: toolSchema,
     outputSchema,
     execute: fn,
+    dryRun,
     timeoutMs,
     tags,
     metadata: customMetadata,
@@ -216,6 +220,7 @@ export function createTool<
     policyContext,
     digests,
     outputValidationMode,
+    outputShaping,
     concurrency,
     telemetry,
     diagnostics,
@@ -272,6 +277,11 @@ export function createTool<
     ...(lifecycle !== undefined ? { lifecycle } : {}),
     schema: normalizedSchema,
     ...(outputSchema !== undefined ? { outputSchema } : {}),
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+    ...(dryRun ? { dryRun: dryRun as any } : {}),
+    /* eslint-enable @typescript-eslint/no-unsafe-assignment */
+    /* eslint-enable @typescript-eslint/no-explicit-any */
   }) as AnyToolDefinition;
 
   const schema = definition.schema as unknown as ToolParametersSchema;
@@ -336,13 +346,10 @@ export function createTool<
     options?: ToolExecuteOptions,
   ): Promise<ToolResult> => {
     const resolvedTimeoutMs = options?.timeoutMs ?? timeoutMs;
-    const executeOptions =
-      options?.signal || resolvedTimeoutMs !== undefined
-        ? {
-            ...(options?.signal ? { signal: options.signal } : {}),
-            ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
-          }
-        : undefined;
+    const executeOptions: ToolExecuteOptions = {
+      ...options,
+      ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
+    };
     return runWithConcurrency(() =>
       executeInner(normalizeToolCall(toolCall), executeOptions),
     );
@@ -375,16 +382,17 @@ export function createTool<
 
   const executeInner = async (
     toolCall: ToolCall & { arguments: unknown },
-    options: { timeoutMs?: number; signal?: MinimalAbortSignal } = {},
+    options: ToolExecuteOptions = {},
   ): Promise<ToolResult> => {
     const baseDetail = { toolCall, configuration };
     const startedAt = telemetryEnabled ? Date.now() : 0;
     const inputDigest = digestOptions.input
       ? computeDigest(toolCall.arguments, digestOptions.algorithm)
       : undefined;
+    const isDryRun = options.dryRun === true;
 
     const finishTelemetry = (
-      status: 'success' | 'error' | 'denied' | 'cancelled',
+      status: 'success' | 'error' | 'denied' | 'cancelled' | 'paused',
       details: {
         result?: unknown;
         error?: unknown;
@@ -403,6 +411,7 @@ export function createTool<
         durationMs: finishedAt - startedAt,
         startedAt,
         finishedAt,
+        dryRun: isDryRun,
         ...details,
       });
     };
@@ -413,6 +422,7 @@ export function createTool<
         params: toolCall.arguments,
         startedAt,
         inputDigest,
+        dryRun: isDryRun,
       });
     }
 
@@ -433,8 +443,8 @@ export function createTool<
         code: 'CANCELLED',
         retryable: false,
       });
-      emit('execute-error', { ...baseDetail, error: errorObj });
-      emit('settled', { ...baseDetail, error: errorObj });
+      emit('execute-error', { ...baseDetail, error: errorObj, dryRun: isDryRun });
+      emit('settled', { ...baseDetail, error: errorObj, dryRun: isDryRun });
       const cancelledDetails: {
         error?: unknown;
         errorCategory?: ToolErrorCategory;
@@ -456,6 +466,7 @@ export function createTool<
         errorMessage: toolError.message,
         errorCategory: toolError.category,
         inputDigest,
+        dryRun: isDryRun,
       } as ToolResult;
     };
 
@@ -464,7 +475,11 @@ export function createTool<
     }
 
     try {
-      emit('execute-start', { ...baseDetail, params: toolCall.arguments });
+      emit('execute-start', {
+        ...baseDetail,
+        params: toolCall.arguments,
+        dryRun: isDryRun,
+      });
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
       }
@@ -483,6 +498,39 @@ export function createTool<
         }
       }
       const decision = await resolvePolicyDecision(policyContext);
+
+      if (decision?.status === 'needs_approval' || decision?.status === 'needs_input') {
+        const type = decision.status === 'needs_approval' ? 'approval' : 'input';
+        const reason = decision.reason ?? `Tool execution requires ${type}`;
+        emit('policy-denied', { ...parsedDetail, params: parsed, reason }); // Or new event 'policy-action-required'
+        // For now using policy-denied-like flow but with different outcome
+
+        await runPolicyAfter({
+          ...policyContext,
+          outcome: 'denied', // Is it denied? It's paused.
+          reason,
+        });
+
+        finishTelemetry('paused', { reason });
+
+        const callId = typedToolCall.id;
+        return {
+          callId,
+          outcome: 'action_required',
+          content: reason,
+          toolCallId: callId,
+          toolName: name,
+          result: undefined,
+          action: {
+            type,
+            message: decision.action?.message ?? reason,
+            schema: decision.action?.schema,
+          },
+          inputDigest,
+          dryRun: isDryRun,
+        } as ToolResult;
+      }
+
       if (decision?.allow === false) {
         const reason = decision.reason ?? 'Policy denied';
         emit('policy-denied', { ...parsedDetail, params: parsed, reason });
@@ -491,8 +539,8 @@ export function createTool<
           code: 'POLICY_DENIED',
           retryable: false,
         });
-        emit('execute-error', { ...parsedDetail, error: errorObj });
-        emit('settled', { ...parsedDetail, error: errorObj });
+        emit('execute-error', { ...parsedDetail, error: errorObj, dryRun: isDryRun });
+        emit('settled', { ...parsedDetail, error: errorObj, dryRun: isDryRun });
         await runPolicyAfter({
           ...policyContext,
           outcome: 'denied',
@@ -520,13 +568,28 @@ export function createTool<
           errorMessage: toolError.message,
           errorCategory: toolError.category,
           inputDigest,
+          dryRun: isDryRun,
         } as ToolResult;
       }
       const meta: { toolName: string; callId?: string } = { toolName: name };
       if (typedToolCall.id) {
         meta.callId = typedToolCall.id;
       }
-      const resolvedExecute = await resolveExecute();
+
+      // Handle Dry Run
+      if (isDryRun) {
+        if (!definition.dryRun) {
+          throw new Error('Tool does not support dryRun');
+        }
+      }
+
+      const resolvedExecute = isDryRun
+        ? (definition.dryRun as unknown as (
+            params: TParameters,
+            context: TContext,
+          ) => Promise<TReturn>)
+        : await resolveExecute();
+
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
       }
@@ -541,16 +604,20 @@ export function createTool<
         ...(options.signal ? { signal: options.signal } : {}),
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
         ...(armorerContext || {}),
+        dryRun: isDryRun,
       };
 
       // `TContext` may be a subtype of `ToolContext<E>` (e.g. with extra fields).
       // At runtime we can only guarantee the base ToolContext shape plus any armorer context,
       // so we cast to avoid `exactOptionalPropertyTypes` assignability issues.
+
       const runner = resolvedExecute(parsed, toolContext as unknown as TContext);
+
       const timed =
         typeof options.timeoutMs === 'number'
           ? withTimeout(runner, options.timeoutMs)
           : runner;
+
       const value = await raceWithSignal(timed, options.signal);
       const outputValidation = validateOutput(
         outputSchema,
@@ -571,11 +638,48 @@ export function createTool<
           }
         }
       }
+
+      // Output Shaping
+      let shapedValue: unknown = value;
+      if (outputShaping) {
+        if (
+          outputShaping.serialization === 'json' &&
+          typeof value === 'object' &&
+          value !== null
+        ) {
+          // If result is object, we might want to ensure it is JSON serializable or stringified
+          // For now, let's assume result should be returned as is if it is object,
+          // but if serialization='string' is requested, we stringify it.
+        }
+
+        if (outputShaping.serialization === 'string' && typeof value !== 'string') {
+          shapedValue = stableStringify(value);
+        }
+
+        if (outputShaping.truncate && typeof shapedValue === 'string') {
+          const maxLength =
+            typeof outputShaping.truncate === 'object' && outputShaping.truncate.length
+              ? outputShaping.truncate.length
+              : (outputShaping.maxBytes ?? 1024 * 1024); // Default 1MB or use maxBytes if provided
+
+          // If maxBytes is provided explicitly, prefer it
+          const limit = outputShaping.maxBytes ?? maxLength;
+
+          if (shapedValue.length > limit) {
+            const suffix =
+              (typeof outputShaping.truncate === 'object' &&
+                outputShaping.truncate.suffix) ||
+              '...';
+            shapedValue = shapedValue.slice(0, limit) + suffix;
+          }
+        }
+      }
+
       const outputDigest = digestOptions.output
         ? computeDigest(value, digestOptions.algorithm)
         : undefined;
-      emit('execute-success', { ...parsedDetail, result: value });
-      emit('settled', { ...parsedDetail, result: value });
+      emit('execute-success', { ...parsedDetail, result: value, dryRun: isDryRun });
+      emit('settled', { ...parsedDetail, result: value, dryRun: isDryRun });
       const policyAfter: ToolPolicyAfterContext = {
         ...policyContext,
         outcome: 'success',
@@ -608,10 +712,10 @@ export function createTool<
       return {
         callId,
         outcome: 'success',
-        content: value,
+        content: shapedValue, // Use shaped value for content
         toolCallId: callId,
         toolName: name,
-        result: value,
+        result: value, // Keep original result
         inputDigest,
         outputDigest,
         outputValidation: outputValidation
@@ -622,6 +726,7 @@ export function createTool<
                 : undefined,
             }
           : undefined,
+        dryRun: isDryRun,
       } as ToolResult;
     } catch (error) {
       if (isAbortRejection(error)) {
@@ -671,9 +776,9 @@ export function createTool<
           repairHints,
         });
       } else {
-        emit('execute-error', { ...baseDetail, error });
+        emit('execute-error', { ...baseDetail, error, dryRun: isDryRun });
       }
-      emit('settled', { ...baseDetail, error });
+      emit('settled', { ...baseDetail, error, dryRun: isDryRun });
       const callId = toolCall.id;
       const errorCategory = classifyErrorCategory(error);
       const errorPolicyContext = buildPolicyContext(
@@ -697,7 +802,8 @@ export function createTool<
         error?: unknown;
         errorCategory?: ToolErrorCategory;
         inputDigest?: string;
-      } = { error, errorCategory };
+        dryRun?: boolean;
+      } = { error, errorCategory, dryRun: isDryRun };
       if (inputDigest !== undefined) {
         errorDetails.inputDigest = inputDigest;
       }
@@ -726,6 +832,7 @@ export function createTool<
         errorMessage: toolError.message,
         errorCategory: toolError.category,
         inputDigest,
+        dryRun: isDryRun,
       } as ToolResult;
     }
   };
@@ -770,6 +877,9 @@ export function createTool<
   }
   if (outputValidationMode !== undefined) {
     configuration.outputValidationMode = outputValidationMode;
+  }
+  if (outputShaping !== undefined) {
+    configuration.outputShaping = outputShaping;
   }
   if (concurrencyLimit !== undefined) {
     configuration.concurrency = concurrencyLimit;
@@ -873,13 +983,10 @@ export function createTool<
   bag['executeWith'] = (options: ToolExecuteWithOptions) => {
     const toolCall = createToolCall(name, options.params, options.callId);
     const resolvedTimeoutMs = options.timeoutMs ?? timeoutMs;
-    const executeOptions =
-      options.signal || resolvedTimeoutMs !== undefined
-        ? {
-            ...(options.signal ? { signal: options.signal } : {}),
-            ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
-          }
-        : undefined;
+    const executeOptions: ToolExecuteOptions = {
+      ...options,
+      ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
+    };
     return runWithConcurrency(() => executeInner(toolCall, executeOptions));
   };
 
@@ -1277,46 +1384,6 @@ function mergeRisk(
   const merged: ToolRisk = { ...derived, ...(risk ?? {}) };
   const hasValue = Object.values(merged).some((value) => value !== undefined);
   return hasValue ? merged : undefined;
-}
-
-function normalizeConcurrency(value: unknown): number | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return undefined;
-  }
-  const floored = Math.floor(value);
-  if (floored <= 0) {
-    return undefined;
-  }
-  return floored;
-}
-
-type ConcurrencyLimiter = {
-  run: <T>(task: () => Promise<T>) => Promise<T>;
-};
-
-function createConcurrencyLimiter(limit?: number): ConcurrencyLimiter | undefined {
-  const resolved = normalizeConcurrency(limit);
-  if (resolved === undefined) {
-    return undefined;
-  }
-  let active = 0;
-  const queue: Array<() => void> = [];
-  const run = async <T>(task: () => Promise<T>): Promise<T> => {
-    if (active >= resolved) {
-      await new Promise<void>((resolve) => queue.push(resolve));
-    }
-    active += 1;
-    try {
-      return await task();
-    } finally {
-      active -= 1;
-      const next = queue.shift();
-      if (next) {
-        next();
-      }
-    }
-  };
-  return { run };
 }
 
 type ToolExecute<TInput, TOutput, TContext> = (

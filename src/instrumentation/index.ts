@@ -101,22 +101,38 @@ export function instrument(
           attributes['gen_ai.tool.output_digest'] = outputDigest;
         }
 
-        if (status === 'success') {
-          attributes['gen_ai.tool.result'] = safeStringify(result);
-          span.setStatus({ code: SpanStatusCode.OK });
-        } else if (status === 'cancelled') {
-          span.setStatus({ code: SpanStatusCode.UNSET, message: 'Cancelled' });
-          attributes['gen_ai.tool.cancellation_reason'] = safeStringify(error);
-        } else {
-          // error or denied
-          span.setStatus({
-            code: SpanStatusCode.ERROR,
-            message: error instanceof Error ? error.message : String(error),
-          });
-          if (error instanceof Error) {
-            span.recordException(error);
-          } else {
-            attributes['gen_ai.tool.error'] = safeStringify(error);
+        switch (status as string) {
+          case 'success': {
+            attributes['gen_ai.tool.result'] = safeStringify(result);
+            span.setStatus({ code: SpanStatusCode.OK });
+            break;
+          }
+          case 'cancelled': {
+            span.setStatus({ code: SpanStatusCode.UNSET, message: 'Cancelled' });
+            attributes['gen_ai.tool.cancellation_reason'] = safeStringify(error);
+
+            break;
+          }
+          case 'paused': {
+            span.setStatus({
+              code: SpanStatusCode.OK,
+              message: 'Paused (Action Required)',
+            });
+            attributes['gen_ai.tool.status'] = 'paused';
+
+            break;
+          }
+          default: {
+            // error or denied
+            span.setStatus({
+              code: SpanStatusCode.ERROR,
+              message: error instanceof Error ? error.message : String(error),
+            });
+            if (error instanceof Error) {
+              span.recordException(error);
+            } else {
+              attributes['gen_ai.tool.error'] = safeStringify(error);
+            }
           }
         }
 

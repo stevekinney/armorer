@@ -26,7 +26,7 @@ export interface ToolCallInput {
  */
 export interface ToolResult {
   callId: string;
-  outcome: 'success' | 'error';
+  outcome: 'success' | 'error' | 'action_required';
   content: unknown;
   toolCallId: string;
   toolName: string;
@@ -40,6 +40,11 @@ export interface ToolResult {
   outputDigest?: string;
   outputValidation?: { success: boolean; error?: string };
   dryRun?: boolean;
+  action?: {
+    type: 'approval' | 'input';
+    message?: string;
+    schema?: unknown;
+  };
 }
 
 /**

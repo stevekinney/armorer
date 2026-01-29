@@ -26,6 +26,12 @@ export type {
 
 export type MinimalAbortSignal = EventMinimalAbortSignal | AbortSignal;
 
+export type OutputShapingOptions = {
+  maxBytes?: number;
+  truncate?: boolean | { suffix?: string; length?: number };
+  serialization?: 'json' | 'string';
+};
+
 /**
  * Unified tool configuration type.
  *
@@ -45,6 +51,7 @@ export interface ToolConfig extends ToolDefinition<Record<string, unknown>, unkn
   policyContext?: ToolPolicyContextProvider;
   digests?: ToolDigestOptions;
   outputValidationMode?: OutputValidationMode;
+  outputShaping?: OutputShapingOptions;
   concurrency?: number;
   diagnostics?: ToolDiagnostics;
 }
@@ -109,6 +116,11 @@ export type ToolMetadata = JsonObject & {
 export type ToolPolicyDecision = {
   allow: boolean;
   reason?: string;
+  status?: 'allow' | 'deny' | 'needs_approval' | 'needs_input';
+  action?: {
+    message?: string;
+    schema?: unknown;
+  };
 };
 
 export type ToolPolicyContext = {
@@ -190,7 +202,7 @@ export type DefaultToolEvents = {
     error: unknown;
   } & ToolEventDetailContext;
   'tool.finished': {
-    status: 'success' | 'error' | 'denied' | 'cancelled';
+    status: 'success' | 'error' | 'denied' | 'cancelled' | 'paused';
     durationMs: number;
     startedAt: number;
     finishedAt: number;

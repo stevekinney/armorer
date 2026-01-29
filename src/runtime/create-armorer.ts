@@ -21,7 +21,7 @@ import type {
   ToolQuery,
   ToolSearchOptions,
 } from '../core/registry';
-import { registerToolIndexes, unregisterToolIndexes } from '../core/registry';
+import { registerToolIndexes } from '../core/registry';
 import type { Embedder, EmbeddingVector } from '../core/registry/embeddings';
 import {
   registerRegistryEmbedder,
@@ -32,6 +32,7 @@ import { isZodObjectSchema, isZodSchema } from '../core/schema-utilities';
 import { assertKebabCaseTag, uniqTags } from '../core/tag-utilities';
 import type { AnyToolDefinition } from '../core/tool-definition';
 import { defineTool } from '../core/tool-definition';
+import { createConcurrencyLimiter, normalizeConcurrency } from './concurrency';
 import {
   createTool as createToolFactory,
   createToolCall,
@@ -200,7 +201,7 @@ export interface ArmorerEvents {
     // Original event properties
     toolCall: ToolCallWithArguments;
     configuration: ToolConfig;
-    status: 'success' | 'error' | 'denied' | 'cancelled';
+    status: 'success' | 'error' | 'denied' | 'cancelled' | 'paused';
     durationMs: number;
     startedAt: number;
     finishedAt: number;
@@ -231,6 +232,12 @@ type ArmorerEventType = Extract<keyof ArmorerEvents, string>;
 export type ArmorerEventDispatcher = (
   event: EmissionEvent<ArmorerEvents[ArmorerEventType]>,
 ) => boolean;
+
+export interface ArmorerExecuteOptions extends ToolExecuteOptions {
+  concurrency?: number;
+  mode?: 'parallel' | 'sequential';
+  errorMode?: 'failFast' | 'collect';
+}
 
 export interface Armorer {
   register: (...entries: (ToolConfig | ArmorerTool)[]) => Armorer;
@@ -312,7 +319,12 @@ export function createArmorer(
   serialized: SerializedArmorer = [],
   options: ArmorerOptions = {},
 ): Armorer {
-  const registry = new Map<string, ArmorerTool>();
+  const toolsById = new Map<string, ArmorerTool>();
+  const toolsByName = new Map<string, ArmorerTool[]>();
+  // Backward compat: registry acts as 'name' based lookup for simple cases
+  // but we need to change how we access it.
+  // const registry = new Map<string, ArmorerTool>();
+
   const storedConfigurations = new Map<string, ToolConfig>();
   const hub = createEventTarget<ArmorerEvents>();
   const {
@@ -464,26 +476,40 @@ export function createArmorer(
       configuration.concurrency = options.concurrency;
     }
     register(configuration);
-    const tool = registry.get(configuration.identity.name);
+    const tool = getTool(configuration.id);
     if (!tool) {
       throw new Error(`Failed to register tool: ${configuration.identity.name}`);
     }
     return tool as unknown as ArmorerTool<z.ZodType<TInput>, E, TOutput, M>;
   }
 
-  async function execute(call: ToolCallInput): Promise<ToolResult>;
-  async function execute(calls: ToolCallInput[]): Promise<ToolResult[]>;
+  async function execute(
+    call: ToolCallInput,
+    options?: ArmorerExecuteOptions,
+  ): Promise<ToolResult>;
+  async function execute(
+    calls: ToolCallInput[],
+    options?: ArmorerExecuteOptions,
+  ): Promise<ToolResult[]>;
   async function execute(
     input: ToolCallInput | ToolCallInput[],
-    options?: ToolExecuteOptions,
+    options?: ArmorerExecuteOptions,
   ): Promise<ToolResult | ToolResult[]> {
     const calls = Array.isArray(input) ? input : [input];
     const isMultiple = Array.isArray(input);
+    const mode = options?.mode ?? 'parallel';
+    const errorMode = options?.errorMode ?? 'collect';
+    const globalConcurrency = options?.concurrency;
 
-    // Execute all calls in parallel
-    const promises = calls.map(async (call) => {
+    // Resolve limiter
+    const limit = mode === 'sequential' ? 1 : globalConcurrency;
+    const limiter = createConcurrencyLimiter(limit);
+    const runTask = <T>(task: () => Promise<T>) => (limiter ? limiter.run(task) : task());
+
+    // Map calls to tasks
+    const tasks = calls.map((call) => async () => {
       const toolCall = normalizeToolCall(call);
-      const tool = registry.get(toolCall.name);
+      const tool = getTool(toolCall.name); // toolCall.name might be ID
       if (!tool) {
         const toolError = createArmorerToolError(
           'not_found',
@@ -503,6 +529,10 @@ export function createArmorer(
           errorCategory: toolError.category,
         };
         emit('not-found', toolCall);
+        if (errorMode === 'failFast') {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error
+          throw toolError;
+        }
         return notFound;
       }
 
@@ -529,68 +559,77 @@ export function createArmorer(
         };
         emit('budget-exceeded', { tool, call: toolCall, reason: budgetReason });
         emit('error', { tool, result: denied });
+        if (errorMode === 'failFast') {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error
+          throw toolError;
+        }
         return denied;
       }
 
       budgetCalls += 1;
 
-      // Set up event listeners to bubble up tool events when executing multiple tools
+      // Bubble up events
       const cleanup: (() => void)[] = [];
-      if (isMultiple) {
-        const toolEventTypes: (keyof DefaultToolEvents)[] = [
-          'tool.started',
-          'tool.finished',
-          'execute-start',
-          'validate-success',
-          'validate-error',
-          'output-validate-success',
-          'output-validate-error',
-          'execute-success',
-          'execute-error',
-          'settled',
-          'policy-denied',
-          'progress',
-          'output-chunk',
-          'log',
-          'cancelled',
-          'status-update',
-        ];
-        for (const eventType of toolEventTypes) {
-          const unsubscribe = tool.addEventListener(eventType, (toolEvent) => {
-            // Bubble up the event with tool and call context
-            const bubbledDetail = {
-              ...toolEvent.detail,
-              tool,
-              call: toolCall,
-            };
-            // Use emit helper which handles the type conversion
-            emit(
-              eventType as keyof ArmorerEvents,
-              bubbledDetail as ArmorerEvents[keyof ArmorerEvents],
-            );
-          });
-          cleanup.push(unsubscribe);
-        }
+      // Always bubble up events for consistency
+      const toolEventTypes: (keyof DefaultToolEvents)[] = [
+        'tool.started',
+        'tool.finished',
+        'execute-start',
+        'validate-success',
+        'validate-error',
+        'output-validate-success',
+        'output-validate-error',
+        'execute-success',
+        'execute-error',
+        'settled',
+        'policy-denied',
+        'progress',
+        'output-chunk',
+        'log',
+        'cancelled',
+        'status-update',
+      ];
+      for (const eventType of toolEventTypes) {
+        const unsubscribe = tool.addEventListener(eventType, (toolEvent) => {
+          // Bubble up the event with tool and call context
+          const bubbledDetail = {
+            ...toolEvent.detail,
+            tool,
+            call: toolCall,
+          };
+          // Use emit helper which handles the type conversion
+          emit(
+            eventType as keyof ArmorerEvents,
+            bubbledDetail as ArmorerEvents[keyof ArmorerEvents],
+          );
+        });
+        cleanup.push(unsubscribe);
       }
 
       try {
-        const executeOptions =
-          options?.signal || options?.timeoutMs !== undefined
+        const executeOptions: ToolExecuteOptions =
+          options?.signal ||
+          options?.timeoutMs !== undefined ||
+          options?.dryRun !== undefined
             ? {
                 ...(options?.signal ? { signal: options.signal } : {}),
                 ...(options?.timeoutMs !== undefined
                   ? { timeoutMs: options.timeoutMs }
                   : {}),
+                ...(options?.dryRun !== undefined ? { dryRun: options.dryRun } : {}),
               }
-            : undefined;
-        // tool.execute accepts ToolCallWithArguments, but we have ToolCall
-        // The execute method will handle the conversion internally
+            : {};
+
         const result = await tool.execute(
           toolCall as ToolCallWithArguments,
           executeOptions,
         );
         if (result.error) {
           emit('error', { tool, result });
+          if (errorMode === 'failFast') {
+            // eslint-disable-next-line @typescript-eslint/only-throw-error
+            throw result.error;
+          }
         } else {
           emit('complete', { tool, result });
         }
@@ -598,6 +637,9 @@ export function createArmorer(
         return result;
       } catch (error) {
         cleanup.forEach((fn) => fn());
+        if (errorMode === 'failFast') {
+          throw error;
+        }
         const message = error instanceof Error ? error.message : String(error);
         const toolError = createArmorerToolError(
           'internal',
@@ -621,6 +663,7 @@ export function createArmorer(
       }
     });
 
+    const promises = tasks.map((task) => runTask(task));
     const results = await Promise.all(promises);
     return isMultiple ? results : results[0]!;
   }
@@ -634,23 +677,29 @@ export function createArmorer(
   }
 
   function tools(): ArmorerTool[] {
-    return Array.from(registry.values());
+    return Array.from(toolsById.values());
   }
 
-  function getTool(name: string): ArmorerTool | undefined {
-    return registry.get(name);
+  function getTool(nameOrId: string): ArmorerTool | undefined {
+    if (toolsById.has(nameOrId)) return toolsById.get(nameOrId);
+    const matches = toolsByName.get(nameOrId);
+    if (matches && matches.length > 0) {
+      // Return the last registered tool with this name (priority to latest)
+      return matches[matches.length - 1];
+    }
+    return undefined;
   }
 
   function getMissingTools(names: string[]): string[] {
-    return names.filter((name) => !registry.has(name));
+    return names.filter((name) => !getTool(name));
   }
 
   function hasAllTools(names: string[]): boolean {
-    return names.every((name) => registry.has(name));
+    return names.every((name) => getTool(name));
   }
 
   function inspect(detailLevel: InspectorDetailLevel = 'standard'): RegistryInspection {
-    const tools = Array.from(registry.values());
+    const tools = Array.from(toolsById.values());
     return inspectRegistry(tools, detailLevel);
   }
 
@@ -883,20 +932,29 @@ export function createArmorer(
   function registerConfiguration(configuration: ToolConfig): void {
     const normalized = normalizeConfiguration(configuration);
     const tool = buildTool(normalized);
-    const existing = registry.get(tool.name);
+    // const existing = registry.get(tool.name);
     emit('registering', tool);
-    storedConfigurations.set(normalized.identity.name, normalized);
-    if (existing) {
-      unregisterToolIndexes(api, existing, registry.size);
-    }
-    registry.set(tool.name, tool);
-    registerToolIndexes(api, tool, registry.size);
+    storedConfigurations.set(normalized.identity.name, normalized); // This might need update if we store by ID
+
+    // if (existing) {
+    //   unregisterToolIndexes(api, existing, registry.size);
+    // }
+    // registry.set(tool.name, tool);
+
+    toolsById.set(tool.id, tool);
+    const byName = toolsByName.get(tool.name) || [];
+    // Remove existing with same ID if any (update)
+    const filtered = byName.filter((t) => t.id !== tool.id);
+    filtered.push(tool);
+    toolsByName.set(tool.name, filtered);
+
+    registerToolIndexes(api, tool, toolsById.size);
     if (embedder) {
       warmToolEmbeddings(tool, embedder, (resolvedTool) => {
-        if (registry.get(resolvedTool.identity.name) !== resolvedTool) {
+        if (toolsById.get(resolvedTool.id) !== resolvedTool) {
           return;
         }
-        registerToolIndexes(api, resolvedTool, registry.size);
+        registerToolIndexes(api, resolvedTool, toolsById.size);
       });
     }
     emit('registered', tool);
@@ -991,17 +1049,6 @@ function toPolicyContextProvider(
     return () => input;
   }
   return undefined;
-}
-
-function normalizeConcurrency(value?: unknown): number | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return undefined;
-  }
-  const floored = Math.floor(value);
-  if (floored <= 0) {
-    return undefined;
-  }
-  return floored;
 }
 
 function mergePolicies(

@@ -39,3 +39,18 @@ export interface OpenAITool {
   /** The function definition. */
   function: OpenAIFunction;
 }
+
+export interface OpenAIToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface OpenAIToolMessage {
+  role: 'tool';
+  tool_call_id: string;
+  content: string | null;
+}

@@ -1,14 +1,21 @@
 import type { SerializedToolDefinition } from '../../core/serialization';
 import type { AnyToolDefinition } from '../../core/tool-definition';
+import type { ToolCallInput, ToolResult } from '../../runtime/types';
 import {
   type AdapterInput,
   isSingleInput,
   normalizeToSerializedDefinitions,
   type ToolRegistryLike,
 } from '../shared';
-import type { JSONSchema, OpenAITool } from './types';
+import type { JSONSchema, OpenAITool, OpenAIToolCall, OpenAIToolMessage } from './types';
 
-export type { JSONSchema, OpenAIFunction, OpenAITool } from './types';
+export type {
+  JSONSchema,
+  OpenAIFunction,
+  OpenAITool,
+  OpenAIToolCall,
+  OpenAIToolMessage,
+} from './types';
 
 /**
  * Converts Armorer tools to OpenAI Chat Completions API format.
@@ -45,6 +52,76 @@ export function toOpenAI(input: AdapterInput): OpenAITool | OpenAITool[] {
   const converted = definitions.map(convertToOpenAI);
 
   return isSingleInput(input) ? converted[0]! : converted;
+}
+
+/**
+ * Parses OpenAI tool calls into Armorer ToolCallInput objects.
+ *
+ * @example
+ * ```ts
+ * const completion = await openai.chat.completions.create({...});
+ * const toolCalls = parseToolCalls(completion.choices[0].message.tool_calls);
+ * const results = await armorer.execute(toolCalls);
+ * ```
+ */
+export function parseToolCalls(
+  toolCalls: OpenAIToolCall[] | undefined | null,
+): ToolCallInput[] {
+  if (!toolCalls || !Array.isArray(toolCalls)) {
+    return [];
+  }
+
+  return toolCalls.map((call) => {
+    let args: unknown = {};
+    try {
+      args = JSON.parse(call.function.arguments);
+    } catch {
+      // Keep empty object if parsing fails
+    }
+
+    return {
+      id: call.id,
+      name: call.function.name,
+      arguments: args,
+    };
+  });
+}
+
+/**
+ * Formats Armorer ToolResults into OpenAI tool messages.
+ *
+ * @example
+ * ```ts
+ * const results = await armorer.execute(toolCalls);
+ * const messages = formatToolResults(results);
+ * // Add messages to conversation history
+ * ```
+ */
+export function formatToolResults(
+  results: ToolResult | ToolResult[],
+): OpenAIToolMessage[] {
+  const list = Array.isArray(results) ? results : [results];
+  return list.map((result) => {
+    let content = '';
+    if (typeof result.content === 'string') {
+      content = result.content;
+    } else if (result.content === undefined || result.content === null) {
+      content = 'null';
+    } else {
+      try {
+        content = JSON.stringify(result.content);
+      } catch {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string
+        content = String(result.content);
+      }
+    }
+
+    return {
+      role: 'tool',
+      tool_call_id: result.toolCallId,
+      content,
+    };
+  });
 }
 
 function convertToOpenAI(tool: SerializedToolDefinition): OpenAITool {
