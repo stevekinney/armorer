@@ -98,7 +98,7 @@ armorer.addEventListener('execute-success', (event) => {
 Armorer provides native OpenTelemetry instrumentation via the `armorer/instrumentation` module.
 
 ```typescript
-import { createArmorer } from 'armorer/runtime';
+import { createArmorer } from 'armorer';
 import { instrument } from 'armorer/instrumentation';
 
 const armorer = createArmorer();
@@ -112,7 +112,7 @@ const unregister = instrument(armorer);
 Armorer supports middleware to wrap tool execution logic. This is useful for cross-cutting concerns like caching, rate limiting, and timeouts.
 
 ```typescript
-import { createArmorer } from 'armorer/runtime';
+import { createArmorer } from 'armorer';
 import { createCacheMiddleware, createRateLimitMiddleware } from 'armorer/middleware';
 
 const armorer = createArmorer([], {
@@ -359,7 +359,7 @@ For detailed examples including OpenAI and Pinecone integration, see the [Embedd
 You can use `isArmorer()` to check if an object is an Armorer registry:
 
 ```typescript
-import { isArmorer, createArmorer } from 'armorer/runtime';
+import { isArmorer, createArmorer } from 'armorer';
 
 const registry = createArmorer();
 if (isArmorer(registry)) {
@@ -376,7 +376,7 @@ This is useful when working with functions that accept multiple types and you ne
 You can transform tool configurations during registration using middleware. Middleware functions receive a tool configuration and return a (possibly modified) configuration. Middleware is applied in order before the tool is built.
 
 ```typescript
-import { createArmorer, createMiddleware } from 'armorer/runtime';
+import { createArmorer, createMiddleware } from 'armorer';
 
 // Create middleware to add metadata
 const addSourceMetadata = createMiddleware((config) => ({
@@ -558,7 +558,7 @@ const restored = createArmorer(serialized);
 Use `combineArmorers` to merge multiple registries into a single fresh registry:
 
 ```typescript
-import { combineArmorers, createArmorer, createTool } from 'armorer/runtime';
+import { combineArmorers, createArmorer, createTool } from 'armorer';
 
 const mathArmorer = createArmorer();
 mathArmorer.register(addTool, subtractTool);

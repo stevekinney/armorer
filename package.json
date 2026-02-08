@@ -46,6 +46,18 @@
       "require": "./dist/runtime/index.cjs",
       "default": "./dist/runtime/index.js"
     },
+    "./query": {
+      "types": "./dist/query/index.d.ts",
+      "import": "./dist/query/index.js",
+      "require": "./dist/query/index.cjs",
+      "default": "./dist/query/index.js"
+    },
+    "./inspect": {
+      "types": "./dist/inspect/index.d.ts",
+      "import": "./dist/inspect/index.js",
+      "require": "./dist/inspect/index.cjs",
+      "default": "./dist/inspect/index.js"
+    },
     "./adapters/openai": {
       "types": "./dist/adapters/openai/index.d.ts",
       "import": "./dist/adapters/openai/index.js",

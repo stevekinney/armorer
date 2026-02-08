@@ -1,0 +1,16 @@
+export {
+  type NormalizedTextQuery,
+  schemaHasKeys,
+  schemaMatches,
+  tagsMatchAll,
+  tagsMatchAny,
+  tagsMatchNone,
+  textMatches,
+  type TextMatchScore,
+  type TextQuery,
+  type TextQueryField,
+  type TextQueryMode,
+  type TextQueryWeights,
+  type TextSearchIndex,
+  type ToolPredicate,
+} from '../core/query-predicates';

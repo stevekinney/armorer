@@ -19,7 +19,7 @@ bun add @openai/agents
 Use `toOpenAIAgentTools` to convert Armorer tools to OpenAI Agents SDK tools. This helper is async because the SDK is loaded lazily:
 
 ```typescript
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { toOpenAIAgentTools } from 'armorer/openai-agents-sdk';
 import { Agent, run } from '@openai/agents';
 import { z } from 'zod';
@@ -91,7 +91,7 @@ const { tools } = await toOpenAIAgentTools(armorer, {
 Use `createOpenAIToolGate` to implement permission-based tool access control. This is useful for CLI applications or agent systems that need to restrict tool usage based on flags like `--apply` or `--dangerous`.
 
 ```typescript
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { createOpenAIToolGate } from 'armorer/openai-agents-sdk';
 import { z } from 'zod';
 

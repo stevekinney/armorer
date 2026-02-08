@@ -6,7 +6,7 @@ A lightweight, type-safe registry for validated AI tools. Build tools with Zod s
 
 - [Overview](#overview)
 - [Features](#features)
-- [Core vs Runtime](#core-vs-runtime)
+- [Package Structure](#package-structure)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Safety, Policy, and Metadata](#safety-policy-and-metadata)
@@ -37,29 +37,152 @@ Armorer turns tool calling into a structured, observable, and searchable workflo
 - Concurrency controls and execution tracing hooks
 - Pre-configured search tool for semantic tool discovery in agentic workflows
 
-## Core vs Runtime
+## Package Structure
 
-Armorer splits tool definitions from execution so you can import only what you need:
+Armorer is organized into focused submodules so you can import only what you need:
 
-- `armorer/core`: tool specs, registry/search, ToolError model, serialization, and minimal context types
-- `armorer/runtime`: execution, policies, createTool/createArmorer, composition utilities (pipe/parallel/retry)
-- `armorer/instrumentation`: OpenTelemetry auto-instrumentation
-- `armorer/middleware`: standard middleware (cache, rate-limit, timeout)
-- `armorer/test`: testing utilities (mock tools, test registry)
-- `armorer/adapters/*`: provider formatting (OpenAI/Anthropic/Gemini)
-- `armorer/mcp`, `armorer/claude-agent-sdk`, and `armorer/openai-agents-sdk`: optional integrations
+### Core Modules
+
+#### `armorer` (Main Entry Point)
+
+The primary API for creating and managing tools:
 
 ```typescript
-import { defineTool, createRegistry } from 'armorer/core';
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool, isTool } from 'armorer';
+```
+
+**Exports:** `createArmorer`, `createTool`, `createToolCall`, `combineArmorers`, `lazy`, `withContext`, `isTool`, `isArmorer`, `createMiddleware`, and all core types.
+
+#### `armorer/runtime`
+
+Extended runtime with composition and utility functions:
+
+```typescript
+import { pipe, compose, parallel, retry, when } from 'armorer/runtime';
+```
+
+**Exports:** Everything from main entry point **plus** `pipe`, `compose`, `bind`, `parallel`, `retry`, `when`, `tap`, `preprocess`, `postprocess`, `PipelineError`, `createSearchTool`, error utilities, and composition types.
+
+#### `armorer/query`
+
+Query predicates for searching and filtering tools:
+
+```typescript
+import { textMatches, tagsMatchAll, schemaMatches } from 'armorer/query';
+```
+
+**Exports:** `textMatches`, `tagsMatchAll`, `tagsMatchAny`, `tagsMatchNone`, `schemaMatches`, `schemaHasKeys`, and related types.
+
+#### `armorer/inspect`
+
+Tool and registry inspection utilities:
+
+```typescript
+import { inspectTool, inspectRegistry } from 'armorer/inspect';
+```
+
+**Exports:** `inspectTool`, `inspectRegistry`, `extractSchemaSummary`, `extractMetadataFlags`, and Zod schemas for inspection results.
+
+### Provider Adapters
+
+#### `armorer/adapters/openai` (or `armorer/openai`)
+
+OpenAI Chat Completions API format:
+
+```typescript
+import { toOpenAI, parseToolCalls, formatToolResults } from 'armorer/openai';
+```
+
+#### `armorer/adapters/anthropic` (or `armorer/anthropic`)
+
+Anthropic Messages API format:
+
+```typescript
+import { toAnthropic, parseToolCalls, formatToolResults } from 'armorer/anthropic';
+```
+
+#### `armorer/adapters/gemini` (or `armorer/gemini`)
+
+Google Gemini API format:
+
+```typescript
+import { toGemini } from 'armorer/gemini';
+```
+
+### Infrastructure
+
+#### `armorer/instrumentation`
+
+OpenTelemetry tracing:
+
+```typescript
 import { instrument } from 'armorer/instrumentation';
-import { createCacheMiddleware } from 'armorer/middleware';
+```
+
+#### `armorer/middleware`
+
+Standard middleware (caching, rate limiting, timeouts):
+
+```typescript
+import { createCacheMiddleware, createRateLimitMiddleware } from 'armorer/middleware';
+```
+
+#### `armorer/test`
+
+Testing utilities:
+
+```typescript
+import { mockTool, createTestRegistry } from 'armorer/test';
+```
+
+### Integrations
+
+#### `armorer/mcp` (or `armorer/integrations/mcp`)
+
+Model Context Protocol server integration:
+
+```typescript
+import { createMCP } from 'armorer/mcp';
+```
+
+#### `armorer/claude-agent-sdk` (or `armorer/integrations/claude-agent-sdk`)
+
+Claude Agent SDK integration with tool gating:
+
+```typescript
+import { toClaudeAgentSdkTools, createClaudeToolGate } from 'armorer/claude-agent-sdk';
+```
+
+#### `armorer/openai-agents-sdk` (or `armorer/integrations/openai-agents-sdk`)
+
+OpenAI Agents SDK integration with tool gating:
+
+```typescript
+import { toOpenAIAgentTools, createOpenAIToolGate } from 'armorer/openai-agents-sdk';
+```
+
+### Other Utilities
+
+#### `armorer/tools`
+
+Pre-built tools (search, etc.):
+
+```typescript
+import { createSearchTool } from 'armorer/tools';
+```
+
+#### `armorer/utilities`
+
+Composition utilities (re-exported from `armorer/runtime`):
+
+```typescript
+import { pipe, compose, bind, parallel } from 'armorer/utilities';
 ```
 
 ## Quick Start
 
 ```typescript
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { z } from 'zod';
 
 const addNumbers = createTool({
@@ -182,7 +305,7 @@ const messages = formatToolResults(results);
 Native instrumentation for distributed tracing.
 
 ```ts
-import { createArmorer } from 'armorer/runtime';
+import { createArmorer } from 'armorer';
 import { instrument } from 'armorer/instrumentation';
 
 const armorer = createArmorer();
@@ -194,7 +317,7 @@ instrument(armorer); // Auto-wires all tool calls to OTel Spans
 Batteries-included middleware for production needs.
 
 ```ts
-import { createArmorer } from 'armorer/runtime';
+import { createArmorer } from 'armorer';
 import { createCacheMiddleware, createRateLimitMiddleware } from 'armorer/middleware';
 
 const armorer = createArmorer([], {
@@ -228,7 +351,7 @@ Armorer supports registry-level policy hooks and per-tool policy for centralized
 You can also tag tools as mutating or read-only and enforce those tags at the registry. See the [Registry documentation](documentation/registry.md) for details on querying, searching, and middleware.
 
 ```ts
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { z } from 'zod';
 
 const armorer = createArmorer([], {
@@ -319,7 +442,7 @@ Tool schemas must be object schemas (`z.object(...)` or a plain object shape). T
 You can use `isTool(obj)` to check if an object is a tool:
 
 ```typescript
-import { isTool, createTool } from 'armorer/runtime';
+import { isTool, createTool } from 'armorer';
 
 const tool = createTool({ ... });
 if (isTool(tool)) {
@@ -495,7 +618,7 @@ longTask.addEventListener('progress', (event) => {
 Armorer includes a pre-configured search tool that lets agents discover available tools dynamically. This is useful when you have many tools and want the LLM to find the right one for a task.
 
 ```typescript
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 import { z } from 'zod';
 

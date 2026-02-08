@@ -474,7 +474,7 @@ Types:
 Usage:
 
 ```typescript
-import { createArmorer } from 'armorer/runtime';
+import { createArmorer } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 
 const armorer = createArmorer();

@@ -9,7 +9,7 @@ Armorer supports semantic search for tools using vector embeddings. When you pro
 The `embed` option accepts a function that takes an array of strings and returns an array of numeric vectors:
 
 ```typescript
-import { createArmorer } from 'armorer/runtime';
+import { createArmorer } from 'armorer';
 
 const armorer = createArmorer([], {
   embed: async (texts: string[]): Promise<number[][]> => {
@@ -24,7 +24,7 @@ const armorer = createArmorer([], {
 The most common approach is to use OpenAI's embedding API:
 
 ```typescript
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { searchTools } from 'armorer/registry';
 import OpenAI from 'openai';
 import { z } from 'zod';
@@ -103,7 +103,7 @@ bun add @pinecone-database/pinecone openai
 ### Creating a Pinecone-backed Armorer
 
 ```typescript
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { queryTools, searchTools } from 'armorer/registry';
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
@@ -293,7 +293,7 @@ armorer.register(toolWithEmbeddings);
 Here's a complete example of a production-ready tool registry with Pinecone:
 
 ```typescript
-import { createArmorer, createTool, type ArmorerTool } from 'armorer/runtime';
+import { createArmorer, createTool, type ArmorerTool } from 'armorer';
 import { searchTools } from 'armorer/registry';
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';

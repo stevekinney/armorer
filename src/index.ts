@@ -46,43 +46,6 @@ export type {
 } from './runtime/is-tool';
 export { isTool } from './runtime/is-tool';
 
-// Query predicates and ranking helpers
-export {
-  type NormalizedTextQuery,
-  schemaHasKeys,
-  schemaMatches,
-  tagsMatchAll,
-  tagsMatchAny,
-  tagsMatchNone,
-  textMatches,
-  type TextMatchScore,
-  type TextQuery,
-  type TextQueryField,
-  type TextQueryMode,
-  type TextQueryWeights,
-  type TextSearchIndex,
-  type ToolPredicate,
-} from './core/query-predicates';
-
-// Inspector exports
-export type {
-  InspectorDetailLevel,
-  MetadataFlags,
-  RegistryInspection,
-  SchemaSummary,
-  ToolInspection,
-} from './core/inspect';
-export {
-  extractMetadataFlags,
-  extractSchemaSummary,
-  inspectRegistry,
-  inspectTool,
-  MetadataFlagsSchema,
-  RegistryInspectionSchema,
-  SchemaSummarySchema,
-  ToolInspectionSchema,
-} from './core/inspect';
-
 // Types
 export type {
   ToolCall,

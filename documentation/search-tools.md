@@ -24,7 +24,7 @@ import { createSearchTool } from 'armorer/tools';
 ## Basic Usage
 
 ```typescript
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 import { z } from 'zod';
 
@@ -83,7 +83,7 @@ console.log(results);
 For better search results, configure your armorer with an embedding function:
 
 ```typescript
-import { createArmorer } from 'armorer/runtime';
+import { createArmorer } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 import OpenAI from 'openai';
 
@@ -259,7 +259,7 @@ const response = await openai.chat.completions.create({
 Here's a complete example of using the search tool in an agentic workflow:
 
 ```typescript
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 import { toOpenAI } from 'armorer/adapters/openai';
 import OpenAI from 'openai';

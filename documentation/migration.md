@@ -13,7 +13,7 @@ import { createArmorer, createTool } from 'armorer';
 After (recommended):
 
 ```ts
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 ```
 
 The root import (`armorer`) still works for now, but new code should use the subpaths.

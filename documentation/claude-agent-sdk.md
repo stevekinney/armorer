@@ -19,7 +19,7 @@ bun add @anthropic-ai/claude-agent-sdk
 Use `toClaudeAgentSdkTools` to convert Armorer tools to Claude Agent SDK tools. This helper is async because the SDK is loaded lazily:
 
 ```typescript
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { toClaudeAgentSdkTools } from 'armorer/claude-agent-sdk';
 import { z } from 'zod';
 
@@ -67,7 +67,7 @@ const sdkTools = await toClaudeAgentSdkTools(armorer, {
 Use `createClaudeAgentSdkServer` to create a complete MCP server from your tools (async):
 
 ```typescript
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { createClaudeAgentSdkServer } from 'armorer/claude-agent-sdk';
 import { z } from 'zod';
 
@@ -110,7 +110,7 @@ The server result includes:
 Use `createClaudeToolGate` to implement permission-based tool access control. This is useful for CLI applications or agent systems that need to restrict tool usage based on flags like `--apply` or `--dangerous`.
 
 ```typescript
-import { createArmorer, createTool } from 'armorer/runtime';
+import { createArmorer, createTool } from 'armorer';
 import { createClaudeToolGate } from 'armorer/claude-agent-sdk';
 import { z } from 'zod';
 
