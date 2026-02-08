@@ -2,6 +2,17 @@
 
 ## 0.7.0
 
+### Breaking Changes
+
+- **Armorer → Toolbox Rename**: Complete rename of all Armorer-related APIs to Toolbox for improved clarity:
+  - `createArmorer()` → `createToolbox()`
+  - `isArmorer()` → `isToolbox()`
+  - `combineArmorers()` → `combineToolboxes()`
+  - `Armorer` type → `Toolbox`
+  - `ArmorerTool` → `ToolboxTool`
+  - `ArmorerContext` → `ToolboxContext`
+  - All related types and interfaces updated accordingly
+
 ### Core Runtime Completeness
 
 - **Dry-Run in Composition**: `pipe`, `compose`, `parallel`, `retry`, `when`, `tap`, `bind`, `preprocess`, and `postprocess` now correctly propagate `dryRun` mode to underlying tools.
