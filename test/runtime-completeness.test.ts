@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer } from '../src/runtime/create-armorer';
-import { createTool, createToolCall } from '../src/runtime/create-tool';
-import { pipe } from '../src/runtime/compose';
 import { createNameMapper, toOpenAI } from '../src/adapters/openai/index';
-import { isTool, type ToolResult } from '../src/runtime/is-tool';
+import { pipe } from '../src/runtime/compose';
+import { createArmorer } from '../src/runtime/create-armorer';
+import { createTool } from '../src/runtime/create-tool';
+import { type ToolResult } from '../src/runtime/is-tool';
 
 describe('Core Runtime Completeness', () => {
   describe('Dry-Run in Composition', () => {
