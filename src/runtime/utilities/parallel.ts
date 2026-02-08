@@ -208,48 +208,62 @@ export function parallel(...tools: AnyTool[]): AnyTool {
     detail: unknown,
   ) => dispatch({ type, detail } as Parameters<typeof dispatch>[0]);
 
+  const runParallel = async (
+    input: unknown,
+    context: ToolContext<DefaultToolEvents>,
+    isDryRun: boolean,
+  ) => {
+    const executeOptions =
+      context.signal || context.timeoutMs !== undefined || isDryRun
+        ? {
+            ...(context.signal ? { signal: context.signal } : {}),
+            ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+            ...(isDryRun ? { dryRun: true } : {}),
+          }
+        : undefined;
+
+    const results = await Promise.all(
+      tools.map(async (tool, index) => {
+        emit(context.dispatch, 'step-start', {
+          stepIndex: index,
+          stepName: tool.name,
+          input,
+          dryRun: isDryRun,
+        });
+
+        try {
+          const result = await tool.execute(input, executeOptions);
+          emit(context.dispatch, 'step-complete', {
+            stepIndex: index,
+            stepName: tool.name,
+            output: result,
+            dryRun: isDryRun,
+          });
+          return result;
+        } catch (error) {
+          emit(context.dispatch, 'step-error', {
+            stepIndex: index,
+            stepName: tool.name,
+            error,
+            dryRun: isDryRun,
+          });
+          throw error;
+        }
+      }),
+    );
+
+    return results;
+  };
+
   return createTool({
     name: `parallel(${toolNames.join(', ')})`,
     description: `Parallel tools: ${toolNames.join(' | ')}`,
     schema: first.schema,
     async execute(input: unknown, context: ToolContext<DefaultToolEvents>) {
-      const executeOptions =
-        context.signal || context.timeoutMs !== undefined
-          ? {
-              ...(context.signal ? { signal: context.signal } : {}),
-              ...(context.timeoutMs !== undefined
-                ? { timeoutMs: context.timeoutMs }
-                : {}),
-            }
-          : undefined;
-      const results = await Promise.all(
-        tools.map(async (tool, index) => {
-          emit(context.dispatch, 'step-start', {
-            stepIndex: index,
-            stepName: tool.name,
-            input,
-          });
-
-          try {
-            const result = await tool.execute(input, executeOptions);
-            emit(context.dispatch, 'step-complete', {
-              stepIndex: index,
-              stepName: tool.name,
-              output: result,
-            });
-            return result;
-          } catch (error) {
-            emit(context.dispatch, 'step-error', {
-              stepIndex: index,
-              stepName: tool.name,
-              error,
-            });
-            throw error;
-          }
-        }),
-      );
-
-      return results;
+      return runParallel(input, context, false);
+    },
+    async dryRun(input: unknown, context: ToolContext<DefaultToolEvents>) {
+      return runParallel(input, context, true);
     },
   }) as AnyTool;
 }

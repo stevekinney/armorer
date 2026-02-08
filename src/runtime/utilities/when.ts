@@ -34,29 +34,39 @@ export function when<
     ? `Conditional tool: ${whenTrue.name} or ${whenFalse.name}`
     : `Conditional tool: ${whenTrue.name}`;
 
+  const runWhen = async (
+    params: unknown,
+    context: ToolContext<DefaultToolEvents>,
+    isDryRun: boolean,
+  ) => {
+    const input = params as InferToolInput<TTool>;
+    const executeOptions =
+      context.signal || context.timeoutMs !== undefined || isDryRun
+        ? {
+            ...(context.signal ? { signal: context.signal } : {}),
+            ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+            ...(isDryRun ? { dryRun: true } : {}),
+          }
+        : undefined;
+    const shouldRun = await predicate(input, context);
+    if (shouldRun) {
+      return whenTrue.execute(input, executeOptions);
+    }
+    if (whenFalse) {
+      return whenFalse.execute(input, executeOptions);
+    }
+    return input;
+  };
+
   return createTool({
     name,
     description,
     schema: whenTrue.schema as z.ZodTypeAny,
     async execute(params, context) {
-      const input = params as InferToolInput<TTool>;
-      const executeOptions =
-        context.signal || context.timeoutMs !== undefined
-          ? {
-              ...(context.signal ? { signal: context.signal } : {}),
-              ...(context.timeoutMs !== undefined
-                ? { timeoutMs: context.timeoutMs }
-                : {}),
-            }
-          : undefined;
-      const shouldRun = await predicate(input, context);
-      if (shouldRun) {
-        return whenTrue.execute(input, executeOptions);
-      }
-      if (whenFalse) {
-        return whenFalse.execute(input, executeOptions);
-      }
-      return input;
+      return runWhen(params, context, false);
+    },
+    async dryRun(params, context) {
+      return runWhen(params, context, true);
     },
   }) as ComposedTool<
     InferToolInput<TTool>,

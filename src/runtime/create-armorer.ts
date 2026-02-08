@@ -253,7 +253,7 @@ export interface Armorer {
   execute(call: ToolCallInput, options?: ToolExecuteOptions): Promise<ToolResult>;
   execute(calls: ToolCallInput[], options?: ToolExecuteOptions): Promise<ToolResult[]>;
   tools: () => ArmorerTool[];
-  getTool: (name: string) => ArmorerTool | undefined;
+  getTool: (nameOrId: string) => ArmorerTool | undefined;
   /**
    * Returns names of tools that are not registered.
    * Useful for fail-soft agent gating.
@@ -472,8 +472,14 @@ export function createArmorer(
     if (options.outputValidationMode) {
       configuration.outputValidationMode = options.outputValidationMode;
     }
+    if (options.outputShaping !== undefined) {
+      configuration.outputShaping = options.outputShaping;
+    }
     if (options.concurrency !== undefined) {
       configuration.concurrency = options.concurrency;
+    }
+    if (options.diagnostics) {
+      configuration.diagnostics = options.diagnostics;
     }
     register(configuration);
     const tool = getTool(configuration.id);
@@ -934,12 +940,7 @@ export function createArmorer(
     const tool = buildTool(normalized);
     // const existing = registry.get(tool.name);
     emit('registering', tool);
-    storedConfigurations.set(normalized.identity.name, normalized); // This might need update if we store by ID
-
-    // if (existing) {
-    //   unregisterToolIndexes(api, existing, registry.size);
-    // }
-    // registry.set(tool.name, tool);
+    storedConfigurations.set(normalized.id, normalized);
 
     toolsById.set(tool.id, tool);
     const byName = toolsByName.get(tool.name) || [];

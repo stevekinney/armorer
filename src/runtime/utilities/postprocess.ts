@@ -48,22 +48,32 @@ export function postprocess<TTool extends AnyTool, TNewOutput>(
   const description = `Postprocessed tool: ${tool.description}`;
   const tags = tool.tags && tool.tags.length ? tool.tags : undefined;
 
+  const runPostprocess = async (
+    params: unknown,
+    context: ToolContext<DefaultToolEvents>,
+    isDryRun: boolean,
+  ) => {
+    const executeOptions =
+      context.signal || context.timeoutMs !== undefined || isDryRun
+        ? {
+            ...(context.signal ? { signal: context.signal } : {}),
+            ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+            ...(isDryRun ? { dryRun: true } : {}),
+          }
+        : undefined;
+    const result = await tool.execute(params as InferToolInput<TTool>, executeOptions);
+    return mapper(result as InferToolOutput<TTool>, context);
+  };
+
   const toolOptions: Parameters<typeof createTool>[0] = {
     name,
     description,
     schema: tool.schema as z.ZodType<InferToolInput<TTool>>,
     async execute(params, context) {
-      const executeOptions =
-        context.signal || context.timeoutMs !== undefined
-          ? {
-              ...(context.signal ? { signal: context.signal } : {}),
-              ...(context.timeoutMs !== undefined
-                ? { timeoutMs: context.timeoutMs }
-                : {}),
-            }
-          : undefined;
-      const result = await tool.execute(params as InferToolInput<TTool>, executeOptions);
-      return mapper(result as InferToolOutput<TTool>, context);
+      return runPostprocess(params, context, false);
+    },
+    async dryRun(params, context) {
+      return runPostprocess(params, context, true);
     },
   };
   if (tags) {

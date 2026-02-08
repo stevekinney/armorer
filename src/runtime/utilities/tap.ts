@@ -22,23 +22,33 @@ export function tap<TTool extends AnyTool>(
   const description = `Tap tool: ${tool.description}`;
   const tags = tool.tags && tool.tags.length ? tool.tags : undefined;
 
+  const runTap = async (
+    params: unknown,
+    context: ToolContext<DefaultToolEvents>,
+    isDryRun: boolean,
+  ) => {
+    const executeOptions =
+      context.signal || context.timeoutMs !== undefined || isDryRun
+        ? {
+            ...(context.signal ? { signal: context.signal } : {}),
+            ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+            ...(isDryRun ? { dryRun: true } : {}),
+          }
+        : undefined;
+    const result = await tool.execute(params as InferToolInput<TTool>, executeOptions);
+    await effect(result as InferToolOutput<TTool>, context);
+    return result;
+  };
+
   const toolOptions: Parameters<typeof createTool>[0] = {
     name,
     description,
     schema: tool.schema as z.ZodType<InferToolInput<TTool>>,
     async execute(params, context) {
-      const executeOptions =
-        context.signal || context.timeoutMs !== undefined
-          ? {
-              ...(context.signal ? { signal: context.signal } : {}),
-              ...(context.timeoutMs !== undefined
-                ? { timeoutMs: context.timeoutMs }
-                : {}),
-            }
-          : undefined;
-      const result = await tool.execute(params as InferToolInput<TTool>, executeOptions);
-      await effect(result as InferToolOutput<TTool>, context);
-      return result;
+      return runTap(params, context, false);
+    },
+    async dryRun(params, context) {
+      return runTap(params, context, true);
     },
   };
   if (tags) {

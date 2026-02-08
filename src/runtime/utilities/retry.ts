@@ -51,74 +51,85 @@ export function retry<TTool extends AnyTool>(
   const description = `Retry tool: ${tool.description}`;
   const tags = tool.tags && tool.tags.length ? tool.tags : undefined;
 
+  const runWithRetry = async (
+    params: unknown,
+    context: ToolContext<DefaultToolEvents>,
+    isDryRun: boolean,
+  ) => {
+    const input = params as InferToolInput<TTool>;
+    const executeOptions =
+      context.signal || context.timeoutMs !== undefined || isDryRun
+        ? {
+            ...(context.signal ? { signal: context.signal } : {}),
+            ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+            ...(isDryRun ? { dryRun: true } : {}),
+          }
+        : undefined;
+
+    const runTool =
+      typeof (tool as { execute?: unknown }).execute === 'function'
+        ? (value: InferToolInput<TTool>) =>
+            (
+              tool as {
+                execute: (
+                  value: InferToolInput<TTool>,
+                  options?: typeof executeOptions,
+                ) => Promise<InferToolOutput<TTool>>;
+              }
+            ).execute(value, executeOptions)
+        : (value: InferToolInput<TTool>) => tool(value);
+    let attempt = 0;
+    let lastError: unknown;
+    let rethrowOriginal = false;
+
+    while (attempt < attempts) {
+      attempt += 1;
+      if (context.signal?.aborted) {
+        throw toError(context.signal.reason ?? new Error('Cancelled'));
+      }
+      try {
+        return await runTool(input);
+      } catch (error) {
+        if (context.signal?.aborted) {
+          throw toError(context.signal.reason ?? error);
+        }
+        lastError = error;
+        if (attempt >= attempts) break;
+
+        if (shouldRetry) {
+          const allowed = await shouldRetry({ attempt, error, context });
+          if (!allowed) {
+            rethrowOriginal = true;
+            break;
+          }
+        }
+
+        if (onRetry) {
+          await onRetry({ attempt, error, context });
+        }
+
+        const waitMs = resolveRetryDelay(attempt, delayMs, backoff, maxDelayMs);
+        if (waitMs > 0) {
+          await wait(waitMs, context.signal);
+        }
+      }
+    }
+
+    if (rethrowOriginal) {
+      throw toError(lastError);
+    }
+    throw toError(lastError ?? new Error('retry() failed without an error'));
+  };
+
   const toolOptions: Parameters<typeof createTool>[0] = {
     name,
     description,
     schema: tool.schema as z.ZodType<InferToolInput<TTool>>,
     async execute(params, context) {
-      const input = params as InferToolInput<TTool>;
-      const executeOptions =
-        context.signal || context.timeoutMs !== undefined
-          ? {
-              ...(context.signal ? { signal: context.signal } : {}),
-              ...(context.timeoutMs !== undefined
-                ? { timeoutMs: context.timeoutMs }
-                : {}),
-            }
-          : undefined;
-      const runTool =
-        typeof (tool as { execute?: unknown }).execute === 'function'
-          ? (value: InferToolInput<TTool>) =>
-              (
-                tool as {
-                  execute: (
-                    value: InferToolInput<TTool>,
-                    options?: typeof executeOptions,
-                  ) => Promise<InferToolOutput<TTool>>;
-                }
-              ).execute(value, executeOptions)
-          : (value: InferToolInput<TTool>) => tool(value);
-      let attempt = 0;
-      let lastError: unknown;
-      let rethrowOriginal = false;
-
-      while (attempt < attempts) {
-        attempt += 1;
-        if (context.signal?.aborted) {
-          throw toError(context.signal.reason ?? new Error('Cancelled'));
-        }
-        try {
-          return await runTool(input);
-        } catch (error) {
-          if (context.signal?.aborted) {
-            throw toError(context.signal.reason ?? error);
-          }
-          lastError = error;
-          if (attempt >= attempts) break;
-
-          if (shouldRetry) {
-            const allowed = await shouldRetry({ attempt, error, context });
-            if (!allowed) {
-              rethrowOriginal = true;
-              break;
-            }
-          }
-
-          if (onRetry) {
-            await onRetry({ attempt, error, context });
-          }
-
-          const waitMs = resolveRetryDelay(attempt, delayMs, backoff, maxDelayMs);
-          if (waitMs > 0) {
-            await wait(waitMs, context.signal);
-          }
-        }
-      }
-
-      if (rethrowOriginal) {
-        throw toError(lastError);
-      }
-      throw toError(lastError ?? new Error('retry() failed without an error'));
+      return runWithRetry(params, context, false);
+    },
+    async dryRun(params, context) {
+      return runWithRetry(params, context, true);
     },
   };
   if (tags) {

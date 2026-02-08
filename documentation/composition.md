@@ -225,6 +225,33 @@ pipeline.addEventListener('step-complete', (e) => {
 const extendedPipeline = pipe(pipeline, stringify);
 ```
 
+### Dry Run Behavior
+
+All composition utilities support `dryRun` execution. When you call a composed tool with `dryRun: true`, it propagates the dry-run flag to its underlying tools.
+
+- `pipe`/`compose`: Executes each step in dry-run mode. If a step returns a simulated result, that result is passed to the next step's dry-run handler.
+- `parallel`: Executes all branches in dry-run mode.
+- `retry`: Retries the dry-run execution on failure.
+- `when`: Evaluates the predicate and executes the selected branch in dry-run mode.
+- `tap`: Executes the tool in dry-run mode, then runs the effect. The effect receives the context with `dryRun: true` and can choose to skip side effects.
+- `bind`: Passes `dryRun: true` to the underlying tool.
+
+Note: For a composed tool to support dry-run, **all underlying tools must support dry-run**. If any tool in the chain does not have a `dryRun` handler, the execution will fail with "Tool does not support dryRun".
+
+```typescript
+const deleteFile = createTool({
+  // ...
+  async dryRun({ path }) {
+    return { effect: `Would delete ${path}` };
+  },
+});
+
+const pipeline = pipe(validatePath, deleteFile);
+
+// Runs validatePath (dryRun) -> deleteFile (dryRun)
+const result = await pipeline.execute({ path: 'log.txt' }, { dryRun: true });
+```
+
 ### Error Handling
 
 Errors are wrapped with step context for debugging:

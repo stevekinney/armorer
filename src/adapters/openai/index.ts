@@ -17,6 +17,36 @@ export type {
   OpenAIToolMessage,
 } from './types';
 
+export interface OpenAIAdapterOptions {
+  /**
+   * Strategy for naming tools in OpenAI format.
+   * - 'default': Use tool name (identity.name).
+   * - 'safe-id': Use sanitized tool ID (namespace__name__version).
+   */
+  naming?: 'default' | 'safe-id';
+}
+
+/**
+ * Maps a tool ID to an OpenAI-safe name (sanitized).
+ */
+export function mapToOpenAIName(toolId: string): string {
+  return toolId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+}
+
+/**
+ * Creates a mapping function to resolve OpenAI-safe names back to tool IDs.
+ */
+export function createNameMapper(
+  tools: (SerializedToolDefinition | AnyToolDefinition)[],
+): (name: string) => string {
+  const definitions = normalizeToSerializedDefinitions(tools);
+  const map = new Map<string, string>();
+  for (const tool of definitions) {
+    map.set(mapToOpenAIName(tool.id), tool.id);
+  }
+  return (name: string) => map.get(name) ?? name;
+}
+
 /**
  * Converts Armorer tools to OpenAI Chat Completions API format.
  *
@@ -41,15 +71,28 @@ export type {
  * });
  * ```
  */
-export function toOpenAI(tool: SerializedToolDefinition | AnyToolDefinition): OpenAITool;
+export function toOpenAI(
+  tool: SerializedToolDefinition | AnyToolDefinition,
+  options?: OpenAIAdapterOptions,
+): OpenAITool;
 export function toOpenAI(
   tools: (SerializedToolDefinition | AnyToolDefinition)[],
+  options?: OpenAIAdapterOptions,
 ): OpenAITool[];
-export function toOpenAI(registry: ToolRegistryLike): OpenAITool[];
-export function toOpenAI(input: AdapterInput): OpenAITool | OpenAITool[];
-export function toOpenAI(input: AdapterInput): OpenAITool | OpenAITool[] {
+export function toOpenAI(
+  registry: ToolRegistryLike,
+  options?: OpenAIAdapterOptions,
+): OpenAITool[];
+export function toOpenAI(
+  input: AdapterInput,
+  options?: OpenAIAdapterOptions,
+): OpenAITool | OpenAITool[];
+export function toOpenAI(
+  input: AdapterInput,
+  options?: OpenAIAdapterOptions,
+): OpenAITool | OpenAITool[] {
   const definitions = normalizeToSerializedDefinitions(input);
-  const converted = definitions.map(convertToOpenAI);
+  const converted = definitions.map((def) => convertToOpenAI(def, options));
 
   return isSingleInput(input) ? converted[0]! : converted;
 }
@@ -66,6 +109,7 @@ export function toOpenAI(input: AdapterInput): OpenAITool | OpenAITool[] {
  */
 export function parseToolCalls(
   toolCalls: OpenAIToolCall[] | undefined | null,
+  mapper?: (name: string) => string,
 ): ToolCallInput[] {
   if (!toolCalls || !Array.isArray(toolCalls)) {
     return [];
@@ -79,9 +123,12 @@ export function parseToolCalls(
       // Keep empty object if parsing fails
     }
 
+    const name = call.function.name;
+    const resolvedName = mapper ? mapper(name) : name;
+
     return {
       id: call.id,
-      name: call.function.name,
+      name: resolvedName,
       arguments: args,
     };
   });
@@ -124,12 +171,17 @@ export function formatToolResults(
   });
 }
 
-function convertToOpenAI(tool: SerializedToolDefinition): OpenAITool {
+function convertToOpenAI(
+  tool: SerializedToolDefinition,
+  options?: OpenAIAdapterOptions,
+): OpenAITool {
   const parameters = stripSchemaId(tool.schema as JSONSchema);
+  const name =
+    options?.naming === 'safe-id' ? mapToOpenAIName(tool.id) : tool.identity.name;
   return {
     type: 'function',
     function: {
-      name: tool.identity.name,
+      name,
       description: tool.display.description,
       parameters,
       strict: true,

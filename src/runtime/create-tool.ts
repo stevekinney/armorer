@@ -502,12 +502,11 @@ export function createTool<
       if (decision?.status === 'needs_approval' || decision?.status === 'needs_input') {
         const type = decision.status === 'needs_approval' ? 'approval' : 'input';
         const reason = decision.reason ?? `Tool execution requires ${type}`;
-        emit('policy-denied', { ...parsedDetail, params: parsed, reason }); // Or new event 'policy-action-required'
-        // For now using policy-denied-like flow but with different outcome
+        emit('policy-action-required', { ...parsedDetail, params: parsed, reason });
 
         await runPolicyAfter({
           ...policyContext,
-          outcome: 'denied', // Is it denied? It's paused.
+          outcome: 'action_required',
           reason,
         });
 

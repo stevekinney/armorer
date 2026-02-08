@@ -52,22 +52,32 @@ export function preprocess<TTool extends AnyTool, TNewInput extends object>(
   // The mapper is responsible for transforming to the tool's expected input
   const schema = z.object({}).passthrough() as z.ZodType<TNewInput>;
 
+  const runPreprocess = async (
+    params: unknown,
+    context: ToolContext<DefaultToolEvents>,
+    isDryRun: boolean,
+  ) => {
+    const transformed = await mapper(params as TNewInput, context);
+    const executeOptions =
+      context.signal || context.timeoutMs !== undefined || isDryRun
+        ? {
+            ...(context.signal ? { signal: context.signal } : {}),
+            ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+            ...(isDryRun ? { dryRun: true } : {}),
+          }
+        : undefined;
+    return tool.execute(transformed, executeOptions);
+  };
+
   const toolOptions: Parameters<typeof createTool>[0] = {
     name,
     description,
     schema,
     async execute(params, context) {
-      const transformed = await mapper(params as TNewInput, context);
-      const executeOptions =
-        context.signal || context.timeoutMs !== undefined
-          ? {
-              ...(context.signal ? { signal: context.signal } : {}),
-              ...(context.timeoutMs !== undefined
-                ? { timeoutMs: context.timeoutMs }
-                : {}),
-            }
-          : undefined;
-      return tool.execute(transformed, executeOptions);
+      return runPreprocess(params, context, false);
+    },
+    async dryRun(params, context) {
+      return runPreprocess(params, context, true);
     },
   };
   if (tags) {

@@ -12,6 +12,7 @@ export type {
   Armorer,
   ArmorerContext,
   ArmorerEvents,
+  ArmorerExecuteOptions,
   ArmorerOptions,
   ArmorerToolRuntimeContext,
   SerializedArmorer,

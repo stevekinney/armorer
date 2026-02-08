@@ -135,7 +135,7 @@ export type ToolPolicyContext = {
 };
 
 export type ToolPolicyAfterContext = ToolPolicyContext & {
-  outcome: 'success' | 'error' | 'denied';
+  outcome: 'success' | 'error' | 'denied' | 'action_required';
   result?: unknown;
   outputDigest?: string;
   outputValidation?: OutputValidationResult;
@@ -188,6 +188,7 @@ export type DefaultToolEvents = {
     dryRun?: boolean;
   } & ToolEventDetailContext;
   'policy-denied': { params: unknown; reason?: string } & ToolEventDetailContext;
+  'policy-action-required': { params: unknown; reason?: string } & ToolEventDetailContext;
   'tool.started': {
     params: unknown;
     startedAt: number;

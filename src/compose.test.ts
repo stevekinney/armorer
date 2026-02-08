@@ -189,11 +189,13 @@ describe('pipe()', () => {
         stepIndex: 0,
         stepName: 'parse-number',
         input: { str: '5' },
+        dryRun: false,
       });
       expect(events[1]).toEqual({
         stepIndex: 1,
         stepName: 'double',
         input: { value: 5 },
+        dryRun: false,
       });
     });
 
@@ -211,11 +213,13 @@ describe('pipe()', () => {
         stepIndex: 0,
         stepName: 'parse-number',
         output: { value: 5 },
+        dryRun: false,
       });
       expect(events[1]).toEqual({
         stepIndex: 1,
         stepName: 'double',
         output: { value: 10 },
+        dryRun: false,
       });
     });
 

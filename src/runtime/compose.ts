@@ -176,67 +176,77 @@ export function pipe(...tools: AnyTool[]): AnyTool {
     detail: unknown,
   ) => dispatch({ type, detail } as Parameters<typeof dispatch>[0]);
 
+  const runPipeline = async (
+    input: unknown,
+    context: ToolContext<DefaultToolEvents>,
+    isDryRun: boolean,
+  ) => {
+    let result: unknown = input;
+    const executeOptions =
+      context.signal || context.timeoutMs !== undefined || isDryRun
+        ? {
+            ...(context.signal ? { signal: context.signal } : {}),
+            ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+            ...(isDryRun ? { dryRun: true } : {}),
+          }
+        : undefined;
+
+    for (let i = 0; i < tools.length; i++) {
+      const tool = tools[i]!;
+      if (context.signal?.aborted) {
+        throw toError(context.signal.reason ?? new Error('Cancelled'));
+      }
+
+      // Emit step-start event
+      emit(context.dispatch, 'step-start', {
+        stepIndex: i,
+        stepName: tool.identity.name,
+        input: result,
+        dryRun: isDryRun,
+      });
+
+      try {
+        // Execute step - tool validates its own input via its schema
+        result = await tool.execute(result, executeOptions);
+
+        // Emit step-complete event
+        emit(context.dispatch, 'step-complete', {
+          stepIndex: i,
+          stepName: tool.identity.name,
+          output: result,
+          dryRun: isDryRun,
+        });
+      } catch (error) {
+        // Emit step-error event
+        emit(context.dispatch, 'step-error', {
+          stepIndex: i,
+          stepName: tool.identity.name,
+          error,
+          dryRun: isDryRun,
+        });
+
+        // Wrap error with step context
+        throw new PipelineError(`Pipeline failed at step ${i} (${tool.identity.name})`, {
+          stepIndex: i,
+          stepName: tool.identity.name,
+          originalError: error,
+        });
+      }
+    }
+
+    return result;
+  };
+
   return createTool({
     name: `pipe(${toolNames.join(', ')})`,
     description: `Composed pipeline: ${toolNames.join(' → ')}`,
     schema: first.schema as z.ZodTypeAny,
 
     async execute(input: unknown, context: ToolContext<DefaultToolEvents>) {
-      let result: unknown = input;
-      const executeOptions =
-        context.signal || context.timeoutMs !== undefined
-          ? {
-              ...(context.signal ? { signal: context.signal } : {}),
-              ...(context.timeoutMs !== undefined
-                ? { timeoutMs: context.timeoutMs }
-                : {}),
-            }
-          : undefined;
-
-      for (let i = 0; i < tools.length; i++) {
-        const tool = tools[i]!;
-        if (context.signal?.aborted) {
-          throw toError(context.signal.reason ?? new Error('Cancelled'));
-        }
-
-        // Emit step-start event
-        emit(context.dispatch, 'step-start', {
-          stepIndex: i,
-          stepName: tool.identity.name,
-          input: result,
-        });
-
-        try {
-          // Execute step - tool validates its own input via its schema
-          result = await tool.execute(result, executeOptions);
-
-          // Emit step-complete event
-          emit(context.dispatch, 'step-complete', {
-            stepIndex: i,
-            stepName: tool.identity.name,
-            output: result,
-          });
-        } catch (error) {
-          // Emit step-error event
-          emit(context.dispatch, 'step-error', {
-            stepIndex: i,
-            stepName: tool.identity.name,
-            error,
-          });
-
-          // Wrap error with step context
-          throw new PipelineError(
-            `Pipeline failed at step ${i} (${tool.identity.name})`,
-            {
-              stepIndex: i,
-              stepName: tool.identity.name,
-              originalError: error,
-            },
-          );
-        }
-      }
-
-      return result;
+      return runPipeline(input, context, false);
+    },
+    async dryRun(input: unknown, context: ToolContext<DefaultToolEvents>) {
+      return runPipeline(input, context, true);
     },
   }) as AnyTool;
 }
@@ -334,9 +344,32 @@ export function bind<TTool extends AnyTool, TBound extends BindParams<TTool>>(
     name,
     description,
     schema: schema as z.ZodType<BindInput<TTool, TBound>>,
-    async execute(params) {
+    async execute(params, context) {
       const merged = mergeBoundParams(params, bound);
-      return tool(merged as InferToolInput<TTool>);
+      const executeOptions =
+        context.signal || context.timeoutMs !== undefined
+          ? {
+              ...(context.signal ? { signal: context.signal } : {}),
+              ...(context.timeoutMs !== undefined
+                ? { timeoutMs: context.timeoutMs }
+                : {}),
+            }
+          : undefined;
+      return tool.execute(merged as InferToolInput<TTool>, executeOptions);
+    },
+    async dryRun(params, context) {
+      const merged = mergeBoundParams(params, bound);
+      const executeOptions =
+        context.signal || context.timeoutMs !== undefined
+          ? {
+              ...(context.signal ? { signal: context.signal } : {}),
+              ...(context.timeoutMs !== undefined
+                ? { timeoutMs: context.timeoutMs }
+                : {}),
+              dryRun: true,
+            }
+          : { dryRun: true };
+      return tool.execute(merged as InferToolInput<TTool>, executeOptions);
     },
   };
   if (tags) {
