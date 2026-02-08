@@ -14,6 +14,51 @@ type TapEffect<TOutput> = (
   context: ToolContext<DefaultToolEvents>,
 ) => void | Promise<void>;
 
+/**
+ * Wraps a tool to run a side effect after execution without modifying the output.
+ *
+ * Useful for logging, metrics, notifications, or other side effects that shouldn't
+ * change the tool's return value. The effect receives the output and can perform
+ * async operations.
+ *
+ * @param tool - The tool to wrap
+ * @param effect - Function to run after tool execution (receives output and context)
+ * @returns A new tool that runs the effect and returns the original output
+ *
+ * @example Logging tool output
+ * ```typescript
+ * import { createTool } from 'armorer';
+ * import { tap } from 'armorer/runtime';
+ * import { z } from 'zod';
+ *
+ * const fetchUser = createTool({
+ *   name: 'fetch-user',
+ *   schema: z.object({ id: z.string() }),
+ *   async execute({ id }) {
+ *     return { id, name: 'John' };
+ *   },
+ * });
+ *
+ * const loggedFetch = tap(fetchUser, (output) => {
+ *   console.log('Fetched user:', output);
+ * });
+ *
+ * const result = await loggedFetch({ id: '123' });
+ * // Logs: "Fetched user: { id: '123', name: 'John' }"
+ * // Returns: { id: '123', name: 'John' }
+ * ```
+ *
+ * @example Sending metrics
+ * ```typescript
+ * const monitoredTool = tap(expensiveTool, async (output, context) => {
+ *   await metrics.record({
+ *     tool: 'expensive-operation',
+ *     duration: context.duration,
+ *     success: true,
+ *   });
+ * });
+ * ```
+ */
 export function tap<TTool extends AnyTool>(
   tool: TTool,
   effect: TapEffect<InferToolOutput<TTool>>,

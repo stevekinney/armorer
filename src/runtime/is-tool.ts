@@ -259,6 +259,23 @@ export type ToolExecuteWithOptions = ToolExecuteOptions & {
   timeoutMs?: number;
 };
 
+/**
+ * Type guard to check if a value is an Armorer tool.
+ *
+ * @param obj - The value to check
+ * @returns True if the value is an ArmorerTool (has required properties: id, identity, name, description, schema, execute, configuration)
+ *
+ * @example
+ * ```typescript
+ * import { isTool, createTool } from 'armorer';
+ *
+ * const tool = createTool({ ... });
+ * if (isTool(tool)) {
+ *   // TypeScript knows tool is an ArmorerTool
+ *   await tool.execute({ ... });
+ * }
+ * ```
+ */
 export function isTool(obj: unknown): obj is ArmorerTool {
   return (
     typeof obj === 'function' &&

@@ -15,6 +15,46 @@ type WhenPredicate<TInput = unknown> = (
   context: ToolContext<DefaultToolEvents>,
 ) => boolean | Promise<boolean>;
 
+/**
+ * Creates conditional tool execution based on a predicate function.
+ *
+ * Evaluates a predicate and executes different tools based on the result.
+ * Useful for branching logic, validation gates, and dynamic routing.
+ *
+ * @param predicate - Function that determines which branch to execute
+ * @param whenTrue - Tool to execute if predicate returns true
+ * @param whenFalse - Optional tool to execute if predicate returns false (if omitted, returns input unchanged)
+ * @returns A conditional tool that executes the appropriate branch
+ *
+ * @example Basic conditional
+ * ```typescript
+ * import { createTool } from 'armorer';
+ * import { when } from 'armorer/runtime';
+ * import { z } from 'zod';
+ *
+ * const expensiveProcess = createTool({
+ *   name: 'expensive',
+ *   schema: z.object({ value: z.number() }),
+ *   async execute({ value }) {
+ *     return value * 2;
+ *   },
+ * });
+ *
+ * const cheapProcess = createTool({
+ *   name: 'cheap',
+ *   schema: z.object({ value: z.number() }),
+ *   async execute({ value }) {
+ *     return value + 1;
+ *   },
+ * });
+ *
+ * const smartTool = when(
+ *   ({ value }) => value > 100,
+ *   expensiveProcess,
+ *   cheapProcess,
+ * );
+ * ```
+ */
 export function when<
   TTool extends AnyTool,
   TElse extends ToolWithInput<InferToolInput<TTool>> | undefined = undefined,

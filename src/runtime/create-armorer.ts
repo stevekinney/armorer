@@ -315,6 +315,76 @@ export interface Armorer {
   getContext?: () => ArmorerContext;
 }
 
+/**
+ * Creates a tool registry (armorer) for managing and executing AI tools.
+ *
+ * An armorer provides a central registry for tools with validation, execution,
+ * event hooks, policies, and provider adapters. Tools can be registered, queried,
+ * executed individually or in batch, and exported to various AI provider formats.
+ *
+ * @param serialized - Optional array of serialized tool definitions to pre-register
+ * @param options - Configuration options for the armorer
+ * @param options.context - Shared context object passed to all tool executions
+ * @param options.middleware - Array of middleware functions to transform tools during registration
+ * @param options.policy - Global policy hooks for access control and validation
+ * @param options.policyContext - Provider function for dynamic policy context
+ * @param options.digests - Configuration for input/output hashing
+ * @param options.outputValidationMode - How to handle output schema validation ('report', 'enforce', 'skip')
+ * @param options.concurrency - Max concurrent tool executions (default: 10)
+ * @param options.telemetry - Enable telemetry events (tool.started, tool.finished)
+ * @param options.embed - Embedding function for semantic search capabilities
+ * @param options.budget - Execution budget limits (maxCalls, maxDurationMs)
+ * @param options.readOnly - If true, prevents new tool registration
+ * @param options.allowMutation - If true, allows tools to be re-registered (default: true)
+ * @param options.allowDangerous - If true, allows tools with 'dangerous' risk level (default: true)
+ *
+ * @returns An Armorer instance with methods for registering, querying, and executing tools
+ *
+ * @example
+ * ```typescript
+ * import { createArmorer, createTool } from 'armorer';
+ * import { z } from 'zod';
+ *
+ * // Create an armorer
+ * const armorer = createArmorer();
+ *
+ * // Register a tool
+ * const addTool = createTool({
+ *   name: 'add',
+ *   description: 'Add two numbers',
+ *   schema: z.object({ a: z.number(), b: z.number() }),
+ *   execute: async ({ a, b }) => a + b,
+ * });
+ * armorer.register(addTool);
+ *
+ * // Execute a tool
+ * const result = await armorer.execute({
+ *   id: 'call-1',
+ *   name: 'add',
+ *   arguments: { a: 5, b: 3 },
+ * });
+ * console.log(result.result); // 8
+ * ```
+ *
+ * @example With middleware and policies
+ * ```typescript
+ * const armorer = createArmorer([], {
+ *   middleware: [
+ *     (tool) => ({ ...tool, tags: [...tool.tags, 'monitored'] })
+ *   ],
+ *   policy: {
+ *     async before(ctx) {
+ *       if (!ctx.context.user) {
+ *         return { status: 'denied', reason: 'Authentication required' };
+ *       }
+ *       return { status: 'allowed' };
+ *     },
+ *   },
+ *   concurrency: 5,
+ *   telemetry: true,
+ * });
+ * ```
+ */
 export function createArmorer(
   serialized: SerializedArmorer = [],
   options: ArmorerOptions = {},

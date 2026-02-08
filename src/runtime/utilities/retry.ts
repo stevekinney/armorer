@@ -26,6 +26,64 @@ type RetryOptions = {
   onRetry?: (detail: RetryHookDetail) => void | Promise<void>;
 };
 
+/**
+ * Wraps a tool with automatic retry logic on failure.
+ *
+ * Retries the tool execution on error with configurable backoff strategies.
+ * Useful for handling transient failures in network calls, rate-limited APIs,
+ * or flaky external services.
+ *
+ * @param tool - The tool to wrap with retry logic
+ * @param options - Retry configuration
+ * @param options.attempts - Maximum number of attempts (default: 3)
+ * @param options.delayMs - Initial delay between retries in milliseconds (default: 0)
+ * @param options.backoff - Backoff strategy: 'fixed', 'linear', or 'exponential' (default: 'fixed')
+ * @param options.maxDelayMs - Maximum delay cap for backoff strategies
+ * @param options.shouldRetry - Custom function to determine if error should trigger retry
+ * @param options.onRetry - Callback invoked before each retry attempt
+ * @returns A new tool that retries on failure
+ *
+ * @example Basic retry with exponential backoff
+ * ```typescript
+ * import { createTool } from 'armorer';
+ * import { retry } from 'armorer/runtime';
+ * import { z } from 'zod';
+ *
+ * const fetchData = createTool({
+ *   name: 'fetch-data',
+ *   schema: z.object({ url: z.string() }),
+ *   async execute({ url }) {
+ *     const response = await fetch(url);
+ *     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+ *     return response.json();
+ *   },
+ * });
+ *
+ * const resilientFetch = retry(fetchData, {
+ *   attempts: 5,
+ *   delayMs: 100,
+ *   backoff: 'exponential',
+ *   maxDelayMs: 5000,
+ * });
+ * // Will retry up to 5 times with delays: 100ms, 200ms, 400ms, 800ms, 1600ms
+ * ```
+ *
+ * @example With conditional retry logic
+ * ```typescript
+ * const apiCall = retry(fetchTool, {
+ *   attempts: 3,
+ *   delayMs: 1000,
+ *   async shouldRetry({ error, attempt }) {
+ *     // Only retry on rate limit errors
+ *     if (error.message.includes('429')) {
+ *       console.log(`Rate limited, retrying (attempt ${attempt})...`);
+ *       return true;
+ *     }
+ *     return false;
+ *   },
+ * });
+ * ```
+ */
 export function retry<TTool extends AnyTool>(
   tool: TTool,
   options: RetryOptions = {},

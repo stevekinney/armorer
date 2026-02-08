@@ -125,10 +125,57 @@ export function tagsMatchNone(tags: readonly string[]): ToolPredicate {
   };
 }
 
+/**
+ * Creates a predicate that matches tools with compatible schemas.
+ *
+ * Checks if a tool's input schema is compatible with the provided schema.
+ * Uses structural matching to allow tools with additional optional properties.
+ *
+ * @param schema - The schema to match against
+ * @returns A predicate function for filtering tools
+ *
+ * @example
+ * ```typescript
+ * import { schemaMatches } from 'armorer/query';
+ * import { z } from 'zod';
+ *
+ * const predicate = schemaMatches(z.object({ userId: z.string() }));
+ * const compatible = armorer.tools().filter(predicate);
+ * ```
+ */
 export function schemaMatches(schema: ToolSchema): ToolPredicate {
   return (tool) => schemasLooselyMatch(tool.schema, schema);
 }
 
+/**
+ * Creates a predicate that matches tools based on text search across name, description, and tags.
+ *
+ * Performs fuzzy text matching with configurable scoring weights. Supports exact matching,
+ * prefix matching, and word boundary detection. Returns tools ranked by relevance score.
+ *
+ * @param query - Search query (string or object with query/mode/weights)
+ * @returns A predicate function that also attaches a relevance score to matching tools
+ *
+ * @example Basic text search
+ * ```typescript
+ * import { textMatches } from 'armorer/query';
+ *
+ * const predicate = textMatches('user profile');
+ * const matches = armorer.tools().filter(predicate);
+ * ```
+ *
+ * @example With custom weights
+ * ```typescript
+ * const predicate = textMatches({
+ *   query: 'database',
+ *   weights: {
+ *     name: 3,         // Name matches weighted 3x
+ *     description: 1,  // Description matches weighted 1x
+ *     tags: 2,         // Tag matches weighted 2x
+ *   },
+ * });
+ * ```
+ */
 export function textMatches(
   query: TextQuery,
   options?: { getIndex?: (tool: ToolDefinition) => TextSearchIndex },
@@ -350,6 +397,24 @@ export function scoreTextMatchValueFromIndex(
   return score;
 }
 
+/**
+ * Creates a predicate that matches tools whose schema contains specific property keys.
+ *
+ * Checks if a tool's input schema has all the specified keys as properties.
+ * Useful for finding tools that accept certain parameters.
+ *
+ * @param keys - Array of property keys to check for
+ * @returns A predicate function for filtering tools
+ *
+ * @example
+ * ```typescript
+ * import { schemaHasKeys } from 'armorer/query';
+ *
+ * const predicate = schemaHasKeys(['userId', 'action']);
+ * const tools = armorer.tools().filter(predicate);
+ * // Returns tools that have both 'userId' and 'action' in their schema
+ * ```
+ */
 export function schemaHasKeys(keys: readonly string[]): ToolPredicate {
   const normalized = keys
     .map((key) => key.toLowerCase())

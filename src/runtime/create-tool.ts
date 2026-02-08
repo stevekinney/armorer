@@ -105,6 +105,32 @@ export type WithContext<
   E extends ToolEventsMap = DefaultToolEvents,
 > = ToolContext<E> & T;
 
+/**
+ * Creates a lazy-loaded function that defers execution until first call.
+ *
+ * Useful for tool execute functions that require expensive imports or async initialization.
+ * The loader is called once on first invocation, then cached for subsequent calls.
+ *
+ * @param loader - Function that returns or resolves to the actual execute function
+ * @returns A proxy function that loads and caches the real function on first call
+ *
+ * @example
+ * ```typescript
+ * import { createTool, lazy } from 'armorer';
+ * import { z } from 'zod';
+ *
+ * const tool = createTool({
+ *   name: 'expensive-operation',
+ *   description: 'Tool with heavy dependencies',
+ *   schema: z.object({ data: z.string() }),
+ *   execute: lazy(async () => {
+ *     // Heavy import only loaded when tool is first executed
+ *     const { processData } = await import('./heavy-module');
+ *     return async ({ data }) => processData(data);
+ *   }),
+ * });
+ * ```
+ */
 export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
   loader: () => PromiseLike<TExecute> | TExecute,
 ): TExecute {
@@ -138,20 +164,81 @@ export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
 }
 
 /**
- * Creates a tool with explicit input/output types.
+ * Creates a validated, executable AI tool with schema, metadata, and lifecycle hooks.
  *
- * Usage:
- * ```ts
+ * Tools define their input schema using Zod, execute logic, and optional features like
+ * dry-run simulation, policies, event handlers, and output validation. Tools can be
+ * registered with an armorer or used standalone.
+ *
+ * @param options - Tool configuration object
+ * @param options.name - Unique tool name (alphanumeric, hyphens, underscores)
+ * @param options.description - Human-readable description of what the tool does
+ * @param options.schema - Zod schema defining the tool's input parameters
+ * @param options.execute - Async function that implements the tool's logic
+ * @param options.dryRun - Optional function for simulating execution without side effects
+ * @param options.tags - Array of string tags for categorization and search
+ * @param options.metadata - Custom metadata (risk level, category, version, etc.)
+ * @param options.policy - Policy hooks for access control and validation
+ * @param options.outputSchema - Optional Zod schema for output validation
+ * @param options.namespace - Optional namespace for organizing tools
+ * @param options.version - Semantic version string
+ * @param armorer - Optional armorer instance to auto-register this tool
+ *
+ * @returns An ArmorerTool that can be executed, registered, or exported to provider formats
+ *
+ * @example Basic tool
+ * ```typescript
+ * import { createTool } from 'armorer';
+ * import { z } from 'zod';
+ *
+ * const addNumbers = createTool({
+ *   name: 'add',
+ *   description: 'Add two numbers together',
+ *   schema: z.object({
+ *     a: z.number().describe('First number'),
+ *     b: z.number().describe('Second number'),
+ *   }),
+ *   async execute({ a, b }) {
+ *     return a + b;
+ *   },
+ * });
+ *
+ * const result = await addNumbers({ a: 5, b: 3 });
+ * console.log(result); // 8
+ * ```
+ *
+ * @example With explicit types
+ * ```typescript
  * interface MyInput { foo: string; bar: number; }
  * interface MyOutput { result: string; }
  *
  * const tool = createTool<MyInput, MyOutput>({
  *   name: 'myTool',
  *   schema: z.object({ foo: z.string(), bar: z.number() }),
- *   execute: async (params) => {
+ *   async execute(params) {
  *     // params is MyInput - properly typed!
  *     return { result: params.foo };
  *   }
+ * });
+ * ```
+ *
+ * @example With dry-run and metadata
+ * ```typescript
+ * const deleteFile = createTool({
+ *   name: 'delete-file',
+ *   description: 'Delete a file from disk',
+ *   schema: z.object({ path: z.string() }),
+ *   metadata: {
+ *     risk: 'high',
+ *     category: 'file-system',
+ *   },
+ *   async execute({ path }) {
+ *     await fs.promises.unlink(path);
+ *     return { deleted: path };
+ *   },
+ *   async dryRun({ path }) {
+ *     return { effect: `Would delete ${path}` };
+ *   },
  * });
  * ```
  */
@@ -1092,6 +1179,48 @@ type AnyToolWithContextOptions<Ctx extends Record<string, unknown>> =
     ToolMetadata | undefined
   >;
 
+/**
+ * Creates a tool with additional context automatically injected into the execute function.
+ *
+ * Allows you to pre-bind context values (like database connections, API clients, etc.)
+ * that will be merged into the tool context on every execution.
+ *
+ * @param context - Context object to inject into tool executions
+ * @param options - Optional tool configuration (can be provided later)
+ * @returns If options provided, returns the tool; otherwise returns a builder function
+ *
+ * @example
+ * ```typescript
+ * import { withContext } from 'armorer';
+ * import { z } from 'zod';
+ *
+ * // Pre-bind database connection
+ * const createDbTool = withContext({ db: myDatabase });
+ *
+ * const userTool = createDbTool({
+ *   name: 'get-user',
+ *   description: 'Get user by ID',
+ *   schema: z.object({ userId: z.string() }),
+ *   async execute({ userId }, context) {
+ *     // context.db is automatically available
+ *     return context.db.users.findById(userId);
+ *   },
+ * });
+ * ```
+ *
+ * @example With immediate tool creation
+ * ```typescript
+ * const tool = withContext({ apiKey: 'secret' }, {
+ *   name: 'api-call',
+ *   schema: z.object({ endpoint: z.string() }),
+ *   async execute({ endpoint }, context) {
+ *     return fetch(endpoint, {
+ *       headers: { 'Authorization': `Bearer ${context.apiKey}` }
+ *     });
+ *   },
+ * });
+ * ```
+ */
 export function withContext<Ctx extends Record<string, unknown>>(
   context: Ctx,
   options?: AnyToolWithContextOptions<Ctx>,
@@ -1122,6 +1251,38 @@ export function withContext<Ctx extends Record<string, unknown>>(
 
 const ABORT_REJECTION_SYMBOL = Symbol('armorer.abort');
 
+/**
+ * Creates a tool call object for executing a tool.
+ *
+ * Helper function to construct properly-typed tool call objects that can be
+ * passed to `armorer.execute()`. Automatically generates a unique ID if not provided.
+ *
+ * @param toolName - Name of the tool to call
+ * @param args - Arguments object matching the tool's schema
+ * @param id - Optional unique identifier for this call (auto-generated if omitted)
+ * @returns A ToolCall object with id, name, and arguments
+ *
+ * @example
+ * ```typescript
+ * import { createArmorer, createTool, createToolCall } from 'armorer';
+ * import { z } from 'zod';
+ *
+ * const armorer = createArmorer();
+ * armorer.register(
+ *   createTool({
+ *     name: 'add',
+ *     schema: z.object({ a: z.number(), b: z.number() }),
+ *     execute: async ({ a, b }) => a + b,
+ *   })
+ * );
+ *
+ * // Create a tool call
+ * const call = createToolCall('add', { a: 5, b: 3 });
+ * // { id: 'uuid...', name: 'add', arguments: { a: 5, b: 3 } }
+ *
+ * const result = await armorer.execute(call);
+ * ```
+ */
 export function createToolCall<Args>(
   toolName: string,
   args: Args,
