@@ -9,7 +9,7 @@
   - `isArmorer()` → `isToolbox()`
   - `combineArmorers()` → `combineToolboxes()`
   - `Armorer` type → `Toolbox`
-  - `ArmorerTool` → `ToolboxTool`
+  - `ArmorerTool` → `Tool`
   - `ArmorerContext` → `ToolboxContext`
   - All related types and interfaces updated accordingly
 
