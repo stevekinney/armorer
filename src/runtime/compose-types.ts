@@ -1,8 +1,8 @@
 import type { z } from 'zod';
 
 import type {
-  ArmorerTool,
   DefaultToolEvents,
+  ToolboxTool,
   ToolEventsMap,
   ToolMetadata,
   ToolParametersSchema,
@@ -10,7 +10,7 @@ import type {
 
 /** Extract input type from a tool's schema */
 export type InferToolInput<T> =
-  T extends ArmorerTool<infer S, infer _E, infer _R, infer _M>
+  T extends ToolboxTool<infer S, infer _E, infer _R, infer _M>
     ? z.infer<S> extends object
       ? z.infer<S>
       : Record<string, unknown>
@@ -18,10 +18,10 @@ export type InferToolInput<T> =
 
 /** Extract output type from a tool */
 export type InferToolOutput<T> =
-  T extends ArmorerTool<infer _S, infer _E, infer R, infer _M> ? R : never;
+  T extends ToolboxTool<infer _S, infer _E, infer R, infer _M> ? R : never;
 
 /** Any tool (for constraint purposes) */
-export type AnyTool = ArmorerTool<
+export type AnyTool = ToolboxTool<
   ToolParametersSchema,
   ToolEventsMap,
   unknown,
@@ -29,7 +29,7 @@ export type AnyTool = ArmorerTool<
 >;
 
 /** Tool that accepts a specific input type */
-export type ToolWithInput<I extends object> = ArmorerTool<
+export type ToolWithInput<I extends object> = ToolboxTool<
   ToolParametersSchema,
   ToolEventsMap,
   unknown,
@@ -64,7 +64,7 @@ export type ComposedToolEvents = DefaultToolEvents & {
 };
 
 /** Composed tool result type - uses DefaultToolEvents by default */
-export type ComposedTool<TInput extends object, TOutput> = ArmorerTool<
+export type ComposedTool<TInput extends object, TOutput> = ToolboxTool<
   z.ZodType<TInput>,
   DefaultToolEvents,
   TOutput,

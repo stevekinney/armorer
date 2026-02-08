@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-import { type Armorer, createArmorer } from '../runtime/create-armorer';
+import { createToolbox, type Toolbox } from '../runtime/create-armorer';
 import { createTool } from '../runtime/create-tool';
-import type { ArmorerTool, ToolCallWithArguments } from '../runtime/is-tool';
+import type { ToolboxTool, ToolCallWithArguments } from '../runtime/is-tool';
 import type { ToolResult } from '../runtime/types';
 
 export type MockToolOptions<TInput = any, TOutput = any> = {
@@ -15,11 +15,11 @@ export type MockToolOptions<TInput = any, TOutput = any> = {
  * Creates a mock tool for testing.
  *
  * @param options - Configuration options.
- * @returns A mock ArmorerTool.
+ * @returns A mock ToolboxTool.
  */
 export function createMockTool<TInput extends object = any, TOutput = any>(
   options: MockToolOptions<TInput, TOutput> = {},
-): ArmorerTool<z.ZodType<TInput>, any, TOutput> & {
+): ToolboxTool<z.ZodType<TInput>, any, TOutput> & {
   calls: TInput[];
   mockResolve: (value: TOutput) => void;
   mockReject: (error: Error) => void;
@@ -68,17 +68,17 @@ export function createMockTool<TInput extends object = any, TOutput = any>(
   return mockTool;
 }
 
-export type TestRegistry = Armorer & {
+export type TestRegistry = Toolbox & {
   history: { call: ToolCallWithArguments; result?: ToolResult; error?: unknown }[];
   clearHistory: () => void;
 };
 
 /**
- * Creates an Armorer instance configured for testing.
+ * Creates an Toolbox instance configured for testing.
  * Records execution history.
  */
 export function createTestRegistry(): TestRegistry {
-  const armorer = createArmorer();
+  const armorer = createToolbox();
   const history: TestRegistry['history'] = [];
 
   // Listen to finished events to record history.

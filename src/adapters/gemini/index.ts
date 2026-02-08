@@ -11,7 +11,7 @@ import type { GeminiFunctionDeclaration, GeminiSchema } from './types';
 export type { GeminiFunctionDeclaration, GeminiSchema, GeminiTool } from './types';
 
 /**
- * Converts Armorer tools to Google Gemini API format.
+ * Converts Toolbox tools to Google Gemini API format.
  *
  * Returns function declarations that should be wrapped in a tool object:
  * `{ functionDeclarations: toGemini(tools) }`

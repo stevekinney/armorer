@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer } from '../src/create-armorer';
+import { createToolbox } from '../src/create-armorer';
 import type { ToolConfig } from '../src/is-tool';
 import { searchTools } from '../src/registry';
 
 const makeRegistry = (embed?: (texts: string[]) => number[][]) =>
-  createArmorer(realWorldTools(), embed ? { embed } : undefined);
+  createToolbox(realWorldTools(), embed ? { embed } : undefined);
 
 describe('search real-world scenarios', () => {
   it('ranks refund workflows highest for refund searches', () => {

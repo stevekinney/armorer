@@ -5,9 +5,9 @@ import {
   type ToolQueryInput,
   type ToolSearchOptions,
 } from '../../core/registry';
-import type { Armorer } from '../create-armorer';
+import type { Toolbox } from '../create-armorer';
 import { createTool } from '../create-tool';
-import type { ArmorerTool } from '../is-tool';
+import type { ToolboxTool } from '../is-tool';
 
 /**
  * Options for configuring the search tool.
@@ -78,7 +78,7 @@ export interface SearchToolsInput {
 }
 
 /**
- * Creates a pre-configured tool that searches for other tools in an Armorer instance.
+ * Creates a pre-configured tool that searches for other tools in an Toolbox instance.
  *
  * This tool enables semantic search when embeddings are configured on the armorer,
  * or falls back to text-based fuzzy matching otherwise. It's useful for:
@@ -88,10 +88,10 @@ export interface SearchToolsInput {
  *
  * @example
  * ```typescript
- * import { createArmorer } from 'armorer';
+ * import { createToolbox } from 'armorer';
  * import { createSearchTool } from 'armorer/tools';
  *
- * const armorer = createArmorer();
+ * const armorer = createToolbox();
  *
  * // Create and register the search tool
  * const searchTool = createSearchTool(armorer);
@@ -103,13 +103,13 @@ export interface SearchToolsInput {
  *
  * @example With embeddings for semantic search
  * ```typescript
- * import { createArmorer } from 'armorer';
+ * import { createToolbox } from 'armorer';
  * import { createSearchTool } from 'armorer/tools';
  * import OpenAI from 'openai';
  *
  * const openai = new OpenAI();
  *
- * const armorer = createArmorer([], {
+ * const armorer = createToolbox([], {
  *   embed: async (texts) => {
  *     const response = await openai.embeddings.create({
  *       model: 'text-embedding-3-small',
@@ -125,14 +125,14 @@ export interface SearchToolsInput {
  * // Finds 'send-email' even though 'notify' isn't in the name/description
  * ```
  *
- * @param armorer - The Armorer instance to search within
+ * @param armorer - The Toolbox instance to search within
  * @param options - Configuration options
  * @returns A tool that can search for other tools
  */
 export function createSearchTool(
-  armorer: Armorer,
+  armorer: Toolbox,
   options: CreateSearchToolOptions = {},
-): ArmorerTool {
+): ToolboxTool {
   const {
     limit: defaultLimit = 10,
     explain = false,

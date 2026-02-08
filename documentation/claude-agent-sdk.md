@@ -2,7 +2,7 @@
 
 ## Overview
 
-Integrate Armorer tools with the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`). This integration converts Armorer tools into live, executable SDK tool objects, creates MCP servers, and implements tool gating for permission control.
+Integrate Toolbox tools with the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`). This integration converts Toolbox tools into live, executable SDK tool objects, creates MCP servers, and implements tool gating for permission control.
 
 > **Not the same as `toAnthropic()`**: The [provider adapter](./provider-adapters.md) `toAnthropic()` produces static JSON Schema definitions for the Anthropic Messages API. This integration is different — it produces runnable tool objects that include execution handlers, structured result formatting, tool classification (mutating/dangerous/read-only), and MCP server support. Use `toAnthropic()` when calling the Messages API directly; use this integration when building with the Claude Agent SDK.
 
@@ -16,14 +16,14 @@ bun add @anthropic-ai/claude-agent-sdk
 
 ## Converting Tools
 
-Use `toClaudeAgentSdkTools` to convert Armorer tools to Claude Agent SDK tools. This helper is async because the SDK is loaded lazily:
+Use `toClaudeAgentSdkTools` to convert Toolbox tools to Claude Agent SDK tools. This helper is async because the SDK is loaded lazily:
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { toClaudeAgentSdkTools } from 'armorer/claude-agent-sdk';
 import { z } from 'zod';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 createTool(
   {
     name: 'sum',
@@ -67,11 +67,11 @@ const sdkTools = await toClaudeAgentSdkTools(armorer, {
 Use `createClaudeAgentSdkServer` to create a complete MCP server from your tools (async):
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { createClaudeAgentSdkServer } from 'armorer/claude-agent-sdk';
 import { z } from 'zod';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 createTool(
   {
     name: 'write-file',
@@ -110,11 +110,11 @@ The server result includes:
 Use `createClaudeToolGate` to implement permission-based tool access control. This is useful for CLI applications or agent systems that need to restrict tool usage based on flags like `--apply` or `--dangerous`.
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { createClaudeToolGate } from 'armorer/claude-agent-sdk';
 import { z } from 'zod';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 
 createTool(
   {
@@ -179,7 +179,7 @@ console.log(deleteDecision); // { behavior: 'deny', message: 'Use --dangerous to
 ```typescript
 type ClaudeToolGateOptions = {
   // The registry, tool, or array of tools to gate
-  registry: Armorer | ArmorerTool | ArmorerTool[];
+  registry: Toolbox | ToolboxTool | ToolboxTool[];
 
   // Enable read-only mode (denies all mutating tools)
   readOnly?: boolean;
@@ -201,7 +201,7 @@ type ClaudeToolGateOptions = {
   allowUnknown?: boolean;
 
   // Custom tool configuration (for name overrides)
-  toolConfig?: (tool: ArmorerTool) => ClaudeAgentSdkToolConfig;
+  toolConfig?: (tool: ToolboxTool) => ClaudeAgentSdkToolConfig;
 
   // Custom deny messages
   messages?: {

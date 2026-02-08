@@ -16,15 +16,15 @@ import {
 import type { AnyToolDefinition, ToolLifecycle } from '../core/tool-definition';
 import { defineTool } from '../core/tool-definition';
 import { createConcurrencyLimiter, normalizeConcurrency } from './concurrency';
-import type { Armorer } from './create-armorer';
+import type { Toolbox } from './create-armorer';
 import { errorString, normalizeError } from './errors';
 import type {
-  ArmorerTool,
   DefaultToolEvents,
   MinimalAbortSignal,
   OutputShapingOptions,
   OutputValidationMode,
   OutputValidationResult,
+  ToolboxTool,
   ToolCallWithArguments,
   ToolConfig,
   ToolContext,
@@ -184,7 +184,7 @@ export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
  * @param options.version - Semantic version string
  * @param armorer - Optional armorer instance to auto-register this tool
  *
- * @returns An ArmorerTool that can be executed, registered, or exported to provider formats
+ * @returns An ToolboxTool that can be executed, registered, or exported to provider formats
  *
  * @example Basic tool
  * ```typescript
@@ -261,8 +261,8 @@ export function createTool<
     InferSchemaInput<TSchema>,
     TReturn
   > & { schema: TSchema },
-  armorer?: Armorer,
-): ArmorerTool<z.ZodType<InferSchemaInput<TSchema>>, E, TReturn, M>;
+  armorer?: Toolbox,
+): ToolboxTool<z.ZodType<InferSchemaInput<TSchema>>, E, TReturn, M>;
 
 export function createTool<
   TInput extends object = Record<string, unknown>,
@@ -275,8 +275,8 @@ export function createTool<
   TReturn = TOutput,
 >(
   options: CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
-  armorer?: Armorer,
-): ArmorerTool<z.ZodType<TInput>, E, TReturn, M>;
+  armorer?: Toolbox,
+): ToolboxTool<z.ZodType<TInput>, E, TReturn, M>;
 export function createTool<
   TInput extends object = Record<string, unknown>,
   TOutput = unknown,
@@ -312,8 +312,8 @@ export function createTool<
     telemetry,
     diagnostics,
   }: CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
-  armorer?: Armorer,
-): ArmorerTool<z.ZodType<TInput>, E, TReturn, M> {
+  armorer?: Toolbox,
+): ToolboxTool<z.ZodType<TInput>, E, TReturn, M> {
   const normalizedSchema = normalizeSchema(toolSchema);
 
   const hub = createEventTarget<E>();
@@ -1027,7 +1027,7 @@ export function createTool<
   };
 
   const tool = new Proxy(
-    callable as unknown as ArmorerTool<z.ZodType<TInput>, E, TReturn, M>,
+    callable as unknown as ToolboxTool<z.ZodType<TInput>, E, TReturn, M>,
     {
       get(target, prop, receiver) {
         if (Object.prototype.hasOwnProperty.call(bag, prop)) {
@@ -1076,11 +1076,11 @@ export function createTool<
     return runWithConcurrency(() => executeInner(toolCall, executeOptions));
   };
 
-  const finalTool = tool as unknown as ArmorerTool<z.ZodType<TInput>, E, TReturn, M>;
+  const finalTool = tool as unknown as ToolboxTool<z.ZodType<TInput>, E, TReturn, M>;
 
   // Register with armorer if provided
   if (armorer) {
-    armorer.register(finalTool as unknown as ArmorerTool);
+    armorer.register(finalTool as unknown as ToolboxTool);
   }
 
   return finalTool;
@@ -1224,7 +1224,7 @@ type AnyToolWithContextOptions<Ctx extends Record<string, unknown>> =
 export function withContext<Ctx extends Record<string, unknown>>(
   context: Ctx,
   options?: AnyToolWithContextOptions<Ctx>,
-): ArmorerTool | ((options: AnyToolWithContextOptions<Ctx>) => ArmorerTool) {
+): ToolboxTool | ((options: AnyToolWithContextOptions<Ctx>) => ToolboxTool) {
   const build = (opts: AnyToolWithContextOptions<Ctx>) => {
     const { execute, ...rest } = opts;
     const resolveExecute = createLazyExecuteResolver(execute);
@@ -1264,10 +1264,10 @@ const ABORT_REJECTION_SYMBOL = Symbol('armorer.abort');
  *
  * @example
  * ```typescript
- * import { createArmorer, createTool, createToolCall } from 'armorer';
+ * import { createToolbox, createTool, createToolCall } from 'armorer';
  * import { z } from 'zod';
  *
- * const armorer = createArmorer();
+ * const armorer = createToolbox();
  * armorer.register(
  *   createTool({
  *     name: 'add',

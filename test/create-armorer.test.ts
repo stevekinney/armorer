@@ -3,9 +3,9 @@ import { z } from 'zod';
 
 import { queryTools, reindexSearchIndex, searchTools } from '../src/registry';
 import {
-  createArmorer,
   createMiddleware,
   createTool,
+  createToolbox,
   createToolCall,
   lazy,
   type ToolConfig,
@@ -22,9 +22,9 @@ const makeConfiguration = (overrides?: Partial<ToolConfig>): ToolConfig => ({
   ...overrides,
 });
 
-describe('createArmorer', () => {
+describe('createToolbox', () => {
   it('hydrates from serialized configs and executes tools', async () => {
-    const armorer = createArmorer([makeConfiguration()]);
+    const armorer = createToolbox([makeConfiguration()]);
 
     const result = await armorer.execute({
       id: 'abc',
@@ -37,7 +37,7 @@ describe('createArmorer', () => {
   });
 
   it('generates a call id when missing', async () => {
-    const armorer = createArmorer([makeConfiguration()]);
+    const armorer = createToolbox([makeConfiguration()]);
 
     const result = await armorer.execute({
       name: 'sum',
@@ -57,7 +57,7 @@ describe('createArmorer', () => {
         async ({ a, b }: { a: number; b: number }) =>
           a + b + 1,
     );
-    const armorer = createArmorer([
+    const armorer = createToolbox([
       makeConfiguration({
         name: 'sum-lazy',
         execute: executePromise,
@@ -74,7 +74,7 @@ describe('createArmorer', () => {
 
   it('supports lazy helper in configs', async () => {
     let loads = 0;
-    const armorer = createArmorer([
+    const armorer = createToolbox([
       makeConfiguration({
         name: 'sum-lazy-helper',
         execute: lazy(async () => {
@@ -103,7 +103,7 @@ describe('createArmorer', () => {
   });
 
   it('returns an error when lazy execute rejects in configs', async () => {
-    const armorer = createArmorer([
+    const armorer = createToolbox([
       makeConfiguration({
         name: 'sum-lazy-fail',
         execute: Promise.resolve().then(() => {
@@ -138,7 +138,7 @@ describe('createArmorer', () => {
       createRepairHints: () => hints,
     };
 
-    const armorer = createArmorer([
+    const armorer = createToolbox([
       makeConfiguration({
         name: 'diagnostic-tool',
         description: 'diagnostics',
@@ -166,7 +166,7 @@ describe('createArmorer', () => {
   });
 
   it('serializes registered configs and rehydrates clean copies', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(makeConfiguration({ tags: ['math', 'utilities'] }));
 
     const serialized = armorer.toJSON();
@@ -179,7 +179,7 @@ describe('createArmorer', () => {
     const tool = armorer.getTool('sum');
     expect(tool?.tags).toEqual(['math', 'utilities']);
 
-    const rehydrated = createArmorer(serialized);
+    const rehydrated = createToolbox(serialized);
     const result = await rehydrated.execute({
       id: 'rehydrated',
       name: 'sum',
@@ -189,7 +189,7 @@ describe('createArmorer', () => {
   });
 
   it('returns built tools via getTool()', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(
       makeConfiguration({
         name: 'bump',
@@ -214,7 +214,7 @@ describe('createArmorer', () => {
       },
       tags: ['utility'],
     });
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(built);
     const result = await armorer.execute({
       id: 'echo-1',
@@ -225,7 +225,7 @@ describe('createArmorer', () => {
   });
 
   it('creates and registers tools via createTool()', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     const tool = armorer.createTool({
       name: 'from-armorer',
       description: 'created via armorer',
@@ -246,7 +246,7 @@ describe('createArmorer', () => {
   });
 
   it('createTool supports tags and metadata', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     const tool = armorer.createTool({
       name: 'tagged',
       description: 'tagged tool',
@@ -261,7 +261,7 @@ describe('createArmorer', () => {
   });
 
   it('enforces readOnly for mutating tools', async () => {
-    const armorer = createArmorer([], { readOnly: true });
+    const armorer = createToolbox([], { readOnly: true });
     armorer.register({
       name: 'mutating',
       description: 'mutates',
@@ -280,7 +280,7 @@ describe('createArmorer', () => {
   });
 
   it('enforces allowDangerous for dangerous tools', async () => {
-    const armorer = createArmorer([], { allowDangerous: false });
+    const armorer = createToolbox([], { allowDangerous: false });
     armorer.register({
       name: 'dangerous',
       description: 'dangerous tool',
@@ -299,7 +299,7 @@ describe('createArmorer', () => {
   });
 
   it('enforces session budgets for max calls', async () => {
-    const armorer = createArmorer([], { budget: { maxCalls: 1 } });
+    const armorer = createToolbox([], { budget: { maxCalls: 1 } });
     armorer.register({
       name: 'one',
       description: 'budgeted',
@@ -324,7 +324,7 @@ describe('createArmorer', () => {
   });
 
   it('enforces session budgets for max duration', async () => {
-    const armorer = createArmorer([], { budget: { maxDurationMs: 0 } });
+    const armorer = createToolbox([], { budget: { maxDurationMs: 0 } });
     armorer.register({
       name: 'time',
       description: 'budgeted',
@@ -343,7 +343,7 @@ describe('createArmorer', () => {
   });
 
   it('createTool accepts object schemas', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     const tool = armorer.createTool({
       name: 'object-schema',
       description: 'object schema',
@@ -355,7 +355,7 @@ describe('createArmorer', () => {
   });
 
   it('createTool rejects invalid execute types', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     expect(() =>
       armorer.createTool({
         name: 'bad-execute',
@@ -367,7 +367,7 @@ describe('createArmorer', () => {
   });
 
   it('createTool rejects invalid schema types', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     expect(() =>
       armorer.createTool({
         name: 'bad-schema',
@@ -379,7 +379,7 @@ describe('createArmorer', () => {
   });
 
   it('createTool rejects non-object Zod schemas', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     expect(() =>
       armorer.createTool({
         name: 'bad-zod-schema',
@@ -391,7 +391,7 @@ describe('createArmorer', () => {
   });
 
   it('createTool throws when toolFactory returns mismatched name', () => {
-    const armorer = createArmorer([], {
+    const armorer = createToolbox([], {
       toolFactory: (configuration) =>
         createTool({
           name: `other-${configuration.name}`,
@@ -412,7 +412,7 @@ describe('createArmorer', () => {
   });
 
   it('defaults schema when using armorer.createTool', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     const tool = armorer.createTool({
       name: 'from-armorer-default',
       description: 'default schema',
@@ -430,7 +430,7 @@ describe('createArmorer', () => {
   });
 
   it('returns an error when lazy execute resolves to non-function in configs', async () => {
-    const armorer = createArmorer([
+    const armorer = createToolbox([
       makeConfiguration({
         name: 'sum-lazy-bad',
         execute: Promise.resolve(123 as any),
@@ -448,14 +448,14 @@ describe('createArmorer', () => {
   });
 
   it('marks registry as completed', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     expect(armorer.completed).toBe(false);
     armorer.complete();
     expect(armorer.completed).toBe(true);
   });
 
   it('provides robust query support', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(
       makeConfiguration({
         name: 'increment',
@@ -513,7 +513,7 @@ describe('createArmorer', () => {
   });
 
   it('supports boolean query groups', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(
       makeConfiguration({
         name: 'alpha',
@@ -545,7 +545,7 @@ describe('createArmorer', () => {
   });
 
   it('returns all tools when no query criteria is provided', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(
       makeConfiguration({ name: 'foo' }),
       makeConfiguration({ name: 'bar' }),
@@ -556,7 +556,7 @@ describe('createArmorer', () => {
   });
 
   it('supports pagination and selection in queries', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(
       makeConfiguration({ name: 'alpha' }),
       makeConfiguration({ name: 'beta' }),
@@ -571,7 +571,7 @@ describe('createArmorer', () => {
   });
 
   it('throws when query input is not an object', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(
       makeConfiguration({ name: 'alpha' }),
       makeConfiguration({ name: 'beta' }),
@@ -583,7 +583,7 @@ describe('createArmorer', () => {
   });
 
   it('supports schema descriptors within query objects', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     const schema = z.object({ text: z.string(), flag: z.boolean().optional() });
     armorer.register(
       makeConfiguration({
@@ -601,7 +601,7 @@ describe('createArmorer', () => {
   });
 
   it('ignores predicate errors while filtering', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(
       makeConfiguration({ name: 'ok' }),
       makeConfiguration({ name: 'nope' }),
@@ -620,7 +620,7 @@ describe('createArmorer', () => {
   });
 
   it('handles invalid configs by throwing a helpful error', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     expect(() => {
       armorer.register({} as any);
     }).toThrow(/ToolConfig/);
@@ -662,7 +662,7 @@ describe('createArmorer', () => {
   });
 
   it('emits lifecycle events for register, call, complete, error, and not-found', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     const events: Record<string, number> = {
       registering: 0,
       registered: 0,
@@ -700,7 +700,7 @@ describe('createArmorer', () => {
 
   it('passes armorer context into registered tools', async () => {
     const contexts: any[] = [];
-    const armorer = createArmorer([], {
+    const armorer = createToolbox([], {
       context: { workspaceId: 'ws-123', role: 'admin' },
     });
     armorer.register({
@@ -724,7 +724,7 @@ describe('createArmorer', () => {
 
   it('clears listeners when provided signal aborts', async () => {
     const controller = new AbortController();
-    const armorer = createArmorer([], { signal: controller.signal as any });
+    const armorer = createToolbox([], { signal: controller.signal as any });
 
     let calls = 0;
     armorer.addEventListener('call', () => {
@@ -746,7 +746,7 @@ describe('createArmorer', () => {
       },
       removeEventListener() {},
     };
-    expect(() => createArmorer([], { signal: signal as any })).not.toThrow();
+    expect(() => createToolbox([], { signal: signal as any })).not.toThrow();
   });
 
   it('allows tools to dispatch status:update events via context.dispatchEvent', async () => {
@@ -757,7 +757,7 @@ describe('createArmorer', () => {
       percent?: number;
     }> = [];
 
-    const armorer = createArmorer([], {
+    const armorer = createToolbox([], {
       context: { tabId: 42 },
     });
 
@@ -808,7 +808,7 @@ describe('createArmorer', () => {
   });
 
   it('surfaces unexpected tool execution errors as ToolResult errors', async () => {
-    const armorer = createArmorer([], {
+    const armorer = createToolbox([], {
       toolFactory(configuration, { buildDefaultTool }) {
         const tool = buildDefaultTool(configuration);
         if (configuration.name !== 'fragile') {
@@ -841,7 +841,7 @@ describe('createArmorer', () => {
 
   describe('getMissingTools', () => {
     it('returns empty array when all tools are registered', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'toolA' }),
         makeConfiguration({ name: 'toolB' }),
@@ -853,7 +853,7 @@ describe('createArmorer', () => {
     });
 
     it('returns only the missing tool names when some are not registered', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'toolA' }),
         makeConfiguration({ name: 'toolC' }),
@@ -864,14 +864,14 @@ describe('createArmorer', () => {
     });
 
     it('returns all tool names when none are registered', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
 
       const missing = armorer.getMissingTools(['toolA', 'toolB']);
       expect(missing).toEqual(['toolA', 'toolB']);
     });
 
     it('returns empty array for empty input', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
 
       const missing = armorer.getMissingTools([]);
       expect(missing).toEqual([]);
@@ -880,7 +880,7 @@ describe('createArmorer', () => {
 
   describe('hasAllTools', () => {
     it('returns true when all tools are registered', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'toolA' }),
         makeConfiguration({ name: 'toolB' }),
@@ -891,7 +891,7 @@ describe('createArmorer', () => {
     });
 
     it('returns true when checking a subset of registered tools', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'toolA' }),
         makeConfiguration({ name: 'toolB' }),
@@ -902,7 +902,7 @@ describe('createArmorer', () => {
     });
 
     it('returns false when any tool is not registered', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'toolA' }),
         makeConfiguration({ name: 'toolB' }),
@@ -912,13 +912,13 @@ describe('createArmorer', () => {
     });
 
     it('returns false when no tools are registered', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
 
       expect(armorer.hasAllTools(['toolA'])).toBe(false);
     });
 
     it('returns true for empty input array', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
 
       expect(armorer.hasAllTools([])).toBe(true);
     });
@@ -926,7 +926,7 @@ describe('createArmorer', () => {
 
   describe('tag filters', () => {
     it('excludes tools with forbidden tags', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'safe-tool', tags: ['safe', 'utility'] }),
         makeConfiguration({ name: 'dangerous-tool', tags: ['destructive', 'utility'] }),
@@ -938,7 +938,7 @@ describe('createArmorer', () => {
     });
 
     it('performs case-insensitive tag exclusions', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'tool-a', tags: ['safe'] }),
         makeConfiguration({ name: 'tool-b', tags: ['destructive'] }),
@@ -949,7 +949,7 @@ describe('createArmorer', () => {
     });
 
     it('requires all tags when using tags.all', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'math-fast', tags: ['math', 'fast'] }),
         makeConfiguration({ name: 'math-only', tags: ['math'] }),
@@ -974,7 +974,7 @@ describe('createArmorer', () => {
           return [0, 0];
         });
 
-      const armorer = createArmorer([], { embed });
+      const armorer = createToolbox([], { embed });
       armorer.register(
         makeConfiguration({
           name: 'forecast-tool',
@@ -993,7 +993,7 @@ describe('createArmorer', () => {
     });
 
     it('ranks tools by preferred tags', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'no-match', tags: ['other'] }),
         makeConfiguration({ name: 'one-match', tags: ['math'] }),
@@ -1012,7 +1012,7 @@ describe('createArmorer', () => {
     });
 
     it('applies filters before ranking', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'best', tags: ['math', 'fast', 'destructive'] }),
         makeConfiguration({ name: 'good', tags: ['math', 'fast'] }),
@@ -1027,7 +1027,7 @@ describe('createArmorer', () => {
     });
 
     it('supports tag boosts', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'standard', tags: ['misc'] }),
         makeConfiguration({ name: 'boosted', tags: ['fast'] }),
@@ -1039,7 +1039,7 @@ describe('createArmorer', () => {
     });
 
     it('supports custom rankers and tie breakers', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'alpha', tags: ['misc'] }),
         makeConfiguration({ name: 'beta', tags: ['misc'] }),
@@ -1058,7 +1058,7 @@ describe('createArmorer', () => {
     });
 
     it('limits results and includes text reasons', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'double', description: 'double it', tags: ['math'] }),
         makeConfiguration({
@@ -1075,7 +1075,7 @@ describe('createArmorer', () => {
     });
 
     it('supports selection and pagination in search results', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'alpha', tags: ['misc'] }),
         makeConfiguration({ name: 'beta', tags: ['misc'] }),
@@ -1094,7 +1094,7 @@ describe('createArmorer', () => {
     });
 
     it('sorts by name when scores tie', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'beta', tags: ['misc'] }),
         makeConfiguration({ name: 'alpha', tags: ['misc'] }),
@@ -1105,7 +1105,7 @@ describe('createArmorer', () => {
     });
 
     it('treats non-finite limits as no limit', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'first', tags: ['misc'] }),
         makeConfiguration({ name: 'second', tags: ['misc'] }),
@@ -1116,7 +1116,7 @@ describe('createArmorer', () => {
     });
 
     it('handles empty text ranking input', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(makeConfiguration({ name: 'alpha', tags: ['misc'] }));
 
       const results = searchTools(armorer, { rank: { text: '' } });
@@ -1125,7 +1125,7 @@ describe('createArmorer', () => {
     });
 
     it('applies ranking weights', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({
           name: 'b-tagged',
@@ -1148,7 +1148,7 @@ describe('createArmorer', () => {
     });
 
     it('ranks by number of matched text tokens', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'one-token', tags: ['alpha'] }),
         makeConfiguration({ name: 'two-token', tags: ['alpha', 'beta'] }),
@@ -1159,7 +1159,7 @@ describe('createArmorer', () => {
     });
 
     it('respects text field weights', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({
           name: 'summarize',
@@ -1197,7 +1197,7 @@ describe('createArmorer', () => {
           return [0, 0];
         });
 
-      const armorer = createArmorer([], { embed });
+      const armorer = createToolbox([], { embed });
       armorer.register(
         makeConfiguration({
           name: 'forecast-tool',
@@ -1226,7 +1226,7 @@ describe('createArmorer', () => {
     });
 
     it('includes tag and schema key text reasons', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({
           name: 'audit-tool',
@@ -1257,7 +1257,7 @@ describe('createArmorer', () => {
     });
 
     it('reindexes cached search data on demand', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({
           name: 'audit-tool',
@@ -1290,7 +1290,7 @@ describe('createArmorer', () => {
     });
 
     it('throws when search input is not an object', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       expect(() => searchTools(armorer, 42 as unknown as any)).toThrow(
         'search expects a ToolSearchOptions object',
       );
@@ -1299,7 +1299,7 @@ describe('createArmorer', () => {
 
   describe('metadata filters', () => {
     it('filters by metadata predicate', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'tool-a', tags: ['test'] }),
         makeConfiguration({ name: 'tool-b', tags: ['test'] }),
@@ -1319,7 +1319,7 @@ describe('createArmorer', () => {
     });
 
     it('ignores metadata predicate errors', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({
           name: 'safe-meta',
@@ -1345,7 +1345,7 @@ describe('createArmorer', () => {
     });
 
     it('filters tools with metadata eq and has', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({
           name: 'premium-tool',
@@ -1383,7 +1383,7 @@ describe('createArmorer', () => {
     });
 
     it('supports contains, startsWith, and range metadata filters', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({
           name: 'alpha-tool',
@@ -1420,7 +1420,7 @@ describe('createArmorer', () => {
     });
 
     it('preserves metadata through serialization and rehydration', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({
           name: 'meta-tool',
@@ -1431,7 +1431,7 @@ describe('createArmorer', () => {
       const serialized = armorer.toJSON();
       expect(serialized[0]?.metadata).toEqual({ category: 'special', value: 42 });
 
-      const rehydrated = createArmorer(serialized);
+      const rehydrated = createToolbox(serialized);
       const results = queryTools(rehydrated, {
         metadata: { eq: { category: 'special' } },
       });
@@ -1441,7 +1441,7 @@ describe('createArmorer', () => {
 
   describe('combined query options', () => {
     it('supports tags, schema keys, and text together', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({
           name: 'increment',
@@ -1479,7 +1479,7 @@ describe('createArmorer', () => {
         description: `[Enhanced] ${config.description}`,
       });
 
-      const armorer = createArmorer([], { middleware: [middleware] });
+      const armorer = createToolbox([], { middleware: [middleware] });
       armorer.register(makeConfiguration({ name: 'test-tool' }));
 
       const tool = armorer.getTool('test-tool');
@@ -1492,7 +1492,7 @@ describe('createArmorer', () => {
         description: `[Async] ${config.description}`,
       });
 
-      const armorer = createArmorer([], { middleware: [asyncMiddleware as any] });
+      const armorer = createToolbox([], { middleware: [asyncMiddleware as any] });
       expect(() => armorer.register(makeConfiguration())).toThrow(
         'Async middleware is not supported. Provide synchronous middleware only.',
       );
@@ -1501,7 +1501,7 @@ describe('createArmorer', () => {
 
   describe('tool replacement', () => {
     it('replaces an existing tool when re-registering with same name', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
 
       armorer.register(
         makeConfiguration({ name: 'calc', execute: async ({ a, b }) => a + b }),
@@ -1520,7 +1520,7 @@ describe('createArmorer', () => {
 
   describe('configuration edges', () => {
     it('createTool applies optional configuration fields', () => {
-      const armorer = createArmorer([], { telemetry: true });
+      const armorer = createToolbox([], { telemetry: true });
       const tool = armorer.createTool({
         name: 'configured',
         description: 'configured tool',
@@ -1544,7 +1544,7 @@ describe('createArmorer', () => {
 
     it('passes signal and timeout through execute', async () => {
       const observed: { signal?: AbortSignal; timeoutMs?: number } = {};
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register({
         name: 'capture',
         description: 'captures context',
@@ -1567,7 +1567,7 @@ describe('createArmorer', () => {
     });
 
     it('uses metadata concurrency when provided', async () => {
-      const armorer = createArmorer([], { concurrency: 10 });
+      const armorer = createToolbox([], { concurrency: 10 });
       armorer.register({
         name: 'meta-concurrency',
         description: 'metadata concurrency',
@@ -1581,7 +1581,7 @@ describe('createArmorer', () => {
     });
 
     it('ignores non-positive concurrency values', () => {
-      const armorer = createArmorer([], { concurrency: 0 });
+      const armorer = createToolbox([], { concurrency: 0 });
       armorer.register({
         name: 'no-concurrency',
         description: 'invalid concurrency',
@@ -1594,7 +1594,7 @@ describe('createArmorer', () => {
     });
 
     it('honors boolean policy decisions', async () => {
-      const armorer = createArmorer([], {
+      const armorer = createToolbox([], {
         policy: {
           beforeExecute: () => false,
         },
@@ -1614,7 +1614,7 @@ describe('createArmorer', () => {
     });
 
     it('merges registry and tool policy contexts', async () => {
-      const armorer = createArmorer([], {
+      const armorer = createToolbox([], {
         policyContext: { fromRegistry: true },
       });
       armorer.register({
@@ -1639,7 +1639,7 @@ describe('createArmorer', () => {
     });
 
     it('denies mutating tools based on tags in read-only mode', async () => {
-      const armorer = createArmorer([], { readOnly: true });
+      const armorer = createToolbox([], { readOnly: true });
       armorer.register({
         name: 'tag-mutating',
         description: 'tag mutating',
@@ -1656,7 +1656,7 @@ describe('createArmorer', () => {
     });
 
     it('denies dangerous tools based on tags when allowDangerous is false', async () => {
-      const armorer = createArmorer([], { allowDangerous: false });
+      const armorer = createToolbox([], { allowDangerous: false });
       armorer.register({
         name: 'tag-dangerous',
         description: 'tag dangerous',
@@ -1681,7 +1681,7 @@ describe('createArmorer', () => {
         }
         return texts.map(() => [1, 0, 0]);
       };
-      const armorer = createArmorer([], { embed });
+      const armorer = createToolbox([], { embed });
       armorer.register(makeConfiguration({ name: 'retry-embed' }));
 
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1700,7 +1700,7 @@ describe('createArmorer', () => {
           resolveEmbeddings = resolve;
         });
 
-      const armorer = createArmorer([], { embed });
+      const armorer = createToolbox([], { embed });
       armorer.register(makeConfiguration({ name: 'swap' }));
       armorer.register(makeConfiguration({ name: 'swap', description: 'second' }));
 
@@ -1713,7 +1713,7 @@ describe('createArmorer', () => {
     it('throws when deserializing with async middleware', () => {
       const asyncMiddleware = async (config: ToolConfig) => config;
       expect(() =>
-        createArmorer([makeConfiguration()], { middleware: [asyncMiddleware as any] }),
+        createToolbox([makeConfiguration()], { middleware: [asyncMiddleware as any] }),
       ).toThrow(
         'Async middleware is not supported when deserializing. Provide synchronous middleware only.',
       );
@@ -1727,7 +1727,7 @@ describe('createArmorer', () => {
         metadata: { ...config.metadata, enhanced: true },
       }));
 
-      const armorer = createArmorer([], { middleware: [middleware] });
+      const armorer = createToolbox([], { middleware: [middleware] });
       armorer.register(makeConfiguration({ name: 'test' }));
 
       const tool = armorer.getTool('test');
@@ -1737,7 +1737,7 @@ describe('createArmorer', () => {
 
   describe('multi-tool execution', () => {
     it('executes multiple tools and returns results in order', async () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(
         makeConfiguration({ name: 'add', execute: async ({ a, b }) => a + b }),
         makeConfiguration({ name: 'subtract', execute: async ({ a, b }) => a - b }),

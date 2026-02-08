@@ -7,7 +7,7 @@ import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/s
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer } from '../src/create-armorer';
+import { createToolbox } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
 import { createMCP } from '../src/mcp';
 
@@ -75,7 +75,7 @@ class LoopbackTransport {
   }
 }
 
-const connect = async (armorer: ReturnType<typeof createArmorer>, options = {}) => {
+const connect = async (armorer: ReturnType<typeof createToolbox>, options = {}) => {
   const server = createMCP(armorer, options);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'armorer-test-client', version: '0.0.0' });
@@ -86,7 +86,7 @@ const connect = async (armorer: ReturnType<typeof createArmorer>, options = {}) 
 
 describe('createMCP', () => {
   it('registers armorer tools and exposes them via listTools', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'sum',
@@ -124,7 +124,7 @@ describe('createMCP', () => {
   });
 
   it('applies MCP metadata config when provided', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'meta-tool',
@@ -164,7 +164,7 @@ describe('createMCP', () => {
   });
 
   it('uses tool metadata as _meta when not overridden', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'meta-default',
@@ -191,7 +191,7 @@ describe('createMCP', () => {
   });
 
   it('adds readOnlyHint annotation for read-only tools', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'read-only-tool',
@@ -218,7 +218,7 @@ describe('createMCP', () => {
   });
 
   it('ignores non-object metadata for _meta', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'meta-invalid',
@@ -245,7 +245,7 @@ describe('createMCP', () => {
   });
 
   it('prefers toolConfig over metadata mcp settings', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'override-config',
@@ -303,7 +303,7 @@ describe('createMCP', () => {
   });
 
   it('accepts non-object input schemas via toolConfig without falling back', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'string-input',
@@ -334,7 +334,7 @@ describe('createMCP', () => {
   });
 
   it('executes tools and returns structured content when output is an object', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'status',
@@ -361,7 +361,7 @@ describe('createMCP', () => {
   });
 
   it('handles parallel tool calls', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     let calls = 0;
     createTool(
       {
@@ -394,7 +394,7 @@ describe('createMCP', () => {
   });
 
   it('refreshes tool definitions when a tool is re-registered', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
 
     armorer.register({
       name: 'swap',
@@ -433,7 +433,7 @@ describe('createMCP', () => {
   });
 
   it('supports stdio transports via a loopback pair', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'ping',
@@ -467,7 +467,7 @@ describe('createMCP', () => {
   });
 
   it('registers resources and prompts through registrars', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
 
     const { client, server } = await connect(armorer, {
       resources: (mcp) => {
@@ -505,7 +505,7 @@ describe('createMCP', () => {
   });
 
   it('marks failures as errors with a text payload', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'explode',
@@ -532,7 +532,7 @@ describe('createMCP', () => {
   });
 
   it('rejects the MCP call when the client aborts', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
 
     createTool(
       {
@@ -563,7 +563,7 @@ describe('createMCP', () => {
   });
 
   it('does not override explicit readOnlyHint annotations', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'readonly-override',
@@ -596,7 +596,7 @@ describe('createMCP', () => {
   });
 
   it('applies registrars provided as arrays', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
 
     const { client, server } = await connect(armorer, {
       resources: [
@@ -644,7 +644,7 @@ describe('createMCP', () => {
   });
 
   it('converts JSON schema variants and raw shapes for MCP tools', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
 
     const baseTool = (name: string) =>
       createTool(
@@ -757,7 +757,7 @@ describe('createMCP', () => {
   });
 
   it('uses formatResult when provided', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'custom-format',
@@ -786,7 +786,7 @@ describe('createMCP', () => {
   });
 
   it('returns empty content for undefined results', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'empty-result',
@@ -811,7 +811,7 @@ describe('createMCP', () => {
   });
 
   it('stringifies unserializable results', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'bigint-result',
@@ -849,7 +849,7 @@ describe('createMCP', () => {
     const armorer = {
       tools: () => [tool],
       addEventListener: () => {},
-    } as unknown as ReturnType<typeof createArmorer>;
+    } as unknown as ReturnType<typeof createToolbox>;
 
     const { client, server } = await connect(armorer);
 

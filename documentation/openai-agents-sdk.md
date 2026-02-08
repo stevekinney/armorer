@@ -2,7 +2,7 @@
 
 ## Overview
 
-Integrate Armorer tools with the OpenAI Agents SDK (`@openai/agents`). This integration converts Armorer tools into live, executable SDK tool objects with tool classification (mutating/dangerous/read-only) and permission-based gating.
+Integrate Toolbox tools with the OpenAI Agents SDK (`@openai/agents`). This integration converts Toolbox tools into live, executable SDK tool objects with tool classification (mutating/dangerous/read-only) and permission-based gating.
 
 > **Not the same as `toOpenAI()`**: The [provider adapter](./provider-adapters.md) `toOpenAI()` produces static JSON Schema definitions for the OpenAI Chat Completions API. This integration is different — it produces runnable tool objects that the OpenAI Agents SDK's `tool()` function expects, including execution handlers and tool classification. Use `toOpenAI()` when calling the Chat Completions API directly; use this integration when building with the OpenAI Agents SDK.
 
@@ -16,15 +16,15 @@ bun add @openai/agents
 
 ## Converting Tools
 
-Use `toOpenAIAgentTools` to convert Armorer tools to OpenAI Agents SDK tools. This helper is async because the SDK is loaded lazily:
+Use `toOpenAIAgentTools` to convert Toolbox tools to OpenAI Agents SDK tools. This helper is async because the SDK is loaded lazily:
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { toOpenAIAgentTools } from 'armorer/openai-agents-sdk';
 import { Agent, run } from '@openai/agents';
 import { z } from 'zod';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 createTool(
   {
     name: 'sum',
@@ -91,11 +91,11 @@ const { tools } = await toOpenAIAgentTools(armorer, {
 Use `createOpenAIToolGate` to implement permission-based tool access control. This is useful for CLI applications or agent systems that need to restrict tool usage based on flags like `--apply` or `--dangerous`.
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { createOpenAIToolGate } from 'armorer/openai-agents-sdk';
 import { z } from 'zod';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 
 createTool(
   {
@@ -160,7 +160,7 @@ console.log(deleteDecision); // { behavior: 'deny', message: 'Use --dangerous to
 ```typescript
 type OpenAIToolGateOptions = {
   // The registry, tool, or array of tools to gate
-  registry: Armorer | ArmorerTool | ArmorerTool[];
+  registry: Toolbox | ToolboxTool | ToolboxTool[];
 
   // Enable read-only mode (denies all mutating tools)
   readOnly?: boolean;
@@ -182,7 +182,7 @@ type OpenAIToolGateOptions = {
   allowUnknown?: boolean;
 
   // Custom tool configuration (for name overrides)
-  toolConfig?: (tool: ArmorerTool) => OpenAIAgentToolConfig;
+  toolConfig?: (tool: ToolboxTool) => OpenAIAgentToolConfig;
 
   // Custom deny messages
   messages?: {
@@ -219,7 +219,7 @@ console.log(editDecision); // { behavior: 'deny', message: '...' }
 
 ## Using MCP Servers
 
-Alternatively, you can expose Armorer tools as an MCP server and connect the OpenAI Agents SDK to it. See the [MCP documentation](./mcp.md#openai-agents-sdk-openaiagents) for examples.
+Alternatively, you can expose Toolbox tools as an MCP server and connect the OpenAI Agents SDK to it. See the [MCP documentation](./mcp.md#openai-agents-sdk-openaiagents) for examples.
 
 ## Type Exports
 

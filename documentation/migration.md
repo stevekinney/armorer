@@ -7,13 +7,13 @@ This guide summarizes the core/runtime split and the new subpath exports.
 Before:
 
 ```ts
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 ```
 
 After (recommended):
 
 ```ts
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 ```
 
 The root import (`armorer`) still works for now, but new code should use the subpaths.
@@ -82,7 +82,7 @@ The `defineTool` and `createTool` functions now require these modern properties.
 
 ## Zod 4 Requirement
 
-Armorer now requires `zod@^4.0.0`. It utilizes the native `z.toJSONSchema` function for deterministic serialization.
+Toolbox now requires `zod@^4.0.0`. It utilizes the native `z.toJSONSchema` function for deterministic serialization.
 
 ## JSON Schema / Serialization
 

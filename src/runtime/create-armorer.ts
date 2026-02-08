@@ -39,10 +39,10 @@ import {
   type CreateToolOptions,
 } from './create-tool';
 import type {
-  ArmorerTool,
   DefaultToolEvents,
   MinimalAbortSignal,
   OutputValidationMode,
+  ToolboxTool,
   ToolCallWithArguments,
   ToolConfig,
   ToolDigestOptions,
@@ -58,18 +58,17 @@ import type {
 import { isTool } from './is-tool';
 import type { ToolCall, ToolCallInput, ToolResult } from './types';
 
-export type ArmorerContext = Record<string, unknown>;
+export type ToolboxContext = Record<string, unknown>;
 
-export type ArmorerToolRuntimeContext<Ctx extends ArmorerContext = ArmorerContext> =
-  Ctx & {
-    dispatchEvent: ArmorerEventDispatcher;
-    configuration: ToolConfig;
-    toolCall: ToolCall;
-    signal?: MinimalAbortSignal;
-    timeoutMs?: number;
-  };
+export type ToolboxRuntimeContext<Ctx extends ToolboxContext = ToolboxContext> = Ctx & {
+  dispatchEvent: ToolboxEventDispatcher;
+  configuration: ToolConfig;
+  toolCall: ToolCall;
+  signal?: MinimalAbortSignal;
+  timeoutMs?: number;
+};
 
-export type SerializedArmorer = readonly ToolConfig[];
+export type SerializedToolbox = readonly ToolConfig[];
 
 export type ToolMiddleware = (configuration: ToolConfig) => ToolConfig;
 
@@ -83,7 +82,7 @@ export type ToolMiddleware = (configuration: ToolConfig) => ToolConfig;
  *   metadata: { ...config.metadata, source: 'middleware' },
  * }));
  *
- * const armorer = createArmorer([], {
+ * const armorer = createToolbox([], {
  *   middleware: [addMetadata],
  * });
  * ```
@@ -94,9 +93,9 @@ export function createMiddleware(
   return fn;
 }
 
-export interface ArmorerOptions {
+export interface ToolboxOptions {
   signal?: MinimalAbortSignal;
-  context?: ArmorerContext;
+  context?: ToolboxContext;
   embed?: Embedder;
   policy?: ToolPolicyHooks;
   policyContext?: ToolPolicyContextProvider | Record<string, unknown>;
@@ -110,8 +109,8 @@ export interface ArmorerOptions {
   allowDangerous?: boolean;
   toolFactory?: (
     configuration: ToolConfig,
-    context: ArmorerToolFactoryContext,
-  ) => ArmorerTool;
+    context: ToolboxFactoryContext,
+  ) => ToolboxTool;
   /**
    * Called when a tool configuration doesn't have an execute method.
    * This typically happens when deserializing an armorer.
@@ -125,10 +124,10 @@ export interface ArmorerOptions {
   middleware?: ToolMiddleware[];
 }
 
-export interface ArmorerToolFactoryContext {
-  dispatchEvent: ArmorerEventDispatcher;
-  baseContext: ArmorerContext;
-  buildDefaultTool: (configuration: ToolConfig) => ArmorerTool;
+export interface ToolboxFactoryContext {
+  dispatchEvent: ToolboxEventDispatcher;
+  baseContext: ToolboxContext;
+  buildDefaultTool: (configuration: ToolConfig) => ToolboxTool;
 }
 
 /**
@@ -143,49 +142,49 @@ export interface ToolStatusUpdate {
   message?: string;
 }
 
-export interface ArmorerEvents {
-  registering: ArmorerTool;
-  registered: ArmorerTool;
-  call: { tool: ArmorerTool; call: ToolCall };
-  complete: { tool: ArmorerTool; result: ToolResult };
-  error: { tool?: ArmorerTool; result: ToolResult };
+export interface ToolboxEvents {
+  registering: ToolboxTool;
+  registered: ToolboxTool;
+  call: { tool: ToolboxTool; call: ToolCall };
+  complete: { tool: ToolboxTool; result: ToolResult };
+  error: { tool?: ToolboxTool; result: ToolResult };
   'not-found': ToolCall;
   query: { criteria?: ToolQuery; results: QuerySelectionResult };
   search: { options: ToolSearchOptions; results: ToolMatch<unknown>[] };
   /** Tool status/progress updates for UI display */
   'status:update': ToolStatusUpdate;
   // Bubbled tool events (when executing multiple tools in parallel)
-  'execute-start': { tool: ArmorerTool; call: ToolCall; params: unknown };
+  'execute-start': { tool: ToolboxTool; call: ToolCall; params: unknown };
   'validate-success': {
-    tool: ArmorerTool;
+    tool: ToolboxTool;
     call: ToolCall;
     params: unknown;
     parsed: unknown;
   };
   'validate-error': {
-    tool: ArmorerTool;
+    tool: ToolboxTool;
     call: ToolCall;
     params: unknown;
     error: unknown;
   };
-  'execute-success': { tool: ArmorerTool; call: ToolCall; result: unknown };
-  'execute-error': { tool: ArmorerTool; call: ToolCall; error: unknown };
-  'output-validate-success': { tool: ArmorerTool; call: ToolCall; result: unknown };
+  'execute-success': { tool: ToolboxTool; call: ToolCall; result: unknown };
+  'execute-error': { tool: ToolboxTool; call: ToolCall; error: unknown };
+  'output-validate-success': { tool: ToolboxTool; call: ToolCall; result: unknown };
   'output-validate-error': {
-    tool: ArmorerTool;
+    tool: ToolboxTool;
     call: ToolCall;
     result: unknown;
     error: unknown;
   };
-  settled: { tool: ArmorerTool; call: ToolCall; result?: unknown; error?: unknown };
+  settled: { tool: ToolboxTool; call: ToolCall; result?: unknown; error?: unknown };
   'policy-denied': {
-    tool: ArmorerTool;
+    tool: ToolboxTool;
     call: ToolCall;
     params: unknown;
     reason?: string;
   };
   'tool.started': {
-    tool: ArmorerTool;
+    tool: ToolboxTool;
     call: ToolCall;
     // Original event properties
     toolCall: ToolCallWithArguments;
@@ -196,7 +195,7 @@ export interface ArmorerEvents {
     dryRun?: boolean;
   };
   'tool.finished': {
-    tool: ArmorerTool;
+    tool: ToolboxTool;
     call: ToolCall;
     // Original event properties
     toolCall: ToolCallWithArguments;
@@ -214,33 +213,33 @@ export interface ArmorerEvents {
     outputValidation?: { success: boolean; error?: unknown };
     dryRun?: boolean;
   };
-  'budget-exceeded': { tool: ArmorerTool; call: ToolCall; reason: string };
-  progress: { tool: ArmorerTool; call: ToolCall; percent?: number; message?: string };
-  'output-chunk': { tool: ArmorerTool; call: ToolCall; chunk: unknown };
+  'budget-exceeded': { tool: ToolboxTool; call: ToolCall; reason: string };
+  progress: { tool: ToolboxTool; call: ToolCall; percent?: number; message?: string };
+  'output-chunk': { tool: ToolboxTool; call: ToolCall; chunk: unknown };
   log: {
-    tool: ArmorerTool;
+    tool: ToolboxTool;
     call: ToolCall;
     level: 'debug' | 'info' | 'warn' | 'error';
     message: string;
     data?: unknown;
   };
-  cancelled: { tool: ArmorerTool; call: ToolCall; reason?: string };
+  cancelled: { tool: ToolboxTool; call: ToolCall; reason?: string };
 }
 
-type ArmorerEventType = Extract<keyof ArmorerEvents, string>;
+type ToolboxEventType = Extract<keyof ToolboxEvents, string>;
 
-export type ArmorerEventDispatcher = (
-  event: EmissionEvent<ArmorerEvents[ArmorerEventType]>,
+export type ToolboxEventDispatcher = (
+  event: EmissionEvent<ToolboxEvents[ToolboxEventType]>,
 ) => boolean;
 
-export interface ArmorerExecuteOptions extends ToolExecuteOptions {
+export interface ToolboxExecuteOptions extends ToolExecuteOptions {
   concurrency?: number;
   mode?: 'parallel' | 'sequential';
   errorMode?: 'failFast' | 'collect';
 }
 
-export interface Armorer {
-  register: (...entries: (ToolConfig | ArmorerTool)[]) => Armorer;
+export interface Toolbox {
+  register: (...entries: (ToolConfig | ToolboxTool)[]) => Toolbox;
   createTool: <
     TInput extends object = Record<string, unknown>,
     TOutput = unknown,
@@ -249,11 +248,11 @@ export interface Armorer {
     M extends ToolMetadata | undefined = undefined,
   >(
     options: CreateToolOptions<TInput, TOutput, E, Tags, M>,
-  ) => ArmorerTool<z.ZodType<TInput>, E, TOutput, M>;
+  ) => ToolboxTool<z.ZodType<TInput>, E, TOutput, M>;
   execute(call: ToolCallInput, options?: ToolExecuteOptions): Promise<ToolResult>;
   execute(calls: ToolCallInput[], options?: ToolExecuteOptions): Promise<ToolResult[]>;
-  tools: () => ArmorerTool[];
-  getTool: (nameOrId: string) => ArmorerTool | undefined;
+  tools: () => ToolboxTool[];
+  getTool: (nameOrId: string) => ToolboxTool | undefined;
   /**
    * Returns names of tools that are not registered.
    * Useful for fail-soft agent gating.
@@ -273,46 +272,46 @@ export interface Armorer {
    *   - `full`: Includes complete schema shape details
    */
   inspect: (detailLevel?: InspectorDetailLevel) => RegistryInspection;
-  toJSON: () => SerializedArmorer;
-  addEventListener: <K extends ArmorerEventType>(
+  toJSON: () => SerializedToolbox;
+  addEventListener: <K extends ToolboxEventType>(
     type: K,
-    listener: (event: EmissionEvent<ArmorerEvents[K]>) => void | Promise<void>,
+    listener: (event: EmissionEvent<ToolboxEvents[K]>) => void | Promise<void>,
     options?: AddEventListenerOptionsLike,
   ) => () => void;
-  dispatchEvent: ArmorerEventDispatcher;
+  dispatchEvent: ToolboxEventDispatcher;
 
   // Observable-based event methods (event-emission 0.2.0)
-  on: <K extends ArmorerEventType>(
+  on: <K extends ToolboxEventType>(
     type: K,
     options?: AddEventListenerOptionsLike | boolean,
-  ) => ObservableLike<EmissionEvent<ArmorerEvents[K]>>;
-  once: <K extends ArmorerEventType>(
+  ) => ObservableLike<EmissionEvent<ToolboxEvents[K]>>;
+  once: <K extends ToolboxEventType>(
     type: K,
-    listener: (event: EmissionEvent<ArmorerEvents[K]>) => void | Promise<void>,
+    listener: (event: EmissionEvent<ToolboxEvents[K]>) => void | Promise<void>,
     options?: Omit<AddEventListenerOptionsLike, 'once'>,
   ) => () => void;
-  subscribe: <K extends ArmorerEventType>(
+  subscribe: <K extends ToolboxEventType>(
     type: K,
     observerOrNext?:
-      | Observer<EmissionEvent<ArmorerEvents[K]>>
-      | ((value: EmissionEvent<ArmorerEvents[K]>) => void),
+      | Observer<EmissionEvent<ToolboxEvents[K]>>
+      | ((value: EmissionEvent<ToolboxEvents[K]>) => void),
     error?: (err: unknown) => void,
     complete?: () => void,
   ) => Subscription;
-  toObservable: () => ObservableLike<EmissionEvent<ArmorerEvents[keyof ArmorerEvents]>>;
+  toObservable: () => ObservableLike<EmissionEvent<ToolboxEvents[keyof ToolboxEvents]>>;
 
   // Async iteration (event-emission 0.2.0)
-  events: <K extends ArmorerEventType>(
+  events: <K extends ToolboxEventType>(
     type: K,
     options?: AsyncIteratorOptions,
-  ) => AsyncIterableIterator<EmissionEvent<ArmorerEvents[K]>>;
+  ) => AsyncIterableIterator<EmissionEvent<ToolboxEvents[K]>>;
 
   // Lifecycle methods
   complete: () => void;
   readonly completed: boolean;
 
   // Internal method to get armorer context (for use by createTool)
-  getContext?: () => ArmorerContext;
+  getContext?: () => ToolboxContext;
 }
 
 /**
@@ -338,15 +337,15 @@ export interface Armorer {
  * @param options.allowMutation - If true, allows tools to be re-registered (default: true)
  * @param options.allowDangerous - If true, allows tools with 'dangerous' risk level (default: true)
  *
- * @returns An Armorer instance with methods for registering, querying, and executing tools
+ * @returns An Toolbox instance with methods for registering, querying, and executing tools
  *
  * @example
  * ```typescript
- * import { createArmorer, createTool } from 'armorer';
+ * import { createToolbox, createTool } from 'armorer';
  * import { z } from 'zod';
  *
  * // Create an armorer
- * const armorer = createArmorer();
+ * const armorer = createToolbox();
  *
  * // Register a tool
  * const addTool = createTool({
@@ -368,7 +367,7 @@ export interface Armorer {
  *
  * @example With middleware and policies
  * ```typescript
- * const armorer = createArmorer([], {
+ * const armorer = createToolbox([], {
  *   middleware: [
  *     (tool) => ({ ...tool, tags: [...tool.tags, 'monitored'] })
  *   ],
@@ -385,18 +384,18 @@ export interface Armorer {
  * });
  * ```
  */
-export function createArmorer(
-  serialized: SerializedArmorer = [],
-  options: ArmorerOptions = {},
-): Armorer {
-  const toolsById = new Map<string, ArmorerTool>();
-  const toolsByName = new Map<string, ArmorerTool[]>();
+export function createToolbox(
+  serialized: SerializedToolbox = [],
+  options: ToolboxOptions = {},
+): Toolbox {
+  const toolsById = new Map<string, ToolboxTool>();
+  const toolsByName = new Map<string, ToolboxTool[]>();
   // Backward compat: registry acts as 'name' based lookup for simple cases
   // but we need to change how we access it.
-  // const registry = new Map<string, ArmorerTool>();
+  // const registry = new Map<string, ToolboxTool>();
 
   const storedConfigurations = new Map<string, ToolConfig>();
-  const hub = createEventTarget<ArmorerEvents>();
+  const hub = createEventTarget<ToolboxEvents>();
   const {
     addEventListener,
     dispatchEvent,
@@ -410,8 +409,8 @@ export function createArmorer(
   } = hub;
 
   // Helper to emit events with proper typing (event-emission accepts partial events at runtime)
-  const emit = <K extends ArmorerEventType>(type: K, detail: ArmorerEvents[K]) =>
-    dispatchEvent({ type, detail } as EmissionEvent<ArmorerEvents[K]>);
+  const emit = <K extends ToolboxEventType>(type: K, detail: ToolboxEvents[K]) =>
+    dispatchEvent({ type, detail } as EmissionEvent<ToolboxEvents[K]>);
   const baseContext = options.context ? { ...options.context } : {};
   const readOnly = options.readOnly ?? false;
   const allowMutation = options.allowMutation ?? !readOnly;
@@ -449,7 +448,7 @@ export function createArmorer(
     }
   }
 
-  function register(...entries: (ToolConfig | ArmorerTool)[]): Armorer {
+  function register(...entries: (ToolConfig | ToolboxTool)[]): Toolbox {
     for (const entry of entries) {
       let configuration = normalizeRegistration(entry);
 
@@ -494,7 +493,7 @@ export function createArmorer(
     M extends ToolMetadata | undefined = undefined,
   >(
     options: CreateToolOptions<TInput, TOutput, E, Tags, M>,
-  ): ArmorerTool<z.ZodType<TInput>, E, TOutput, M> {
+  ): ToolboxTool<z.ZodType<TInput>, E, TOutput, M> {
     const schema = normalizeToolSchema(options.schema);
     const normalizedTags = Array.isArray(options.tags)
       ? uniqTags(
@@ -556,20 +555,20 @@ export function createArmorer(
     if (!tool) {
       throw new Error(`Failed to register tool: ${configuration.identity.name}`);
     }
-    return tool as unknown as ArmorerTool<z.ZodType<TInput>, E, TOutput, M>;
+    return tool as unknown as ToolboxTool<z.ZodType<TInput>, E, TOutput, M>;
   }
 
   async function execute(
     call: ToolCallInput,
-    options?: ArmorerExecuteOptions,
+    options?: ToolboxExecuteOptions,
   ): Promise<ToolResult>;
   async function execute(
     calls: ToolCallInput[],
-    options?: ArmorerExecuteOptions,
+    options?: ToolboxExecuteOptions,
   ): Promise<ToolResult[]>;
   async function execute(
     input: ToolCallInput | ToolCallInput[],
-    options?: ArmorerExecuteOptions,
+    options?: ToolboxExecuteOptions,
   ): Promise<ToolResult | ToolResult[]> {
     const calls = Array.isArray(input) ? input : [input];
     const isMultiple = Array.isArray(input);
@@ -587,7 +586,7 @@ export function createArmorer(
       const toolCall = normalizeToolCall(call);
       const tool = getTool(toolCall.name); // toolCall.name might be ID
       if (!tool) {
-        const toolError = createArmorerToolError(
+        const toolError = createToolboxToolError(
           'not_found',
           `Tool not found: ${toolCall.name}`,
           'NOT_FOUND',
@@ -616,7 +615,7 @@ export function createArmorer(
 
       const budgetReason = checkBudget(budget, budgetStart, budgetCalls);
       if (budgetReason) {
-        const toolError = createArmorerToolError(
+        const toolError = createToolboxToolError(
           'conflict',
           budgetReason,
           'BUDGET_EXCEEDED',
@@ -675,8 +674,8 @@ export function createArmorer(
           };
           // Use emit helper which handles the type conversion
           emit(
-            eventType as keyof ArmorerEvents,
-            bubbledDetail as ArmorerEvents[keyof ArmorerEvents],
+            eventType as keyof ToolboxEvents,
+            bubbledDetail as ToolboxEvents[keyof ToolboxEvents],
           );
         });
         cleanup.push(unsubscribe);
@@ -717,7 +716,7 @@ export function createArmorer(
           throw error;
         }
         const message = error instanceof Error ? error.message : String(error);
-        const toolError = createArmorerToolError(
+        const toolError = createToolboxToolError(
           'internal',
           message,
           extractErrorCode(error) ?? 'EXECUTION_ERROR',
@@ -752,11 +751,11 @@ export function createArmorer(
     return createToolCall(call.name, args, id);
   }
 
-  function tools(): ArmorerTool[] {
+  function tools(): ToolboxTool[] {
     return Array.from(toolsById.values());
   }
 
-  function getTool(nameOrId: string): ArmorerTool | undefined {
+  function getTool(nameOrId: string): ToolboxTool | undefined {
     if (toolsById.has(nameOrId)) return toolsById.get(nameOrId);
     const matches = toolsByName.get(nameOrId);
     if (matches && matches.length > 0) {
@@ -779,11 +778,11 @@ export function createArmorer(
     return inspectRegistry(tools, detailLevel);
   }
 
-  function toJSON(): SerializedArmorer {
+  function toJSON(): SerializedToolbox {
     return Array.from(storedConfigurations.values());
   }
 
-  const api: Armorer = {
+  const api: Toolbox = {
     register,
     createTool,
     execute,
@@ -821,7 +820,7 @@ export function createArmorer(
 
   return api;
 
-  function buildDefaultTool(configuration: ToolConfig): ArmorerTool {
+  function buildDefaultTool(configuration: ToolConfig): ToolboxTool {
     const resolveExecute = createLazyExecuteResolver(configuration.execute);
     const resolvedPolicy = mergePolicies(registryPolicy, configuration.policy, {
       readOnly,
@@ -907,7 +906,7 @@ export function createArmorer(
     if (configuration.diagnostics) {
       options.diagnostics = configuration.diagnostics;
     }
-    return createToolFactory(options) as unknown as ArmorerTool;
+    return createToolFactory(options) as unknown as ToolboxTool;
   }
 
   function normalizeConfiguration(configuration: ToolConfig): ToolConfig {
@@ -998,7 +997,7 @@ export function createArmorer(
     return result;
   }
 
-  function normalizeRegistration(entry: ToolConfig | ArmorerTool): ToolConfig {
+  function normalizeRegistration(entry: ToolConfig | ToolboxTool): ToolConfig {
     if (isTool(entry)) {
       return normalizeConfiguration(entry.configuration);
     }
@@ -1031,7 +1030,7 @@ export function createArmorer(
     emit('registered', tool);
   }
 
-  function registerSerialized(configs: SerializedArmorer): void {
+  function registerSerialized(configs: SerializedToolbox): void {
     for (let index = 0; index < configs.length; index += 1) {
       const config = configs[index]!;
       let configuration = normalizeConfiguration(config);
@@ -1246,7 +1245,7 @@ function normalizeToolSchema(schema: unknown): ToolParametersSchema {
 }
 
 function checkBudget(
-  budget: ArmorerOptions['budget'] | undefined,
+  budget: ToolboxOptions['budget'] | undefined,
   startedAt: number,
   calls: number,
 ): string | undefined {
@@ -1321,7 +1320,7 @@ function deriveRiskFromMetadata(metadata: ToolMetadata | undefined) {
   return Object.keys(risk).length ? risk : undefined;
 }
 
-function createArmorerToolError(
+function createToolboxToolError(
   category: ToolErrorCategory,
   message: string,
   code: string,
@@ -1384,16 +1383,16 @@ function createCachedEmbedder(embedder: Embedder): Embedder {
 }
 
 /**
- * Type guard to check if a value is an Armorer instance.
+ * Type guard to check if a value is an Toolbox instance.
  */
-export function isArmorer(value: unknown): value is Armorer {
+export function isToolbox(value: unknown): value is Toolbox {
   return (
     typeof value === 'object' &&
     value !== null &&
-    typeof (value as Armorer).register === 'function' &&
-    typeof (value as Armorer).tools === 'function' &&
-    typeof (value as Armorer).getTool === 'function' &&
-    typeof (value as Armorer).execute === 'function' &&
-    typeof (value as Armorer).toJSON === 'function'
+    typeof (value as Toolbox).register === 'function' &&
+    typeof (value as Toolbox).tools === 'function' &&
+    typeof (value as Toolbox).getTool === 'function' &&
+    typeof (value as Toolbox).execute === 'function' &&
+    typeof (value as Toolbox).toJSON === 'function'
   );
 }

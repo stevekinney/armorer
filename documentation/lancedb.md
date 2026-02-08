@@ -4,7 +4,7 @@
 
 [LanceDB](https://lancedb.com/) is a serverless vector database that can run embedded (no separate server required) or as a cloud service. This makes it an excellent choice for local development, testing, and production deployments where you want to avoid infrastructure complexity.
 
-This guide shows how to integrate LanceDB with Armorer for semantic tool search.
+This guide shows how to integrate LanceDB with Toolbox for semantic tool search.
 
 ## Setup
 
@@ -19,7 +19,7 @@ bun add @lancedb/lancedb openai apache-arrow
 Here's a simple example using LanceDB for local vector storage:
 
 ```typescript
-import { createArmorer, createTool, type ArmorerTool } from 'armorer';
+import { createToolbox, createTool, type ToolboxTool } from 'armorer';
 import * as lancedb from '@lancedb/lancedb';
 import OpenAI from 'openai';
 import { z } from 'zod';
@@ -40,7 +40,7 @@ async function embed(texts: string[]): Promise<number[][]> {
 }
 
 // Create armorer with embedding support
-const armorer = createArmorer([], { embed });
+const armorer = createToolbox([], { embed });
 
 // Connect to LanceDB (creates a local database)
 const db = await lancedb.connect('./data/lancedb');
@@ -103,7 +103,7 @@ armorer.addEventListener('registered', async (event) => {
 LanceDB makes vector search simple with its built-in search API:
 
 ```typescript
-async function searchTools(query: string, limit = 5): Promise<ArmorerTool[]> {
+async function searchTools(query: string, limit = 5): Promise<ToolboxTool[]> {
   // Generate embedding for the query
   const [queryEmbedding] = await embed([query]);
 
@@ -115,7 +115,7 @@ async function searchTools(query: string, limit = 5): Promise<ArmorerTool[]> {
 
   // Deduplicate by tool name and return tools
   const seen = new Set<string>();
-  const tools: ArmorerTool[] = [];
+  const tools: ToolboxTool[] = [];
 
   for (const result of results) {
     const toolName = result.toolName as string;
@@ -138,7 +138,7 @@ async function searchTools(query: string, limit = 5): Promise<ArmorerTool[]> {
 Here's a complete, production-ready example:
 
 ```typescript
-import { createArmorer, createTool, type ArmorerTool } from 'armorer';
+import { createToolbox, createTool, type ToolboxTool } from 'armorer';
 import { queryTools } from 'armorer/registry';
 import * as lancedb from '@lancedb/lancedb';
 import OpenAI from 'openai';
@@ -200,7 +200,7 @@ async function createLanceDBTable(db: lancedb.Connection): Promise<lancedb.Table
 export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
   const db = await lancedb.connect(dbPath);
   const table = await createLanceDBTable(db);
-  const armorer = createArmorer([], { embed });
+  const armorer = createToolbox([], { embed });
 
   // Sync tools to LanceDB on registration
   armorer.addEventListener('registered', async (event) => {
@@ -237,7 +237,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
     /**
      * Semantic search for tools using LanceDB
      */
-    async search(query: string, limit = 10): Promise<ArmorerTool[]> {
+    async search(query: string, limit = 10): Promise<ToolboxTool[]> {
       const [queryEmbedding] = await embed([query]);
 
       const results = await table
@@ -246,7 +246,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
         .toArray();
 
       const seen = new Set<string>();
-      const tools: ArmorerTool[] = [];
+      const tools: ToolboxTool[] = [];
 
       for (const result of results) {
         const toolName = result.toolName as string;
@@ -270,7 +270,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
       query: string,
       filter: { tags?: string[]; field?: string },
       limit = 10,
-    ): Promise<ArmorerTool[]> {
+    ): Promise<ToolboxTool[]> {
       const [queryEmbedding] = await embed([query]);
 
       let searchQuery = table.search(queryEmbedding).limit(limit * 5);
@@ -289,7 +289,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
 
       // Post-filter by tags if needed (LanceDB array filtering)
       const seen = new Set<string>();
-      const tools: ArmorerTool[] = [];
+      const tools: ToolboxTool[] = [];
 
       for (const result of results) {
         const toolName = result.toolName as string;
@@ -316,7 +316,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
     },
 
     /**
-     * Hybrid search: LanceDB semantic + Armorer filters
+     * Hybrid search: LanceDB semantic + Toolbox filters
      */
     async hybridSearch(
       query: string,
@@ -325,7 +325,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
         metadata?: { eq?: Record<string, unknown> };
       },
       limit = 10,
-    ): Promise<ArmorerTool[]> {
+    ): Promise<ToolboxTool[]> {
       // Get semantic candidates from LanceDB
       const [queryEmbedding] = await embed([query]);
 
@@ -339,10 +339,10 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
         candidates.add(result.toolName as string);
       }
 
-      // Get tools and apply Armorer filters
+      // Get tools and apply Toolbox filters
       const tools = Array.from(candidates)
         .map((name) => armorer.getTool(name))
-        .filter((t): t is ArmorerTool => t !== undefined);
+        .filter((t): t is ToolboxTool => t !== undefined);
 
       if (!armorerFilter) {
         return tools.slice(0, limit);
@@ -548,8 +548,8 @@ async function embedLocal(texts: string[]): Promise<number[][]> {
   return embeddings;
 }
 
-// Use with Armorer
-const armorer = createArmorer([], { embed: embedLocal });
+// Use with Toolbox
+const armorer = createToolbox([], { embed: embedLocal });
 ```
 
 ## LanceDB vs Pinecone
@@ -582,7 +582,7 @@ Choose Pinecone when:
 
 2. **Index maintenance**: Call `rebuildIndex()` periodically if tool descriptions change frequently.
 
-3. **Hybrid search**: Combine LanceDB's semantic search with Armorer's tag/metadata filters for precise results.
+3. **Hybrid search**: Combine LanceDB's semantic search with Toolbox's tag/metadata filters for precise results.
 
 4. **Local models**: Consider using local embedding models like `all-MiniLM-L6-v2` for faster, offline operation.
 
@@ -592,5 +592,5 @@ Choose Pinecone when:
 
 - [Embeddings & Semantic Search](embeddings.md) - General embeddings overview and Pinecone integration
 - [Chroma Integration](chroma.md) - Alternative open-source embedding database
-- [Armorer Registry](registry.md) - Querying and searching tools
+- [Toolbox Registry](registry.md) - Querying and searching tools
 - [API Reference](api-reference.md) - Complete type definitions

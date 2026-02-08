@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { combineArmorers, createArmorer } from '../src/runtime';
+import { combineToolboxes, createToolbox } from '../src/runtime';
 
-describe('combineArmorers', () => {
+describe('combineToolboxes', () => {
   it('throws when no armorers are provided', () => {
-    const combine = combineArmorers as unknown as () => ReturnType<typeof createArmorer>;
-    expect(() => combine()).toThrow('combineArmorers() requires at least 1 Armorer');
+    const combine = combineToolboxes as unknown as () => ReturnType<typeof createToolbox>;
+    expect(() => combine()).toThrow('combineToolboxes() requires at least 1 Toolbox');
   });
 
   it('combines tools from multiple armorers', async () => {
-    const a = createArmorer();
+    const a = createToolbox();
     a.register({
       name: 'tool-a',
       description: 'tool a',
@@ -18,7 +18,7 @@ describe('combineArmorers', () => {
       execute: async () => 'A',
     });
 
-    const b = createArmorer();
+    const b = createToolbox();
     b.register({
       name: 'tool-b',
       description: 'tool b',
@@ -26,7 +26,7 @@ describe('combineArmorers', () => {
       execute: async () => 'B',
     });
 
-    const combined = combineArmorers(a, b);
+    const combined = combineToolboxes(a, b);
 
     const resA = await combined.execute({ id: 'a-1', name: 'tool-a', arguments: {} });
     const resB = await combined.execute({ id: 'b-1', name: 'tool-b', arguments: {} });
@@ -36,7 +36,7 @@ describe('combineArmorers', () => {
   });
 
   it('prefers later armorers on name collisions', async () => {
-    const first = createArmorer();
+    const first = createToolbox();
     first.register({
       name: 'echo',
       description: 'echo',
@@ -44,7 +44,7 @@ describe('combineArmorers', () => {
       execute: async ({ value }) => `first:${value}`,
     });
 
-    const second = createArmorer();
+    const second = createToolbox();
     second.register({
       name: 'echo',
       description: 'echo',
@@ -52,7 +52,7 @@ describe('combineArmorers', () => {
       execute: async ({ value }) => `second:${value}`,
     });
 
-    const combined = combineArmorers(first, second);
+    const combined = combineToolboxes(first, second);
     const res = await combined.execute({
       id: 'echo-1',
       name: 'echo',
@@ -63,7 +63,7 @@ describe('combineArmorers', () => {
   });
 
   it('merges contexts from all armorers (last wins)', async () => {
-    const a = createArmorer([], {
+    const a = createToolbox([], {
       context: { workspaceId: 'ws-1', shared: 'a' },
     });
     a.register({
@@ -80,11 +80,11 @@ describe('combineArmorers', () => {
       },
     });
 
-    const b = createArmorer([], {
+    const b = createToolbox([], {
       context: { role: 'admin', shared: 'b' },
     });
 
-    const combined = combineArmorers(a, b);
+    const combined = combineToolboxes(a, b);
     const res = await combined.execute({ id: 'ctx-1', name: 'ctx', arguments: {} });
 
     expect(res.result).toEqual({

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer } from '../src/create-armorer';
+import { createToolbox } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
 import {
   extractMetadataFlags,
@@ -381,7 +381,7 @@ describe('inspect', () => {
 
   describe('Armorer.inspect()', () => {
     it('returns inspection of empty registry', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       const inspection = armorer.inspect();
 
       expect(inspection.counts.total).toBe(0);
@@ -389,7 +389,7 @@ describe('inspect', () => {
     });
 
     it('returns inspection of single-tool registry', () => {
-      const armorer = createArmorer([makeConfiguration()]);
+      const armorer = createToolbox([makeConfiguration()]);
       const inspection = armorer.inspect();
 
       expect(inspection.counts.total).toBe(1);
@@ -400,7 +400,7 @@ describe('inspect', () => {
     });
 
     it('returns inspection of multi-tool registry', () => {
-      const armorer = createArmorer([
+      const armorer = createToolbox([
         makeConfiguration({ name: 'sum', tags: ['math'] }),
         makeConfiguration({ name: 'greet', description: 'say hello', tags: ['text'] }),
         makeConfiguration({ name: 'plain', tags: undefined }),
@@ -417,7 +417,7 @@ describe('inspect', () => {
     });
 
     it('supports summary detail level', () => {
-      const armorer = createArmorer([makeConfiguration()]);
+      const armorer = createToolbox([makeConfiguration()]);
       const inspection = armorer.inspect('summary');
 
       expect(inspection.detailLevel).toBe('summary');
@@ -431,7 +431,7 @@ describe('inspect', () => {
     });
 
     it('supports standard detail level (default)', () => {
-      const armorer = createArmorer([makeConfiguration()]);
+      const armorer = createToolbox([makeConfiguration()]);
       const inspection = armorer.inspect();
 
       expect(inspection.detailLevel).toBe('standard');
@@ -443,7 +443,7 @@ describe('inspect', () => {
     });
 
     it('supports full detail level', () => {
-      const armorer = createArmorer([makeConfiguration()]);
+      const armorer = createToolbox([makeConfiguration()]);
       const inspection = armorer.inspect('full');
 
       expect(inspection.detailLevel).toBe('full');
@@ -452,7 +452,7 @@ describe('inspect', () => {
     });
 
     it('is side-effect free (does not modify registry)', () => {
-      const armorer = createArmorer([makeConfiguration()]);
+      const armorer = createToolbox([makeConfiguration()]);
 
       const inspection1 = armorer.inspect();
       const inspection2 = armorer.inspect();
@@ -462,7 +462,7 @@ describe('inspect', () => {
     });
 
     it('returns independent copies (mutations do not affect registry)', () => {
-      const armorer = createArmorer([makeConfiguration()]);
+      const armorer = createToolbox([makeConfiguration()]);
       const inspection = armorer.inspect();
 
       // Mutate the inspection
@@ -493,7 +493,7 @@ describe('inspect', () => {
     });
 
     it('RegistryInspectionSchema validates registry inspection output', () => {
-      const armorer = createArmorer([
+      const armorer = createToolbox([
         makeConfiguration({ name: 'tool1' }),
         makeConfiguration({ name: 'tool2', tags: ['tag1', 'tag2'] }),
       ]);
@@ -505,7 +505,7 @@ describe('inspect', () => {
     });
 
     it('RegistryInspectionSchema validates empty registry inspection', () => {
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       const inspection = armorer.inspect();
       const result = RegistryInspectionSchema.safeParse(inspection);
 
@@ -513,7 +513,7 @@ describe('inspect', () => {
     });
 
     it('RegistryInspectionSchema validates full detail level inspection', () => {
-      const armorer = createArmorer([makeConfiguration()]);
+      const armorer = createToolbox([makeConfiguration()]);
       const inspection = armorer.inspect('full');
       const result = RegistryInspectionSchema.safeParse(inspection);
 

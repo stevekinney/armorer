@@ -7,13 +7,13 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer } from '../src/create-armorer';
+import { createToolbox } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
 import { createMCP } from '../src/mcp';
 
 describe('Anthropic Agent SDK MCP integration', () => {
   it('accepts an in-process MCP server instance', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'sum',
@@ -56,7 +56,7 @@ describe('Anthropic Agent SDK MCP integration', () => {
     : it.skip;
 
   runIfKey('executes MCP tools via query()', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     const token = crypto.randomUUID();
     createTool(
       {

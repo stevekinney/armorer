@@ -4,7 +4,7 @@
 
 [Chroma](https://www.trychroma.com/) is an open-source embedding database designed for AI applications. It can run embedded (in-memory or persistent) or as a client-server setup, making it flexible for development and production use.
 
-This guide shows how to integrate Chroma with Armorer for semantic tool search.
+This guide shows how to integrate Chroma with Toolbox for semantic tool search.
 
 ## Setup
 
@@ -30,7 +30,7 @@ chroma run --path ./chroma-data
 Here's a simple example using Chroma's embedded mode:
 
 ```typescript
-import { createArmorer, createTool, type ArmorerTool } from 'armorer';
+import { createToolbox, createTool, type ToolboxTool } from 'armorer';
 import { ChromaClient } from 'chromadb';
 import OpenAI from 'openai';
 import { z } from 'zod';
@@ -39,7 +39,7 @@ import { z } from 'zod';
 const chroma = new ChromaClient();
 const openai = new OpenAI();
 
-// Embedding function for Armorer
+// Embedding function for Toolbox
 async function embed(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];
 
@@ -52,12 +52,12 @@ async function embed(texts: string[]): Promise<number[][]> {
 }
 
 // Create armorer with embedding support
-const armorer = createArmorer([], { embed });
+const armorer = createToolbox([], { embed });
 
 // Create or get a collection for tools
 const collection = await chroma.getOrCreateCollection({
   name: 'armorer_tools',
-  metadata: { description: 'Armorer tool embeddings' },
+  metadata: { description: 'Toolbox tool embeddings' },
 });
 ```
 
@@ -132,7 +132,7 @@ armorer.addEventListener('registered', async (event) => {
 Chroma's query API makes semantic search straightforward:
 
 ```typescript
-async function searchTools(query: string, limit = 5): Promise<ArmorerTool[]> {
+async function searchTools(query: string, limit = 5): Promise<ToolboxTool[]> {
   // Generate embedding for the query
   const [queryEmbedding] = await embed([query]);
 
@@ -144,7 +144,7 @@ async function searchTools(query: string, limit = 5): Promise<ArmorerTool[]> {
 
   // Deduplicate by tool name
   const seen = new Set<string>();
-  const tools: ArmorerTool[] = [];
+  const tools: ToolboxTool[] = [];
 
   for (const metadata of results.metadatas?.[0] ?? []) {
     const toolName = metadata?.toolName as string;
@@ -167,7 +167,7 @@ async function searchTools(query: string, limit = 5): Promise<ArmorerTool[]> {
 Here's a complete, production-ready example:
 
 ```typescript
-import { createArmorer, createTool, type ArmorerTool } from 'armorer';
+import { createToolbox, createTool, type ToolboxTool } from 'armorer';
 import { queryTools } from 'armorer/registry';
 import { ChromaClient, type Collection } from 'chromadb';
 import OpenAI from 'openai';
@@ -211,12 +211,12 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
   const collection = await chroma.getOrCreateCollection({
     name: options.collectionName ?? COLLECTION_NAME,
     metadata: {
-      description: 'Armorer tool embeddings for semantic search',
+      description: 'Toolbox tool embeddings for semantic search',
       'hnsw:space': 'cosine',
     },
   });
 
-  const armorer = createArmorer([], { embed });
+  const armorer = createToolbox([], { embed });
 
   // Sync tools to Chroma on registration
   armorer.addEventListener('registered', async (event) => {
@@ -224,7 +224,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
     await syncToolToChroma(collection, tool);
   });
 
-  async function syncToolToChroma(col: Collection, tool: ArmorerTool): Promise<void> {
+  async function syncToolToChroma(col: Collection, tool: ToolboxTool): Promise<void> {
     const fields = [
       { field: 'name', text: tool.name },
       { field: 'description', text: tool.description },
@@ -264,7 +264,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
     /**
      * Semantic search for tools
      */
-    async search(query: string, limit = 10): Promise<ArmorerTool[]> {
+    async search(query: string, limit = 10): Promise<ToolboxTool[]> {
       const [queryEmbedding] = await embed([query]);
 
       const results = await collection.query({
@@ -273,7 +273,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
       });
 
       const seen = new Set<string>();
-      const tools: ArmorerTool[] = [];
+      const tools: ToolboxTool[] = [];
 
       for (const metadata of results.metadatas?.[0] ?? []) {
         const toolName = metadata?.toolName as string;
@@ -300,7 +300,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
         toolNames?: string[];
       },
       limit = 10,
-    ): Promise<ArmorerTool[]> {
+    ): Promise<ToolboxTool[]> {
       const [queryEmbedding] = await embed([query]);
 
       // Build Chroma where clause
@@ -326,7 +326,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
       });
 
       const seen = new Set<string>();
-      const tools: ArmorerTool[] = [];
+      const tools: ToolboxTool[] = [];
 
       for (const metadata of results.metadatas?.[0] ?? []) {
         const toolName = metadata?.toolName as string;
@@ -350,7 +350,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
       query: string,
       documentFilter: string,
       limit = 10,
-    ): Promise<ArmorerTool[]> {
+    ): Promise<ToolboxTool[]> {
       const [queryEmbedding] = await embed([query]);
 
       const results = await collection.query({
@@ -360,7 +360,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
       });
 
       const seen = new Set<string>();
-      const tools: ArmorerTool[] = [];
+      const tools: ToolboxTool[] = [];
 
       for (const metadata of results.metadatas?.[0] ?? []) {
         const toolName = metadata?.toolName as string;
@@ -378,7 +378,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
     },
 
     /**
-     * Hybrid search: Chroma semantic + Armorer filters
+     * Hybrid search: Chroma semantic + Toolbox filters
      */
     async hybridSearch(
       query: string,
@@ -387,7 +387,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
         metadata?: { eq?: Record<string, unknown> };
       },
       limit = 10,
-    ): Promise<ArmorerTool[]> {
+    ): Promise<ToolboxTool[]> {
       const [queryEmbedding] = await embed([query]);
 
       // Get semantic candidates from Chroma
@@ -404,10 +404,10 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
         }
       }
 
-      // Get tools and apply Armorer filters
+      // Get tools and apply Toolbox filters
       const tools = Array.from(candidates)
         .map((name) => armorer.getTool(name))
-        .filter((t): t is ArmorerTool => t !== undefined);
+        .filter((t): t is ToolboxTool => t !== undefined);
 
       if (!armorerFilter) {
         return tools.slice(0, limit);
@@ -423,7 +423,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
     /**
      * Get similar tools based on an existing tool
      */
-    async findSimilar(toolName: string, limit = 5): Promise<ArmorerTool[]> {
+    async findSimilar(toolName: string, limit = 5): Promise<ToolboxTool[]> {
       const tool = armorer.getTool(toolName);
       if (!tool) return [];
 
@@ -568,7 +568,7 @@ async function main() {
   );
   // Output: ['send-email', 'send-slack-message']
 
-  // Hybrid search with Armorer filters
+  // Hybrid search with Toolbox filters
   console.log('\n--- Hybrid Search: "message" with communication tag ---');
   const messageTools = await hybridSearch('send a message', {
     tags: { any: ['communication'] },
@@ -718,7 +718,7 @@ Choose Chroma when:
 
 3. **Collection metadata**: Use `hnsw:space` to specify the distance metric (cosine, l2, ip).
 
-4. **Hybrid filtering**: Combine Chroma's `where` and `whereDocument` filters with Armorer's query system.
+4. **Hybrid filtering**: Combine Chroma's `where` and `whereDocument` filters with Toolbox's query system.
 
 5. **Server mode for production**: Run Chroma as a server for multi-process access and persistence.
 
@@ -738,5 +738,5 @@ const collection = await chroma.getOrCreateCollection({
 
 - [Embeddings & Semantic Search](embeddings.md) - General embeddings overview and Pinecone integration
 - [LanceDB Integration](lancedb.md) - Alternative serverless vector database
-- [Armorer Registry](registry.md) - Querying and searching tools
+- [Toolbox Registry](registry.md) - Querying and searching tools
 - [API Reference](api-reference.md) - Complete type definitions

@@ -1,20 +1,19 @@
-export { combineArmorers } from './runtime/combine-armorers';
+export { combineToolboxes } from './runtime/combine-toolboxes';
 export type {
-  Armorer,
-  ArmorerContext,
-  ArmorerEvents,
-  ArmorerOptions,
-  ArmorerToolRuntimeContext,
-  SerializedArmorer,
+  SerializedToolbox,
+  Toolbox,
+  ToolboxContext,
+  ToolboxEvents,
+  ToolboxOptions,
+  ToolboxRuntimeContext,
   ToolMiddleware,
   ToolStatusUpdate,
 } from './runtime/create-armorer';
-export { createArmorer, createMiddleware, isArmorer } from './runtime/create-armorer';
+export { createMiddleware, createToolbox, isToolbox } from './runtime/create-armorer';
 export type { CreateToolOptions, WithContext } from './runtime/create-tool';
 export { createTool, createToolCall, lazy, withContext } from './runtime/create-tool';
 export type {
   AddEventListenerOptionsLike,
-  ArmorerTool,
   AsyncIteratorOptions,
   DefaultToolEvents,
   MinimalAbortSignal,
@@ -23,6 +22,7 @@ export type {
   OutputValidationMode,
   OutputValidationResult,
   Subscription,
+  ToolboxTool,
   ToolCallWithArguments,
   ToolConfig,
   ToolContext,

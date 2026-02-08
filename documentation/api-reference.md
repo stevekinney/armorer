@@ -22,7 +22,7 @@ Options (`CreateToolOptions`):
 - `timeoutMs?`: number.
 - `concurrency?`: number (per-tool concurrency limit).
 
-Returns: `ArmorerTool`.
+Returns: `ToolboxTool`.
 
 Exposed properties and methods:
 
@@ -39,17 +39,17 @@ Exposed properties and methods:
 ```typescript
 function createTool<...>(
   options: CreateToolOptions<...>,
-  armorer?: Armorer,
-): ArmorerTool;
+  armorer?: Toolbox,
+): ToolboxTool;
 ```
 
-#### `createArmorer(serialized?, options?)`
+#### `createToolbox(serialized?, options?)`
 
 Creates an execution engine and tool registry.
 
-Options (`ArmorerOptions`):
+Options (`ToolboxOptions`):
 
-- `context?`: `ArmorerContext` merged into all tool execution contexts.
+- `context?`: `ToolboxContext` merged into all tool execution contexts.
 - `middleware?`: Array of `ToolMiddleware` functions.
 - `policy?`: Global policy hooks.
 - `telemetry?`: boolean - enable detailed execution events.
@@ -58,7 +58,7 @@ Options (`ArmorerOptions`):
 
 #### `instrument(armorer, options?)`
 
-Auto-instruments an Armorer instance with OpenTelemetry tracing.
+Auto-instruments an Toolbox instance with OpenTelemetry tracing.
 
 ```typescript
 import { instrument } from 'armorer/instrumentation';
@@ -87,7 +87,7 @@ Creates a mock tool with `.mockResolve()` and `.mockReject()` helpers and a `.ca
 
 #### `createTestRegistry()`
 
-Creates an Armorer instance that records all execution history in a `.history` array.
+Creates an Toolbox instance that records all execution history in a `.history` array.
 
 ### Core export: `armorer/core`
 
@@ -99,17 +99,17 @@ Defines a static tool specification (identity, display, schema) without executio
 
 Converts a tool definition to a provider-neutral JSON-serializable format.
 
-Registry surface (`Armorer`):
+Registry surface (`Toolbox`):
 
-- `register(...entries: (ToolConfig | ArmorerTool)[])`
+- `register(...entries: (ToolConfig | ToolboxTool)[])`
 - `createTool(options)`: create and register a tool in one call
 - `execute(call | calls)`
-- `tools()` (returns registered `ArmorerTool[]` for registry helpers)
+- `tools()` (returns registered `ToolboxTool[]` for registry helpers)
 - `getTool(name)`
 - `getMissingTools(names)`
 - `hasAllTools(names)`
 - `inspect(detailLevel?: InspectorDetailLevel)`
-- `toJSON(): SerializedArmorer`
+- `toJSON(): SerializedToolbox`
 - Event methods: `addEventListener`, `dispatchEvent`, `on`, `once`, `subscribe`, `toObservable`, `events`
 - Lifecycle: `complete()`, `completed`
 
@@ -121,7 +121,7 @@ Signature:
 const tool = armorer.createTool(options);
 ```
 
-`ToolConfig.execute` receives `ArmorerToolRuntimeContext`, which includes any base context plus `dispatchEvent`, `configuration`, `toolCall`, `signal`, and `timeoutMs`. `ToolConfig.execute` may also be a `Promise` that resolves to an execute function, or use `lazy(() => import(...))` to defer dynamic imports.
+`ToolConfig.execute` receives `ToolboxToolRuntimeContext`, which includes any base context plus `dispatchEvent`, `configuration`, `toolCall`, `signal`, and `timeoutMs`. `ToolConfig.execute` may also be a `Promise` that resolves to an execute function, or use `lazy(() => import(...))` to defer dynamic imports.
 
 #### `getMissingTools(names)`
 
@@ -137,17 +137,17 @@ const missing = armorer.getMissingTools(['toolA', 'toolB', 'toolC']);
 Signature:
 
 ```typescript
-function createArmorer(serialized?: SerializedArmorer, options?: ArmorerOptions): Armorer;
+function createToolbox(serialized?: SerializedToolbox, options?: ToolboxOptions): Toolbox;
 ```
 
 #### `isTool(value)`
 
-Type guard for `ArmorerTool`.
+Type guard for `ToolboxTool`.
 
 Signature:
 
 ```typescript
-function isTool(value: unknown): value is ArmorerTool;
+function isTool(value: unknown): value is ToolboxTool;
 ```
 
 #### Tool events (`DefaultToolEvents`)
@@ -166,7 +166,7 @@ function isTool(value: unknown): value is ArmorerTool;
 
 Execution and validation events include `toolCall` and `configuration` in their detail payload.
 
-#### Registry events (`ArmorerEvents`)
+#### Registry events (`ToolboxEvents`)
 
 - `registering`: tool about to be registered
 - `registered`: tool registered
@@ -205,8 +205,8 @@ Functions:
 
 #### Type guards
 
-- `isTool(obj)`: returns `obj is ArmorerTool` - checks if an object is a tool
-- `isArmorer(input)`: returns `input is Armorer` - checks if an object is an Armorer registry
+- `isTool(obj)`: returns `obj is ToolboxTool` - checks if an object is a tool
+- `isToolbox(input)`: returns `input is Toolbox` - checks if an object is an Toolbox registry
 
 #### Inspection helpers and schemas
 
@@ -226,17 +226,17 @@ Runtime validation schemas:
 
 Core registry types (main export):
 
-- `Armorer`: registry interface
-- `ArmorerContext`: base context bag for registry execution
-- `ArmorerOptions`: options for `createArmorer`
-- `ArmorerEvents`: registry event map
-- `ArmorerToolRuntimeContext`: context passed to `ToolConfig.execute`
-- `SerializedArmorer`: serialized `ToolConfig[]`
+- `Toolbox`: registry interface
+- `ToolboxContext`: base context bag for registry execution
+- `ToolboxOptions`: options for `createToolbox`
+- `ToolboxEvents`: registry event map
+- `ToolboxToolRuntimeContext`: context passed to `ToolConfig.execute`
+- `SerializedToolbox`: serialized `ToolConfig[]`
 - `ToolStatusUpdate`: registry status payload
 
 Registry helper types (`armorer/registry`):
 
-- `QueryResult`: array of `ArmorerTool`
+- `QueryResult`: array of `ToolboxTool`
 - `QuerySelectionResult`: query result union for selections
 - `Embedder`: `(texts: string[]) => number[][] | Promise<number[][]>` - function to generate embeddings
 - `EmbeddingVector`: numeric vector returned by `Embedder`
@@ -265,7 +265,7 @@ Tool types:
 
 - `CreateToolOptions`: options for `createTool`
 - `WithContext`: helper type for merged context
-- `ArmorerTool`: callable tool interface
+- `ToolboxTool`: callable tool interface
 - `ToolConfig`: registry tool configuration (execute may be lazy)
 - `ToolMetadata`: metadata bag for filtering and inspection
 - `ToolParametersSchema`: Zod object schema alias
@@ -366,15 +366,15 @@ Composition helpers and types.
 
 #### Composition API
 
-- `pipe(...tools)`: left-to-right composition (2 to 9 tools); returns an `ArmorerTool`
-- `compose(...tools)`: right-to-left composition; returns an `ArmorerTool`
-- `bind(tool, bound, options?)`: bind tool parameters; returns an `ArmorerTool`
+- `pipe(...tools)`: left-to-right composition (2 to 9 tools); returns an `ToolboxTool`
+- `compose(...tools)`: right-to-left composition; returns an `ToolboxTool`
+- `bind(tool, bound, options?)`: bind tool parameters; returns an `ToolboxTool`
 - `tap(tool, effect)`: run a side effect and return the original output
 - `when(predicate, whenTrue, whenFalse?)`: conditional tool routing
 - `parallel(...tools)`: run tools concurrently (2 to 9 tools); returns an array of outputs
 - `retry(tool, options?)`: retry a tool on failure with backoff options
-- `preprocess(tool, mapper)`: transform inputs before passing to tool; returns an `ArmorerTool`
-- `postprocess(tool, mapper)`: transform outputs after tool executes; returns an `ArmorerTool`
+- `preprocess(tool, mapper)`: transform inputs before passing to tool; returns an `ToolboxTool`
+- `postprocess(tool, mapper)`: transform outputs after tool executes; returns an `ToolboxTool`
 - `PipelineError`: error with `{ stepIndex, stepName, originalError }`
 
 Pipelines created with `pipe()`/`compose()` and tools created with `parallel()` emit `ComposedToolEvents` including `step-start`, `step-complete`, and `step-error`.
@@ -390,23 +390,23 @@ Pipelines created with `pipe()`/`compose()` and tools created with `parallel()` 
 
 ### Subpath export: `armorer/adapters/openai` (also `armorer/openai`)
 
-- `toOpenAI(input)`: converts a tool, tool array, or `Armorer` to OpenAI Chat Completions tools (`OpenAITool` or `OpenAITool[]`)
+- `toOpenAI(input)`: converts a tool, tool array, or `Toolbox` to OpenAI Chat Completions tools (`OpenAITool` or `OpenAITool[]`)
 - Types: `JSONSchema`, `OpenAIFunction`, `OpenAITool`
 
 ### Subpath export: `armorer/adapters/anthropic` (also `armorer/anthropic`)
 
-- `toAnthropic(input)`: converts a tool, tool array, or `Armorer` to Anthropic Messages tools (`AnthropicTool` or `AnthropicTool[]`)
+- `toAnthropic(input)`: converts a tool, tool array, or `Toolbox` to Anthropic Messages tools (`AnthropicTool` or `AnthropicTool[]`)
 - Types: `AnthropicInputSchema`, `AnthropicTool`, `JSONSchemaProperty`
 
 ### Subpath export: `armorer/adapters/gemini` (also `armorer/gemini`)
 
-- `toGemini(input)`: converts a tool, tool array, or `Armorer` to Gemini function declarations (`GeminiFunctionDeclaration` or array)
+- `toGemini(input)`: converts a tool, tool array, or `Toolbox` to Gemini function declarations (`GeminiFunctionDeclaration` or array)
 - Type helper: `GeminiTool` for wrapper objects with `functionDeclarations`
 - Types: `GeminiFunctionDeclaration`, `GeminiSchema`, `GeminiTool`
 
 ### Subpath export: `armorer/claude-agent-sdk`
 
-Claude Agent SDK adapter for integrating Armorer tools with `@anthropic-ai/claude-agent-sdk`.
+Claude Agent SDK adapter for integrating Toolbox tools with `@anthropic-ai/claude-agent-sdk`.
 
 Functions:
 
@@ -427,7 +427,7 @@ Types:
 
 ### Subpath export: `armorer/openai-agents-sdk`
 
-OpenAI Agents SDK adapter for integrating Armorer tools with `@openai/agents`.
+OpenAI Agents SDK adapter for integrating Toolbox tools with `@openai/agents`.
 
 Functions:
 
@@ -449,7 +449,7 @@ Pre-configured tools for common agentic workflows.
 
 #### Search Tools Tool
 
-A tool that searches for other tools in an Armorer registry, enabling semantic tool discovery in agentic workflows.
+A tool that searches for other tools in an Toolbox registry, enabling semantic tool discovery in agentic workflows.
 
 Functions:
 
@@ -474,10 +474,10 @@ Types:
 Usage:
 
 ```typescript
-import { createArmorer } from 'armorer';
+import { createToolbox } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 // ... register tools
 
 const searchTool = createSearchTool(armorer);

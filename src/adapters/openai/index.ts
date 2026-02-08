@@ -48,7 +48,7 @@ export function createNameMapper(
 }
 
 /**
- * Converts Armorer tools to OpenAI Chat Completions API format.
+ * Converts Toolbox tools to OpenAI Chat Completions API format.
  *
  * @example
  * ```ts
@@ -98,7 +98,7 @@ export function toOpenAI(
 }
 
 /**
- * Parses OpenAI tool calls into Armorer ToolCallInput objects.
+ * Parses OpenAI tool calls into Toolbox ToolCallInput objects.
  *
  * @example
  * ```ts
@@ -135,7 +135,7 @@ export function parseToolCalls(
 }
 
 /**
- * Formats Armorer ToolResults into OpenAI tool messages.
+ * Formats Toolbox ToolResults into OpenAI tool messages.
  *
  * @example
  * ```ts

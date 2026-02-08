@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createArmorer } from '../../create-armorer';
+import { createToolbox } from '../../create-armorer';
 import { createTool } from '../../create-tool';
 import {
   createClaudeAgentSdkServer,
@@ -11,7 +11,7 @@ import {
 
 describe('claude-agent-sdk adapter', () => {
   it('creates SDK tools with mutating and dangerous lists', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'safe-tool',
@@ -60,7 +60,7 @@ describe('claude-agent-sdk adapter', () => {
   });
 
   it('denies mutating and dangerous tools when gated', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'mutating-tool',
@@ -107,7 +107,7 @@ describe('claude-agent-sdk adapter', () => {
 
   it('allows builtin dangerous tools when allowDangerous is true', async () => {
     const gate = createClaudeToolGate({
-      registry: createArmorer(),
+      registry: createToolbox(),
       readOnly: true,
       allowMutation: false,
       allowDangerous: true,
@@ -120,7 +120,7 @@ describe('claude-agent-sdk adapter', () => {
   });
 
   it('uses tags and readOnly metadata to classify tools', async () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     createTool(
       {
         name: 'tag-mutating',
@@ -248,7 +248,7 @@ describe('claude-agent-sdk adapter', () => {
     expect((formattedContent as { text: string }).text).toBe('formatted');
 
     const gate = createClaudeToolGate({
-      registry: createArmorer(),
+      registry: createToolbox(),
       allowUnknown: true,
     });
     const decision = await gate('mystery');
@@ -257,7 +257,7 @@ describe('claude-agent-sdk adapter', () => {
 
   it('denies unknown tools by default with custom messages', async () => {
     const gate = createClaudeToolGate({
-      registry: createArmorer(),
+      registry: createToolbox(),
       messages: { unknown: (name) => `nope:${name}` },
     });
 

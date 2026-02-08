@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
 import { createRegistry, defineTool } from '../src/core';
-import { createArmorer } from '../src/create-armorer';
+import { createToolbox } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
 import { queryTools, reindexSearchIndex, searchTools } from '../src/registry';
 
@@ -37,7 +37,7 @@ describe('registry helpers', () => {
       calls += 1;
       return texts.map(() => [1, 0]);
     };
-    const armorer = createArmorer([], { embed });
+    const armorer = createToolbox([], { embed });
     armorer.register(makeTool('reindex'));
 
     // Initial registration should have called the embedder
@@ -54,7 +54,7 @@ describe('registry helpers', () => {
   });
 
   it('treats empty text queries as match-all', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(makeTool('alpha'), makeTool('beta'));
 
     const results = queryTools(armorer, { text: '   ' });
@@ -62,7 +62,7 @@ describe('registry helpers', () => {
   });
 
   it('supports AND query groups', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(
       makeTool('alpha', { tags: ['fast'] }),
       makeTool('beta', { tags: ['slow'] }),
@@ -75,7 +75,7 @@ describe('registry helpers', () => {
   });
 
   it('supports config and summary selection', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     const tool = makeTool('meta', {
       tags: ['fast'],
       metadata: { tier: 'pro' },
@@ -96,7 +96,7 @@ describe('registry helpers', () => {
   });
 
   it('supports name and config selections in search', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(makeTool('alpha'), makeTool('beta'));
 
     const names = searchTools(armorer, { select: 'name' });
@@ -107,7 +107,7 @@ describe('registry helpers', () => {
   });
 
   it('includes tag matches in explain details', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(makeTool('tagged', { tags: ['fast'] }));
 
     const results = searchTools(armorer, {
@@ -119,7 +119,7 @@ describe('registry helpers', () => {
   });
 
   it('supports ranker exclude and match merging', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(
       makeTool('keep', { tags: ['fast'], metadata: { tier: 'pro' } }),
       makeTool('skip'),
@@ -152,7 +152,7 @@ describe('registry helpers', () => {
   });
 
   it('supports numeric ranker scores and tieBreaker none', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(makeTool('alpha'), makeTool('beta'));
 
     const results = searchTools(armorer, {
@@ -164,7 +164,7 @@ describe('registry helpers', () => {
   });
 
   it('treats empty schema and tag filters as match-all', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(makeTool('alpha'), makeTool('beta'));
 
     const bySchema = queryTools(armorer, { schema: { keys: [''] } });
@@ -178,7 +178,7 @@ describe('registry helpers', () => {
   });
 
   it('handles metadata filter edge cases', () => {
-    const armorer = createArmorer();
+    const armorer = createToolbox();
     armorer.register(
       makeTool('meta', {
         metadata: {
@@ -221,7 +221,7 @@ describe('registry helpers', () => {
   it('handles embedding edge cases without crashing', () => {
     const embed = (texts: string[]) =>
       texts.map((text) => (text.includes('query') ? [1, 0] : [NaN]));
-    const armorer = createArmorer([], { embed });
+    const armorer = createToolbox([], { embed });
     armorer.register(makeTool('invalid-embedding'));
 
     const results = searchTools(armorer, { rank: { text: 'query' } });
@@ -231,7 +231,7 @@ describe('registry helpers', () => {
   it('skips embedding scores when vector lengths mismatch', () => {
     const embed = (texts: string[]) =>
       texts.map((text) => (text.includes('query') ? [1, 0, 0] : [1, 0]));
-    const armorer = createArmorer([], { embed });
+    const armorer = createToolbox([], { embed });
     armorer.register(makeTool('length-mismatch'));
 
     const results = searchTools(armorer, { rank: { text: 'query' } });
@@ -240,7 +240,7 @@ describe('registry helpers', () => {
 
   it('handles sparse embedding vectors', () => {
     const embed = (texts: string[]) => texts.map(() => Array(2) as number[]);
-    const armorer = createArmorer([], { embed });
+    const armorer = createToolbox([], { embed });
     armorer.register(makeTool('sparse'));
 
     const results = searchTools(armorer, { rank: { text: 'query' } });

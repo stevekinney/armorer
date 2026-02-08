@@ -260,10 +260,10 @@ export type ToolExecuteWithOptions = ToolExecuteOptions & {
 };
 
 /**
- * Type guard to check if a value is an Armorer tool.
+ * Type guard to check if a value is an Toolbox tool.
  *
  * @param obj - The value to check
- * @returns True if the value is an ArmorerTool (has required properties: id, identity, name, description, schema, execute, configuration)
+ * @returns True if the value is an ToolboxTool (has required properties: id, identity, name, description, schema, execute, configuration)
  *
  * @example
  * ```typescript
@@ -271,12 +271,12 @@ export type ToolExecuteWithOptions = ToolExecuteOptions & {
  *
  * const tool = createTool({ ... });
  * if (isTool(tool)) {
- *   // TypeScript knows tool is an ArmorerTool
+ *   // TypeScript knows tool is an ToolboxTool
  *   await tool.execute({ ... });
  * }
  * ```
  */
-export function isTool(obj: unknown): obj is ArmorerTool {
+export function isTool(obj: unknown): obj is ToolboxTool {
   return (
     typeof obj === 'function' &&
     'id' in obj &&
@@ -290,19 +290,19 @@ export function isTool(obj: unknown): obj is ArmorerTool {
 }
 
 /**
- * A tool that can be registered with Armorer and executed.
+ * A tool that can be registered with Toolbox and executed.
  *
  * Use with type parameters for compile-time safety on a specific tool:
  * ```ts
- * const myTool: ArmorerTool<typeof mySchema> = createTool({...});
+ * const myTool: ToolboxTool<typeof mySchema> = createTool({...});
  * ```
  *
  * Use without type parameters for collections:
  * ```ts
- * const tools: ArmorerTool[] = [tool1, tool2, tool3];
+ * const tools: ToolboxTool[] = [tool1, tool2, tool3];
  * ```
  */
-export type ArmorerTool<
+export type ToolboxTool<
   T extends ToolParametersSchema = ToolParametersSchema,
   E extends ToolEventsMap = DefaultToolEvents,
   R = unknown,
@@ -372,4 +372,4 @@ export type RunnableTool<
   E extends ToolEventsMap = DefaultToolEvents,
   R = unknown,
   M extends ToolMetadata | undefined = ToolMetadata | undefined,
-> = ArmorerTool<T, E, R, M>;
+> = ToolboxTool<T, E, R, M>;

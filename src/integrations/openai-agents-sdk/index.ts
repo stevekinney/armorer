@@ -1,8 +1,8 @@
 import type { ZodTypeAny } from 'zod';
 
 import { getSchemaShape } from '../../core/schema-utilities';
-import type { Armorer, ArmorerTool, ToolResult } from '../../runtime';
-import { isArmorer } from '../../runtime/create-armorer';
+import type { Toolbox, ToolboxTool, ToolResult } from '../../runtime';
+import { isToolbox } from '../../runtime/create-armorer';
 import { isTool } from '../../runtime/is-tool';
 
 type OpenAIAgentsModule = typeof import('@openai/agents');
@@ -16,7 +16,7 @@ export type OpenAIAgentToolConfig = {
 };
 
 export type OpenAIAgentToolOptions = {
-  toolConfig?: (tool: ArmorerTool) => OpenAIAgentToolConfig;
+  toolConfig?: (tool: ToolboxTool) => OpenAIAgentToolConfig;
   formatResult?: (result: ToolResult) => unknown;
 };
 
@@ -28,7 +28,7 @@ export type OpenAIAgentToolsResult = {
 };
 
 export type OpenAIToolGateOptions = {
-  registry: Armorer | ArmorerTool | ArmorerTool[];
+  registry: Toolbox | ToolboxTool | ToolboxTool[];
   readOnly?: boolean;
   allowMutation?: boolean;
   allowDangerous?: boolean;
@@ -38,7 +38,7 @@ export type OpenAIToolGateOptions = {
     dangerous?: string[];
   };
   allowUnknown?: boolean;
-  toolConfig?: (tool: ArmorerTool) => OpenAIAgentToolConfig;
+  toolConfig?: (tool: ToolboxTool) => OpenAIAgentToolConfig;
   messages?: {
     mutating?: string;
     dangerous?: string;
@@ -49,7 +49,7 @@ export type OpenAIToolGateOptions = {
 export type OpenAIToolGateDecision = { behavior: 'allow' | 'deny'; message?: string };
 
 /**
- * Converts Armorer tools to OpenAI Agents SDK format.
+ * Converts Toolbox tools to OpenAI Agents SDK format.
  *
  * @example
  * ```ts
@@ -65,7 +65,7 @@ export type OpenAIToolGateDecision = { behavior: 'allow' | 'deny'; message?: str
  * ```
  */
 export async function toOpenAIAgentTools(
-  input: Armorer | ArmorerTool | ArmorerTool[],
+  input: Toolbox | ToolboxTool | ToolboxTool[],
   options: OpenAIAgentToolOptions = {},
 ): Promise<OpenAIAgentToolsResult> {
   const tools = normalizeToTools(input);
@@ -187,14 +187,14 @@ export function createOpenAIToolGate(
   };
 }
 
-function normalizeToTools(input: Armorer | ArmorerTool | ArmorerTool[]): ArmorerTool[] {
-  if (isArmorer(input)) {
+function normalizeToTools(input: Toolbox | ToolboxTool | ToolboxTool[]): ToolboxTool[] {
+  if (isToolbox(input)) {
     return input.tools();
   }
   if (Array.isArray(input)) {
     return input.map((tool) => {
       if (!isTool(tool)) {
-        throw new TypeError('Invalid tool input: expected ArmorerTool');
+        throw new TypeError('Invalid tool input: expected ToolboxTool');
       }
       return tool;
     });
@@ -205,7 +205,7 @@ function normalizeToTools(input: Armorer | ArmorerTool | ArmorerTool[]): Armorer
   throw new TypeError('Invalid input: expected tool, tool array, or Armorer');
 }
 
-function isMutating(tool: ArmorerTool): boolean {
+function isMutating(tool: ToolboxTool): boolean {
   const metadata = tool.metadata;
   const tags = tool.tags?.map((tag) => tag.toLowerCase()) ?? [];
   const tagSet = new Set(tags);
@@ -216,7 +216,7 @@ function isMutating(tool: ArmorerTool): boolean {
   return false;
 }
 
-function isDangerous(tool: ArmorerTool): boolean {
+function isDangerous(tool: ToolboxTool): boolean {
   const metadata = tool.metadata;
   const tags = tool.tags?.map((tag) => tag.toLowerCase()) ?? [];
   const tagSet = new Set(tags);

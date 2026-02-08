@@ -2,16 +2,16 @@
 
 ## Overview
 
-Armorer supports semantic search for tools using vector embeddings. When you provide an `embed` function to `createArmorer`, the registry generates embeddings for each tool's name, description, tags, schema keys, and metadata keys. These embeddings enable fuzzy, meaning-based searches that go beyond exact text matching.
+Toolbox supports semantic search for tools using vector embeddings. When you provide an `embed` function to `createToolbox`, the registry generates embeddings for each tool's name, description, tags, schema keys, and metadata keys. These embeddings enable fuzzy, meaning-based searches that go beyond exact text matching.
 
 ## Basic Embedding Integration
 
 The `embed` option accepts a function that takes an array of strings and returns an array of numeric vectors:
 
 ```typescript
-import { createArmorer } from 'armorer';
+import { createToolbox } from 'armorer';
 
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   embed: async (texts: string[]): Promise<number[][]> => {
     // Return embeddings for each text
     return texts.map((text) => generateEmbedding(text));
@@ -24,14 +24,14 @@ const armorer = createArmorer([], {
 The most common approach is to use OpenAI's embedding API:
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { searchTools } from 'armorer/registry';
 import OpenAI from 'openai';
 import { z } from 'zod';
 
 const openai = new OpenAI();
 
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   embed: async (texts: string[]): Promise<number[][]> => {
     const response = await openai.embeddings.create({
       model: 'text-embedding-3-small',
@@ -100,10 +100,10 @@ First, install the required dependencies:
 bun add @pinecone-database/pinecone openai
 ```
 
-### Creating a Pinecone-backed Armorer
+### Creating a Pinecone-backed Toolbox
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { queryTools, searchTools } from 'armorer/registry';
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
@@ -126,7 +126,7 @@ async function embed(texts: string[]): Promise<number[][]> {
 }
 
 // Create the armorer with embedding support
-const armorer = createArmorer([], { embed });
+const armorer = createToolbox([], { embed });
 
 // Helper to upsert tool embeddings to Pinecone
 async function syncToolToPinecone(toolName: string): Promise<void> {
@@ -201,9 +201,9 @@ console.log(toolNames); // ['send-email', 'send-sms', ...]
 const tools = toolNames.map((name) => armorer.getTool(name)).filter(Boolean);
 ```
 
-### Hybrid Search: Combining Pinecone with Armorer Queries
+### Hybrid Search: Combining Pinecone with Toolbox Queries
 
-For the best results, combine Pinecone's semantic search with Armorer's built-in filtering:
+For the best results, combine Pinecone's semantic search with Toolbox's built-in filtering:
 
 ```typescript
 import { queryTools } from 'armorer/registry';
@@ -211,7 +211,7 @@ import { queryTools } from 'armorer/registry';
 async function hybridToolSearch(
   query: string,
   filters?: { tags?: string[]; metadata?: Record<string, unknown> },
-): Promise<ArmorerTool[]> {
+): Promise<ToolboxTool[]> {
   // Step 1: Get semantically similar tools from Pinecone
   const [queryEmbedding] = await embed([query]);
   const pineconeResults = await index.query({
@@ -228,7 +228,7 @@ async function hybridToolSearch(
     }
   }
 
-  // Step 2: Filter with Armorer's query system
+  // Step 2: Filter with Toolbox's query system
   const candidates = Array.from(candidateNames)
     .map((name) => armorer.getTool(name))
     .filter(Boolean);
@@ -237,7 +237,7 @@ async function hybridToolSearch(
     return candidates;
   }
 
-  // Apply additional filters using Armorer's query system
+  // Apply additional filters using Toolbox's query system
   return queryTools(candidates, {
     tags: filters.tags ? { all: filters.tags } : undefined,
     metadata: filters.metadata ? { eq: filters.metadata } : undefined,
@@ -283,7 +283,7 @@ const toolWithEmbeddings = createTool({
   },
 });
 
-// When registered, Armorer uses the pre-computed embeddings
+// When registered, Toolbox uses the pre-computed embeddings
 // instead of calling the embed function
 armorer.register(toolWithEmbeddings);
 ```
@@ -293,7 +293,7 @@ armorer.register(toolWithEmbeddings);
 Here's a complete example of a production-ready tool registry with Pinecone:
 
 ```typescript
-import { createArmorer, createTool, type ArmorerTool } from 'armorer';
+import { createToolbox, createTool, type ToolboxTool } from 'armorer';
 import { searchTools } from 'armorer/registry';
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
@@ -344,11 +344,11 @@ async function ensureIndex(): Promise<void> {
 }
 
 // Main setup
-async function createPineconeArmorer() {
+async function createPineconeToolbox() {
   await ensureIndex();
 
   const index = pinecone.index(PINECONE_INDEX);
-  const armorer = createArmorer([], { embed });
+  const armorer = createToolbox([], { embed });
 
   // Sync tools to Pinecone on registration
   armorer.addEventListener('registered', async (event) => {
@@ -380,7 +380,7 @@ async function createPineconeArmorer() {
     index,
 
     // Semantic search via Pinecone
-    async search(query: string, limit = 10): Promise<ArmorerTool[]> {
+    async search(query: string, limit = 10): Promise<ToolboxTool[]> {
       const [queryEmbedding] = await embed([query]);
 
       const results = await index.query({
@@ -390,7 +390,7 @@ async function createPineconeArmorer() {
       });
 
       const seen = new Set<string>();
-      const tools: ArmorerTool[] = [];
+      const tools: ToolboxTool[] = [];
 
       for (const match of results.matches ?? []) {
         const toolName = match.metadata?.toolName as string;
@@ -417,7 +417,7 @@ async function createPineconeArmorer() {
 }
 
 // Usage
-const { armorer, search } = await createPineconeArmorer();
+const { armorer, search } = await createPineconeToolbox();
 
 // Register tools
 createTool(
@@ -474,7 +474,7 @@ console.log(
 
 3. **Cache embeddings**: Store pre-computed embeddings in tool metadata for faster startup.
 
-4. **Use hybrid search**: Combine semantic search with Armorer's tag and metadata filters for precise results.
+4. **Use hybrid search**: Combine semantic search with Toolbox's tag and metadata filters for precise results.
 
 5. **Index management**: Periodically reindex tools if their descriptions or metadata change using `reindexSearchIndex()`.
 
@@ -518,5 +518,5 @@ For an open-source embedding database with built-in embedding functions, see the
 
 - [LanceDB Integration](lancedb.md) - Serverless vector database guide
 - [Chroma Integration](chroma.md) - Open-source embedding database guide
-- [Armorer Registry](registry.md) - Querying and searching tools
+- [Toolbox Registry](registry.md) - Querying and searching tools
 - [API Reference](api-reference.md) - Complete type definitions for embeddings

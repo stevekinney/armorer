@@ -2,23 +2,23 @@
 
 ## Overview
 
-Expose an Armorer registry as an MCP server, with tools, resources, and prompts.
-Armorer handles tool registration; MCP handles transport and protocol details.
+Expose an Toolbox registry as an MCP server, with tools, resources, and prompts.
+Toolbox handles tool registration; MCP handles transport and protocol details.
 
 ## Prerequisites
 
-- Install the MCP SDK as a runtime dependency (Armorer does not ship transports).
-- Have a registry created with `createArmorer()` and tools registered into it.
+- Install the MCP SDK as a runtime dependency (Toolbox does not ship transports).
+- Have a registry created with `createToolbox()` and tools registered into it.
 
 ## Quick start (stdio transport)
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { createMCP } from 'armorer/mcp';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 createTool(
   {
     name: 'sum',
@@ -177,32 +177,32 @@ const mcp = createMCP(armorer, {
 
 ### Tool updates
 
-When tools are re-registered in the Armorer registry, the MCP server refreshes
+When tools are re-registered in the Toolbox registry, the MCP server refreshes
 the tool definitions and notifies connected clients with `toolListChanged`.
 
 ## Agent SDK integrations
 
 ### OpenAI Agents SDK (`@openai/agents`)
 
-The OpenAI Agents SDK can consume Armorer tools in two ways:
+The OpenAI Agents SDK can consume Toolbox tools in two ways:
 
-1. **MCP servers** (shown below) - Run Armorer as an MCP server that the SDK connects to
+1. **MCP servers** (shown below) - Run Toolbox as an MCP server that the SDK connects to
 2. **Direct integration** - Convert tools directly using the [OpenAI Agents SDK integration](./openai-agents-sdk.md)
 
 The MCP approach is useful when you want to run tools in a separate process or expose them over HTTP. The direct integration is simpler for in-process usage.
 
 #### stdio (local subprocess)
 
-Run an Armorer MCP server as a local process and let the agent SDK spawn it.
+Run an Toolbox MCP server as a local process and let the agent SDK spawn it.
 
 ```typescript
 // mcp-server.ts
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { createMCP } from 'armorer/mcp';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 createTool(
   {
     name: 'sum',
@@ -243,7 +243,7 @@ console.log(result.finalOutput);
 
 #### Streamable HTTP
 
-Expose Armorer over HTTP and connect via the Streamable HTTP MCP server.
+Expose Toolbox over HTTP and connect via the Streamable HTTP MCP server.
 
 ```typescript
 import { Agent, MCPServerStreamableHttp, run } from '@openai/agents';
@@ -273,11 +273,11 @@ Use the in-process MCP server instance with the SDK `mcpServers` config.
 
 ```typescript
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { createMCP } from 'armorer/mcp';
 import { z } from 'zod';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 createTool(
   {
     name: 'sum',

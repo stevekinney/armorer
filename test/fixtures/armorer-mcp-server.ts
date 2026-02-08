@@ -1,11 +1,11 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { createArmorer } from '../../src/create-armorer';
+import { createToolbox } from '../../src/create-armorer';
 import { createTool } from '../../src/create-tool';
 import { createMCP } from '../../src/mcp';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 createTool(
   {
     name: 'sum',

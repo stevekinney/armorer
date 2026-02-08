@@ -1,4 +1,4 @@
-# Armorer Registry
+# Toolbox Registry
 
 ## Overview
 
@@ -7,7 +7,7 @@ Register tools, execute tool calls, and query or search the registry.
 ### Registration
 
 ```typescript
-const armorer = createArmorer();
+const armorer = createToolbox();
 
 // Register individual tools
 armorer.register(tool1);
@@ -17,7 +17,7 @@ armorer.register(tool2, tool3);
 armorer.register(tool1.configuration, tool2.configuration);
 
 // Or initialize with tool configurations
-const armorer = createArmorer([tool1.configuration, tool2.configuration]);
+const armorer = createToolbox([tool1.configuration, tool2.configuration]);
 
 // Or create + register in one step
 const registered = armorer.createTool({
@@ -95,13 +95,13 @@ armorer.addEventListener('execute-success', (event) => {
 
 ### Instrumentation (OpenTelemetry)
 
-Armorer provides native OpenTelemetry instrumentation via the `armorer/instrumentation` module.
+Toolbox provides native OpenTelemetry instrumentation via the `armorer/instrumentation` module.
 
 ```typescript
-import { createArmorer } from 'armorer';
+import { createToolbox } from 'armorer';
 import { instrument } from 'armorer/instrumentation';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 const unregister = instrument(armorer);
 
 // All subsequent calls via armorer.execute() will create OTel Spans
@@ -109,13 +109,13 @@ const unregister = instrument(armorer);
 
 ### Middleware
 
-Armorer supports middleware to wrap tool execution logic. This is useful for cross-cutting concerns like caching, rate limiting, and timeouts.
+Toolbox supports middleware to wrap tool execution logic. This is useful for cross-cutting concerns like caching, rate limiting, and timeouts.
 
 ```typescript
-import { createArmorer } from 'armorer';
+import { createToolbox } from 'armorer';
 import { createCacheMiddleware, createRateLimitMiddleware } from 'armorer/middleware';
 
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   middleware: [
     // Cache results for 1 minute
     createCacheMiddleware({ ttlMs: 60000 }),
@@ -340,12 +340,12 @@ const matches = searchTools(armorer, {
 
 #### Embeddings
 
-Provide an embedder to `createArmorer` to enrich text search with embeddings. The registry batches the searchable fields for each tool (name, description, tags, schema keys, metadata keys) and stores the resulting vectors on registration. Queries and searches then use embeddings alongside lexical matching when `text` is provided.
+Provide an embedder to `createToolbox` to enrich text search with embeddings. The registry batches the searchable fields for each tool (name, description, tags, schema keys, metadata keys) and stores the resulting vectors on registration. Queries and searches then use embeddings alongside lexical matching when `text` is provided.
 
 The embedder is called with a list of texts and must return a same-length list of numeric vectors; mismatched or invalid vectors are ignored. Embeddings are cached per tool and can be recomputed with `reindexSearchIndex`.
 
 ```typescript
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   embed: async (texts) => embeddingsClient.embed(texts),
 });
 ```
@@ -356,14 +356,14 @@ For detailed examples including OpenAI and Pinecone integration, see the [Embedd
 
 #### Type Guards
 
-You can use `isArmorer()` to check if an object is an Armorer registry:
+You can use `isToolbox()` to check if an object is an Toolbox registry:
 
 ```typescript
-import { isArmorer, createArmorer } from 'armorer';
+import { isToolbox, createToolbox } from 'armorer';
 
-const registry = createArmorer();
-if (isArmorer(registry)) {
-  // TypeScript knows registry is Armorer here
+const registry = createToolbox();
+if (isToolbox(registry)) {
+  // TypeScript knows registry is Toolbox here
   const tools = registry.tools();
   const inspection = registry.inspect();
 }
@@ -376,7 +376,7 @@ This is useful when working with functions that accept multiple types and you ne
 You can transform tool configurations during registration using middleware. Middleware functions receive a tool configuration and return a (possibly modified) configuration. Middleware is applied in order before the tool is built.
 
 ```typescript
-import { createArmorer, createMiddleware } from 'armorer';
+import { createToolbox, createMiddleware } from 'armorer';
 
 // Create middleware to add metadata
 const addSourceMetadata = createMiddleware((config) => ({
@@ -392,7 +392,7 @@ const validateConfig = createMiddleware((config) => {
   return config;
 });
 
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   middleware: [validateConfig, addSourceMetadata],
 });
 
@@ -407,14 +407,14 @@ Common middleware patterns:
 - **Transformation**: Rename tools, modify schemas, or wrap execute functions
 - **Logging**: Track tool registration for observability
 
-Middleware must be synchronous when deserializing from `SerializedArmorer`. The middleware receives the full `ToolConfig` including the execute function.
+Middleware must be synchronous when deserializing from `SerializedToolbox`. The middleware receives the full `ToolConfig` including the execute function.
 
 #### getTool() for Deserialization
 
 When deserializing an armorer (loading from JSON), tool configurations may not have execute functions. Use `getTool()` to provide execute functions dynamically. The resolver must be synchronous.
 
 ```typescript
-const armorer = createArmorer(serializedConfigs, {
+const armorer = createToolbox(serializedConfigs, {
   getTool: (config) => {
     // Map to a preloaded execute function based on config.name
     return toolMap[config.name];
@@ -450,7 +450,7 @@ const tool = createTool({
 
 // When registering with an armorer that has an embedder,
 // tools with pre-computed embeddings will skip embedding computation
-const armorer = createArmorer([tool], {
+const armorer = createToolbox([tool], {
   embed: async (texts) => {
     // This won't be called for tools that already have embeddings in metadata
     return embeddingsClient.embed(texts);
@@ -493,7 +493,7 @@ armorer.addEventListener('status:update', (event) => {
 Pass shared context to all registered tools:
 
 ```typescript
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   context: {
     userId: 'user-123',
     sessionId: 'session-456',
@@ -548,26 +548,26 @@ console.log(inspection.tools[0]);
 const serialized = armorer.toJSON();
 
 // Rehydrate from serialized state
-const restored = createArmorer(serialized);
+const restored = createToolbox(serialized);
 ```
 
-`SerializedArmorer` is a `ToolConfig[]` that includes execute functions, so it is meant for in-process cloning. Functions are not JSON-serializable, so `JSON.stringify(armorer.toJSON())` will drop them. If you need cross-process persistence, store your own manifest (name, schema, metadata, module path) and rebuild configs at startup, typically using `lazy(() => import(...))` for the execute function.
+`SerializedToolbox` is a `ToolConfig[]` that includes execute functions, so it is meant for in-process cloning. Functions are not JSON-serializable, so `JSON.stringify(armorer.toJSON())` will drop them. If you need cross-process persistence, store your own manifest (name, schema, metadata, module path) and rebuild configs at startup, typically using `lazy(() => import(...))` for the execute function.
 
-### Combining Armorers
+### Combining Toolboxs
 
-Use `combineArmorers` to merge multiple registries into a single fresh registry:
+Use `combineToolboxes` to merge multiple registries into a single fresh registry:
 
 ```typescript
-import { combineArmorers, createArmorer, createTool } from 'armorer';
+import { combineToolboxes, createToolbox, createTool } from 'armorer';
 
-const mathArmorer = createArmorer();
-mathArmorer.register(addTool, subtractTool);
+const mathToolbox = createToolbox();
+mathToolbox.register(addTool, subtractTool);
 
-const stringArmorer = createArmorer();
-stringArmorer.register(formatTool, parseTool);
+const stringToolbox = createToolbox();
+stringToolbox.register(formatTool, parseTool);
 
 // Combine into a single registry
-const combined = combineArmorers(mathArmorer, stringArmorer);
+const combined = combineToolboxes(mathToolbox, stringToolbox);
 console.log(combined.tools()); // All tools from both registries
 ```
 

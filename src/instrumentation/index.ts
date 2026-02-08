@@ -7,7 +7,7 @@ import {
   type Tracer,
 } from '@opentelemetry/api';
 
-import type { Armorer } from '../runtime/create-armorer';
+import type { Toolbox } from '../runtime/create-armorer';
 
 export type InstrumentationOptions = {
   tracer?: Tracer;
@@ -16,16 +16,16 @@ export type InstrumentationOptions = {
 };
 
 /**
- * Instruments an Armorer instance with OpenTelemetry tracing.
+ * Instruments an Toolbox instance with OpenTelemetry tracing.
  *
  * Automatically creates spans for tool executions and events.
  *
- * @param armorer - The Armorer instance to instrument.
+ * @param armorer - The Toolbox instance to instrument.
  * @param options - Configuration options.
  * @returns A function to unregister the instrumentation.
  */
 export function instrument(
-  armorer: Armorer,
+  armorer: Toolbox,
   options: InstrumentationOptions = {},
 ): () => void {
   const tracer =

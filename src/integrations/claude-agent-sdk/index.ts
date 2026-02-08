@@ -2,8 +2,8 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ZodTypeAny } from 'zod';
 
 import { getSchemaShape } from '../../core/schema-utilities';
-import type { Armorer, ArmorerTool, ToolResult } from '../../runtime';
-import { isArmorer } from '../../runtime/create-armorer';
+import type { Toolbox, ToolboxTool, ToolResult } from '../../runtime';
+import { isToolbox } from '../../runtime/create-armorer';
 import { isTool } from '../../runtime/is-tool';
 
 type ClaudeAgentSdkModule = typeof import('@anthropic-ai/claude-agent-sdk');
@@ -18,7 +18,7 @@ export type ClaudeAgentSdkToolConfig = {
 };
 
 export type ClaudeAgentSdkToolOptions = {
-  toolConfig?: (tool: ArmorerTool) => ClaudeAgentSdkToolConfig;
+  toolConfig?: (tool: ToolboxTool) => ClaudeAgentSdkToolConfig;
   formatResult?: (result: ToolResult) => CallToolResult;
 };
 
@@ -36,7 +36,7 @@ export type ClaudeAgentSdkServerResult = {
 };
 
 export type ClaudeToolGateOptions = {
-  registry: Armorer | ArmorerTool | ArmorerTool[];
+  registry: Toolbox | ToolboxTool | ToolboxTool[];
   readOnly?: boolean;
   allowMutation?: boolean;
   allowDangerous?: boolean;
@@ -46,7 +46,7 @@ export type ClaudeToolGateOptions = {
     dangerous?: string[];
   };
   allowUnknown?: boolean;
-  toolConfig?: (tool: ArmorerTool) => ClaudeAgentSdkToolConfig;
+  toolConfig?: (tool: ToolboxTool) => ClaudeAgentSdkToolConfig;
   messages?: {
     mutating?: string;
     dangerous?: string;
@@ -57,7 +57,7 @@ export type ClaudeToolGateOptions = {
 export type ClaudeToolGateDecision = { behavior: 'allow' | 'deny'; message?: string };
 
 export async function toClaudeAgentSdkTools(
-  input: Armorer | ArmorerTool | ArmorerTool[],
+  input: Toolbox | ToolboxTool | ToolboxTool[],
   options: ClaudeAgentSdkToolOptions = {},
 ): Promise<ClaudeAgentSdkTool[]> {
   const tools = normalizeToTools(input);
@@ -82,7 +82,7 @@ export async function toClaudeAgentSdkTools(
 }
 
 export async function createClaudeAgentSdkServer(
-  input: Armorer | ArmorerTool | ArmorerTool[],
+  input: Toolbox | ToolboxTool | ToolboxTool[],
   options: CreateClaudeAgentSdkServerOptions = {},
 ): Promise<ClaudeAgentSdkServerResult> {
   const tools = normalizeToTools(input);
@@ -207,14 +207,14 @@ export function createClaudeToolGate(
   };
 }
 
-function normalizeToTools(input: Armorer | ArmorerTool | ArmorerTool[]): ArmorerTool[] {
-  if (isArmorer(input)) {
+function normalizeToTools(input: Toolbox | ToolboxTool | ToolboxTool[]): ToolboxTool[] {
+  if (isToolbox(input)) {
     return input.tools();
   }
   if (Array.isArray(input)) {
     return input.map((tool) => {
       if (!isTool(tool)) {
-        throw new TypeError('Invalid tool input: expected ArmorerTool');
+        throw new TypeError('Invalid tool input: expected ToolboxTool');
       }
       return tool;
     });
@@ -225,7 +225,7 @@ function normalizeToTools(input: Armorer | ArmorerTool | ArmorerTool[]): Armorer
   throw new TypeError('Invalid input: expected tool, tool array, or Armorer');
 }
 
-function isMutating(tool: ArmorerTool): boolean {
+function isMutating(tool: ToolboxTool): boolean {
   const metadata = tool.metadata;
   const tags = tool.tags?.map((tag) => tag.toLowerCase()) ?? [];
   const tagSet = new Set(tags);
@@ -236,7 +236,7 @@ function isMutating(tool: ArmorerTool): boolean {
   return false;
 }
 
-function isDangerous(tool: ArmorerTool): boolean {
+function isDangerous(tool: ToolboxTool): boolean {
   const metadata = tool.metadata;
   const tags = tool.tags?.map((tag) => tag.toLowerCase()) ?? [];
   const tagSet = new Set(tags);

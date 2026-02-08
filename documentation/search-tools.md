@@ -2,7 +2,7 @@
 
 ## Overview
 
-Armorer provides a pre-configured `search-tools` tool that enables semantic discovery of registered tools. This is particularly useful for:
+Toolbox provides a pre-configured `search-tools` tool that enables semantic discovery of registered tools. This is particularly useful for:
 
 - **Agentic workflows**: Where the LLM needs to discover which tools are available for a task
 - **Large tool registries**: When you have many tools and don't want to pass all of them in every request
@@ -24,12 +24,12 @@ import { createSearchTool } from 'armorer/tools';
 ## Basic Usage
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 import { z } from 'zod';
 
 // Create an armorer and register some tools
-const armorer = createArmorer();
+const armorer = createToolbox();
 
 createTool(
   {
@@ -83,13 +83,13 @@ console.log(results);
 For better search results, configure your armorer with an embedding function:
 
 ```typescript
-import { createArmorer } from 'armorer';
+import { createToolbox } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 import OpenAI from 'openai';
 
 const openai = new OpenAI();
 
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   embed: async (texts) => {
     const response = await openai.embeddings.create({
       model: 'text-embedding-3-small',
@@ -192,7 +192,7 @@ Each result contains:
 The search tool automatically discovers tools registered at any time—before or after the search tool itself is installed. This is because it queries `armorer.tools()` at execution time, not at creation time.
 
 ```typescript
-const armorer = createArmorer();
+const armorer = createToolbox();
 
 // Install the search tool first
 createSearchTool(armorer);
@@ -259,7 +259,7 @@ const response = await openai.chat.completions.create({
 Here's a complete example of using the search tool in an agentic workflow:
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 import { toOpenAI } from 'armorer/adapters/openai';
 import OpenAI from 'openai';
@@ -268,7 +268,7 @@ import { z } from 'zod';
 const openai = new OpenAI();
 
 // Create armorer with embeddings for semantic search
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   embed: async (texts) => {
     const response = await openai.embeddings.create({
       model: 'text-embedding-3-small',
@@ -383,5 +383,5 @@ runAgent('I need to notify John about the meeting tomorrow');
 ## Related Documentation
 
 - [Embeddings & Semantic Search](embeddings.md) - Configure embeddings for semantic search
-- [Armorer Registry](registry.md) - Learn about `searchTools` and `queryTools`
+- [Toolbox Registry](registry.md) - Learn about `searchTools` and `queryTools`
 - [Provider Adapters](provider-adapters.md) - Use tools with OpenAI, Anthropic, and Gemini

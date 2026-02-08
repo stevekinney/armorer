@@ -146,7 +146,7 @@ export function pipe<
 
 /**
  * Chains tools together, passing the output of each tool as input to the next.
- * Returns a new ArmorerTool that can be used like any other tool.
+ * Returns a new ToolboxTool that can be used like any other tool.
  *
  * @example
  * ```ts

@@ -11,7 +11,7 @@ import type { AnthropicTool } from './types';
 export type { AnthropicInputSchema, AnthropicTool, JSONSchemaProperty } from './types';
 
 /**
- * Converts Armorer tools to Anthropic Messages API format.
+ * Converts Toolbox tools to Anthropic Messages API format.
  *
  * @example
  * ```ts

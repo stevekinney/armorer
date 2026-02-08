@@ -1,4 +1,4 @@
-# Armorer
+# Toolbox
 
 A lightweight, type-safe registry for validated AI tools. Build tools with Zod schemas and metadata, register them in an armorer, execute them, and query/rank them with registry helpers and event hooks.
 
@@ -18,7 +18,7 @@ A lightweight, type-safe registry for validated AI tools. Build tools with Zod s
 
 ## Overview
 
-Armorer turns tool calling into a structured, observable, and searchable workflow. Define schemas once, validate at runtime, and export tools to popular providers without rewriting adapters.
+Toolbox turns tool calling into a structured, observable, and searchable workflow. Define schemas once, validate at runtime, and export tools to popular providers without rewriting adapters.
 
 ## Features
 
@@ -39,7 +39,7 @@ Armorer turns tool calling into a structured, observable, and searchable workflo
 
 ## Package Structure
 
-Armorer is organized into focused submodules so you can import only what you need:
+Toolbox is organized into focused submodules so you can import only what you need:
 
 ### Core Modules
 
@@ -48,10 +48,10 @@ Armorer is organized into focused submodules so you can import only what you nee
 The primary API for creating and managing tools:
 
 ```typescript
-import { createArmorer, createTool, isTool } from 'armorer';
+import { createToolbox, createTool, isTool } from 'armorer';
 ```
 
-**Exports:** `createArmorer`, `createTool`, `createToolCall`, `combineArmorers`, `lazy`, `withContext`, `isTool`, `isArmorer`, `createMiddleware`, and all core types.
+**Exports:** `createToolbox`, `createTool`, `createToolCall`, `combineToolboxes`, `lazy`, `withContext`, `isTool`, `isToolbox`, `createMiddleware`, and all core types.
 
 #### `armorer/runtime`
 
@@ -182,7 +182,7 @@ import { pipe, compose, bind, parallel } from 'armorer/utilities';
 ## Quick Start
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { z } from 'zod';
 
 const addNumbers = createTool({
@@ -198,7 +198,7 @@ const addNumbers = createTool({
   },
 });
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 armorer.register(addNumbers);
 
 const toolCall = await armorer.execute({
@@ -212,7 +212,7 @@ console.log(toolCall.result); // 8
 
 ## Safety and Dry Run
 
-Armorer supports `dryRun` to preview the effects of a tool without executing it.
+Toolbox supports `dryRun` to preview the effects of a tool without executing it.
 
 ```ts
 // Create tool with dry run handler
@@ -259,7 +259,7 @@ const tool = createTool({
 Policies can pause execution for human approval or input.
 
 ```ts
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   policy: {
     async beforeExecute(context) {
       if (context.metadata?.sensitive) {
@@ -281,7 +281,7 @@ if (result.outcome === 'action_required') {
 
 ## Agent Integration
 
-Armorer provides helpers to integrate with LLM providers like OpenAI.
+Toolbox provides helpers to integrate with LLM providers like OpenAI.
 
 ```typescript
 import { toOpenAI, parseToolCalls, formatToolResults } from 'armorer/adapters/openai';
@@ -305,10 +305,10 @@ const messages = formatToolResults(results);
 Native instrumentation for distributed tracing.
 
 ```ts
-import { createArmorer } from 'armorer';
+import { createToolbox } from 'armorer';
 import { instrument } from 'armorer/instrumentation';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 instrument(armorer); // Auto-wires all tool calls to OTel Spans
 ```
 
@@ -317,10 +317,10 @@ instrument(armorer); // Auto-wires all tool calls to OTel Spans
 Batteries-included middleware for production needs.
 
 ```ts
-import { createArmorer } from 'armorer';
+import { createToolbox } from 'armorer';
 import { createCacheMiddleware, createRateLimitMiddleware } from 'armorer/middleware';
 
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   middleware: [
     createCacheMiddleware({ ttlMs: 60000 }),
     createRateLimitMiddleware({ limit: 100, windowMs: 60000 }),
@@ -347,14 +347,14 @@ console.log(armorer.history[0].call.name); // 'weather'
 
 ## Safety, Policy, and Metadata
 
-Armorer supports registry-level policy hooks and per-tool policy for centralized guardrails.
+Toolbox supports registry-level policy hooks and per-tool policy for centralized guardrails.
 You can also tag tools as mutating or read-only and enforce those tags at the registry. See the [Registry documentation](documentation/registry.md) for details on querying, searching, and middleware.
 
 ```ts
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { z } from 'zod';
 
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   readOnly: true,
   policy: {
     beforeExecute({ toolName, metadata }) {
@@ -446,7 +446,7 @@ import { isTool, createTool } from 'armorer';
 
 const tool = createTool({ ... });
 if (isTool(tool)) {
-  // TypeScript knows tool is ArmorerTool here
+  // TypeScript knows tool is ToolboxTool here
   console.log(tool.name);
 }
 ```
@@ -456,7 +456,7 @@ if (isTool(tool)) {
 You can create a tool and register it with an armorer in one step by passing the armorer as the second argument:
 
 ```typescript
-const armorer = createArmorer([], {
+const armorer = createToolbox([], {
   context: { userId: 'user-123', apiKey: 'secret' },
 });
 
@@ -615,14 +615,14 @@ longTask.addEventListener('progress', (event) => {
 
 ## Search Tool for Agentic Workflows
 
-Armorer includes a pre-configured search tool that lets agents discover available tools dynamically. This is useful when you have many tools and want the LLM to find the right one for a task.
+Toolbox includes a pre-configured search tool that lets agents discover available tools dynamically. This is useful when you have many tools and want the LLM to find the right one for a task.
 
 ```typescript
-import { createArmorer, createTool } from 'armorer';
+import { createToolbox, createTool } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 import { z } from 'zod';
 
-const armorer = createArmorer();
+const armorer = createToolbox();
 
 // Install the search tool - it auto-registers with the armorer
 createSearchTool(armorer);
@@ -666,7 +666,7 @@ See [Search Tool documentation](documentation/search-tools.md) for filtering by 
 
 TypeScript inference guidance and type-level patterns. For a complete list of exported types, see the [API Reference](documentation/api-reference.md).
 
-Armorer is written in TypeScript and provides full type inference:
+Toolbox is written in TypeScript and provides full type inference:
 
 ```typescript
 const tool = createTool({
@@ -690,7 +690,7 @@ const result = await tool({ count: 5 }); // number
 
 Longer-form docs live in `documentation/`:
 
-- [Armorer Registry](documentation/registry.md) - Registration, execution, querying, searching, middleware, and serialization
+- [Toolbox Registry](documentation/registry.md) - Registration, execution, querying, searching, middleware, and serialization
 - [Tool Composition](documentation/composition.md) - `pipe`, `compose`, `bind`, `tap`, `when`, `parallel`, `retry`, `preprocess`, `postprocess`
 - [Embeddings & Semantic Search](documentation/embeddings.md) - Vector embeddings with OpenAI and Pinecone
 - [LanceDB Integration](documentation/lancedb.md) - Serverless vector database for local and cloud deployments

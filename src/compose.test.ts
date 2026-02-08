@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
 import type { ComposedTool } from './compose-types';
-import { createArmorer } from './create-armorer';
+import { createToolbox } from './create-armorer';
 import { createTool, createToolCall } from './create-tool';
 import { isTool, type MinimalAbortSignal } from './is-tool';
 import {
@@ -287,9 +287,9 @@ describe('pipe()', () => {
   });
 
   describe('composability', () => {
-    it('composed tools can be registered in Armorer', () => {
+    it('composed tools can be registered in Toolbox', () => {
       const pipeline = pipe(parseNumber, double);
-      const armorer = createArmorer().register(pipeline);
+      const armorer = createToolbox().register(pipeline);
       const found = armorer.getTool('pipe(parse-number, double)');
       expect(found).toBeDefined();
       expect(found?.name).toBe('pipe(parse-number, double)');

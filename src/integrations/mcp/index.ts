@@ -15,8 +15,8 @@ import type {
 import { z } from 'zod';
 
 import { isZodSchema } from '../../core/schema-utilities';
-import type { Armorer } from '../../runtime/create-armorer';
-import type { ArmorerTool, ToolExecuteWithOptions } from '../../runtime/is-tool';
+import type { Toolbox } from '../../runtime/create-armorer';
+import type { ToolboxTool, ToolExecuteWithOptions } from '../../runtime/is-tool';
 import type { ToolResult } from '../../runtime/types';
 
 export type MCPToolConfig = {
@@ -34,7 +34,7 @@ export type MCPPromptRegistrar = (server: McpServer) => void;
 
 export type CreateMCPOptions = ServerOptions & {
   serverInfo?: Implementation;
-  toolConfig?: (tool: ArmorerTool) => MCPToolConfig;
+  toolConfig?: (tool: ToolboxTool) => MCPToolConfig;
   formatResult?: (result: ToolResult) => CallToolResult;
   resources?: MCPResourceRegistrar | MCPResourceRegistrar[];
   prompts?: MCPPromptRegistrar | MCPPromptRegistrar[];
@@ -45,14 +45,14 @@ const DEFAULT_SERVER_INFO: Implementation = {
   version: '0.0.0',
 };
 
-export function createMCP(armorer: Armorer, options: CreateMCPOptions = {}): McpServer {
+export function createMCP(armorer: Toolbox, options: CreateMCPOptions = {}): McpServer {
   const { serverInfo, toolConfig, formatResult, resources, prompts, ...serverOptions } =
     options;
   const { McpServer: McpServerClass } = requireMcp();
   const server = new McpServerClass(serverInfo ?? DEFAULT_SERVER_INFO, serverOptions);
   const registered = new Map<string, RegisteredTool>();
 
-  const registerTool = (tool: ArmorerTool) => {
+  const registerTool = (tool: ToolboxTool) => {
     const metadataConfig = toolConfigFromMetadata(tool);
     const config = { ...metadataConfig, ...(toolConfig?.(tool) ?? {}) };
     const meta = config?.meta ?? tool.metadata;
@@ -200,7 +200,7 @@ function toTextContent(text: string): CallToolResult['content'] {
   return [{ type: 'text' as const, text }];
 }
 
-export function toolConfigFromMetadata(tool: ArmorerTool): MCPToolConfig | undefined {
+export function toolConfigFromMetadata(tool: ToolboxTool): MCPToolConfig | undefined {
   const metadata = tool.metadata;
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
     return undefined;

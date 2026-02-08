@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { createNameMapper, toOpenAI } from '../src/adapters/openai/index';
 import { pipe } from '../src/runtime/compose';
-import { createArmorer } from '../src/runtime/create-armorer';
+import { createToolbox } from '../src/runtime/create-armorer';
 import { createTool } from '../src/runtime/create-tool';
 import { type ToolResult } from '../src/runtime/is-tool';
 
@@ -124,7 +124,7 @@ describe('Core Runtime Completeness', () => {
         execute: async () => '2',
       });
 
-      const armorer = createArmorer();
+      const armorer = createToolbox();
       armorer.register(tool1);
       armorer.register(tool2);
 
@@ -156,7 +156,7 @@ describe('Core Runtime Completeness', () => {
         execute: async () => '2',
       });
 
-      const armorer = createArmorer().register(tool1, tool2);
+      const armorer = createToolbox().register(tool1, tool2);
       const json = armorer.toJSON();
       expect(json).toHaveLength(2);
       const ids = json.map(c => c.id);
