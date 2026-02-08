@@ -2,7 +2,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ZodTypeAny } from 'zod';
 
 import { getSchemaShape } from '../../core/schema-utilities';
-import type { Toolbox, ToolboxTool, ToolResult } from '../../runtime';
+import type { Tool, Toolbox, ToolResult } from '../../runtime';
 import { isToolbox } from '../../runtime/create-armorer';
 import { isTool } from '../../runtime/is-tool';
 
@@ -18,7 +18,7 @@ export type ClaudeAgentSdkToolConfig = {
 };
 
 export type ClaudeAgentSdkToolOptions = {
-  toolConfig?: (tool: ToolboxTool) => ClaudeAgentSdkToolConfig;
+  toolConfig?: (tool: Tool) => ClaudeAgentSdkToolConfig;
   formatResult?: (result: ToolResult) => CallToolResult;
 };
 
@@ -36,7 +36,7 @@ export type ClaudeAgentSdkServerResult = {
 };
 
 export type ClaudeToolGateOptions = {
-  registry: Toolbox | ToolboxTool | ToolboxTool[];
+  registry: Toolbox | Tool | Tool[];
   readOnly?: boolean;
   allowMutation?: boolean;
   allowDangerous?: boolean;
@@ -46,7 +46,7 @@ export type ClaudeToolGateOptions = {
     dangerous?: string[];
   };
   allowUnknown?: boolean;
-  toolConfig?: (tool: ToolboxTool) => ClaudeAgentSdkToolConfig;
+  toolConfig?: (tool: Tool) => ClaudeAgentSdkToolConfig;
   messages?: {
     mutating?: string;
     dangerous?: string;
@@ -57,7 +57,7 @@ export type ClaudeToolGateOptions = {
 export type ClaudeToolGateDecision = { behavior: 'allow' | 'deny'; message?: string };
 
 export async function toClaudeAgentSdkTools(
-  input: Toolbox | ToolboxTool | ToolboxTool[],
+  input: Toolbox | Tool | Tool[],
   options: ClaudeAgentSdkToolOptions = {},
 ): Promise<ClaudeAgentSdkTool[]> {
   const tools = normalizeToTools(input);
@@ -82,7 +82,7 @@ export async function toClaudeAgentSdkTools(
 }
 
 export async function createClaudeAgentSdkServer(
-  input: Toolbox | ToolboxTool | ToolboxTool[],
+  input: Toolbox | Tool | Tool[],
   options: CreateClaudeAgentSdkServerOptions = {},
 ): Promise<ClaudeAgentSdkServerResult> {
   const tools = normalizeToTools(input);
@@ -207,14 +207,14 @@ export function createClaudeToolGate(
   };
 }
 
-function normalizeToTools(input: Toolbox | ToolboxTool | ToolboxTool[]): ToolboxTool[] {
+function normalizeToTools(input: Toolbox | Tool | Tool[]): Tool[] {
   if (isToolbox(input)) {
     return input.tools();
   }
   if (Array.isArray(input)) {
     return input.map((tool) => {
       if (!isTool(tool)) {
-        throw new TypeError('Invalid tool input: expected ToolboxTool');
+        throw new TypeError('Invalid tool input: expected Tool');
       }
       return tool;
     });
@@ -225,7 +225,7 @@ function normalizeToTools(input: Toolbox | ToolboxTool | ToolboxTool[]): Toolbox
   throw new TypeError('Invalid input: expected tool, tool array, or Armorer');
 }
 
-function isMutating(tool: ToolboxTool): boolean {
+function isMutating(tool: Tool): boolean {
   const metadata = tool.metadata;
   const tags = tool.tags?.map((tag) => tag.toLowerCase()) ?? [];
   const tagSet = new Set(tags);
@@ -236,7 +236,7 @@ function isMutating(tool: ToolboxTool): boolean {
   return false;
 }
 
-function isDangerous(tool: ToolboxTool): boolean {
+function isDangerous(tool: Tool): boolean {
   const metadata = tool.metadata;
   const tags = tool.tags?.map((tag) => tag.toLowerCase()) ?? [];
   const tagSet = new Set(tags);

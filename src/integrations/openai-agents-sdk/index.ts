@@ -1,7 +1,7 @@
 import type { ZodTypeAny } from 'zod';
 
 import { getSchemaShape } from '../../core/schema-utilities';
-import type { Toolbox, ToolboxTool, ToolResult } from '../../runtime';
+import type { Tool, Toolbox, ToolResult } from '../../runtime';
 import { isToolbox } from '../../runtime/create-armorer';
 import { isTool } from '../../runtime/is-tool';
 
@@ -16,7 +16,7 @@ export type OpenAIAgentToolConfig = {
 };
 
 export type OpenAIAgentToolOptions = {
-  toolConfig?: (tool: ToolboxTool) => OpenAIAgentToolConfig;
+  toolConfig?: (tool: Tool) => OpenAIAgentToolConfig;
   formatResult?: (result: ToolResult) => unknown;
 };
 
@@ -28,7 +28,7 @@ export type OpenAIAgentToolsResult = {
 };
 
 export type OpenAIToolGateOptions = {
-  registry: Toolbox | ToolboxTool | ToolboxTool[];
+  registry: Toolbox | Tool | Tool[];
   readOnly?: boolean;
   allowMutation?: boolean;
   allowDangerous?: boolean;
@@ -38,7 +38,7 @@ export type OpenAIToolGateOptions = {
     dangerous?: string[];
   };
   allowUnknown?: boolean;
-  toolConfig?: (tool: ToolboxTool) => OpenAIAgentToolConfig;
+  toolConfig?: (tool: Tool) => OpenAIAgentToolConfig;
   messages?: {
     mutating?: string;
     dangerous?: string;
@@ -65,7 +65,7 @@ export type OpenAIToolGateDecision = { behavior: 'allow' | 'deny'; message?: str
  * ```
  */
 export async function toOpenAIAgentTools(
-  input: Toolbox | ToolboxTool | ToolboxTool[],
+  input: Toolbox | Tool | Tool[],
   options: OpenAIAgentToolOptions = {},
 ): Promise<OpenAIAgentToolsResult> {
   const tools = normalizeToTools(input);
@@ -187,14 +187,14 @@ export function createOpenAIToolGate(
   };
 }
 
-function normalizeToTools(input: Toolbox | ToolboxTool | ToolboxTool[]): ToolboxTool[] {
+function normalizeToTools(input: Toolbox | Tool | Tool[]): Tool[] {
   if (isToolbox(input)) {
     return input.tools();
   }
   if (Array.isArray(input)) {
     return input.map((tool) => {
       if (!isTool(tool)) {
-        throw new TypeError('Invalid tool input: expected ToolboxTool');
+        throw new TypeError('Invalid tool input: expected Tool');
       }
       return tool;
     });
@@ -205,7 +205,7 @@ function normalizeToTools(input: Toolbox | ToolboxTool | ToolboxTool[]): Toolbox
   throw new TypeError('Invalid input: expected tool, tool array, or Armorer');
 }
 
-function isMutating(tool: ToolboxTool): boolean {
+function isMutating(tool: Tool): boolean {
   const metadata = tool.metadata;
   const tags = tool.tags?.map((tag) => tag.toLowerCase()) ?? [];
   const tagSet = new Set(tags);
@@ -216,7 +216,7 @@ function isMutating(tool: ToolboxTool): boolean {
   return false;
 }
 
-function isDangerous(tool: ToolboxTool): boolean {
+function isDangerous(tool: Tool): boolean {
   const metadata = tool.metadata;
   const tags = tool.tags?.map((tag) => tag.toLowerCase()) ?? [];
   const tagSet = new Set(tags);

@@ -22,7 +22,7 @@ export type {
   OutputValidationMode,
   OutputValidationResult,
   Subscription,
-  ToolboxTool,
+  Tool,
   ToolCallWithArguments,
   ToolConfig,
   ToolContext,

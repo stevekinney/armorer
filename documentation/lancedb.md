@@ -19,7 +19,7 @@ bun add @lancedb/lancedb openai apache-arrow
 Here's a simple example using LanceDB for local vector storage:
 
 ```typescript
-import { createToolbox, createTool, type ToolboxTool } from 'armorer';
+import { createToolbox, createTool, type Tool } from 'armorer';
 import * as lancedb from '@lancedb/lancedb';
 import OpenAI from 'openai';
 import { z } from 'zod';
@@ -103,7 +103,7 @@ armorer.addEventListener('registered', async (event) => {
 LanceDB makes vector search simple with its built-in search API:
 
 ```typescript
-async function searchTools(query: string, limit = 5): Promise<ToolboxTool[]> {
+async function searchTools(query: string, limit = 5): Promise<Tool[]> {
   // Generate embedding for the query
   const [queryEmbedding] = await embed([query]);
 
@@ -115,7 +115,7 @@ async function searchTools(query: string, limit = 5): Promise<ToolboxTool[]> {
 
   // Deduplicate by tool name and return tools
   const seen = new Set<string>();
-  const tools: ToolboxTool[] = [];
+  const tools: Tool[] = [];
 
   for (const result of results) {
     const toolName = result.toolName as string;
@@ -138,7 +138,7 @@ async function searchTools(query: string, limit = 5): Promise<ToolboxTool[]> {
 Here's a complete, production-ready example:
 
 ```typescript
-import { createToolbox, createTool, type ToolboxTool } from 'armorer';
+import { createToolbox, createTool, type Tool } from 'armorer';
 import { queryTools } from 'armorer/registry';
 import * as lancedb from '@lancedb/lancedb';
 import OpenAI from 'openai';
@@ -237,7 +237,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
     /**
      * Semantic search for tools using LanceDB
      */
-    async search(query: string, limit = 10): Promise<ToolboxTool[]> {
+    async search(query: string, limit = 10): Promise<Tool[]> {
       const [queryEmbedding] = await embed([query]);
 
       const results = await table
@@ -246,7 +246,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
         .toArray();
 
       const seen = new Set<string>();
-      const tools: ToolboxTool[] = [];
+      const tools: Tool[] = [];
 
       for (const result of results) {
         const toolName = result.toolName as string;
@@ -270,7 +270,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
       query: string,
       filter: { tags?: string[]; field?: string },
       limit = 10,
-    ): Promise<ToolboxTool[]> {
+    ): Promise<Tool[]> {
       const [queryEmbedding] = await embed([query]);
 
       let searchQuery = table.search(queryEmbedding).limit(limit * 5);
@@ -289,7 +289,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
 
       // Post-filter by tags if needed (LanceDB array filtering)
       const seen = new Set<string>();
-      const tools: ToolboxTool[] = [];
+      const tools: Tool[] = [];
 
       for (const result of results) {
         const toolName = result.toolName as string;
@@ -325,7 +325,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
         metadata?: { eq?: Record<string, unknown> };
       },
       limit = 10,
-    ): Promise<ToolboxTool[]> {
+    ): Promise<Tool[]> {
       // Get semantic candidates from LanceDB
       const [queryEmbedding] = await embed([query]);
 
@@ -342,7 +342,7 @@ export async function createLanceDBToolRegistry(dbPath = LANCEDB_PATH) {
       // Get tools and apply Toolbox filters
       const tools = Array.from(candidates)
         .map((name) => armorer.getTool(name))
-        .filter((t): t is ToolboxTool => t !== undefined);
+        .filter((t): t is Tool => t !== undefined);
 
       if (!armorerFilter) {
         return tools.slice(0, limit);

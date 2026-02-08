@@ -263,7 +263,7 @@ export type ToolExecuteWithOptions = ToolExecuteOptions & {
  * Type guard to check if a value is an Toolbox tool.
  *
  * @param obj - The value to check
- * @returns True if the value is an ToolboxTool (has required properties: id, identity, name, description, schema, execute, configuration)
+ * @returns True if the value is an Tool (has required properties: id, identity, name, description, schema, execute, configuration)
  *
  * @example
  * ```typescript
@@ -271,12 +271,12 @@ export type ToolExecuteWithOptions = ToolExecuteOptions & {
  *
  * const tool = createTool({ ... });
  * if (isTool(tool)) {
- *   // TypeScript knows tool is an ToolboxTool
+ *   // TypeScript knows tool is an Tool
  *   await tool.execute({ ... });
  * }
  * ```
  */
-export function isTool(obj: unknown): obj is ToolboxTool {
+export function isTool(obj: unknown): obj is Tool {
   return (
     typeof obj === 'function' &&
     'id' in obj &&
@@ -294,15 +294,15 @@ export function isTool(obj: unknown): obj is ToolboxTool {
  *
  * Use with type parameters for compile-time safety on a specific tool:
  * ```ts
- * const myTool: ToolboxTool<typeof mySchema> = createTool({...});
+ * const myTool: Tool<typeof mySchema> = createTool({...});
  * ```
  *
  * Use without type parameters for collections:
  * ```ts
- * const tools: ToolboxTool[] = [tool1, tool2, tool3];
+ * const tools: Tool[] = [tool1, tool2, tool3];
  * ```
  */
-export type ToolboxTool<
+export type Tool<
   T extends ToolParametersSchema = ToolParametersSchema,
   E extends ToolEventsMap = DefaultToolEvents,
   R = unknown,
@@ -372,4 +372,4 @@ export type RunnableTool<
   E extends ToolEventsMap = DefaultToolEvents,
   R = unknown,
   M extends ToolMetadata | undefined = ToolMetadata | undefined,
-> = ToolboxTool<T, E, R, M>;
+> = Tool<T, E, R, M>;

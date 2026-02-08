@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { createToolbox, type Toolbox } from '../runtime/create-armorer';
 import { createTool } from '../runtime/create-tool';
-import type { ToolboxTool, ToolCallWithArguments } from '../runtime/is-tool';
+import type { Tool, ToolCallWithArguments } from '../runtime/is-tool';
 import type { ToolResult } from '../runtime/types';
 
 export type MockToolOptions<TInput = any, TOutput = any> = {
@@ -15,11 +15,11 @@ export type MockToolOptions<TInput = any, TOutput = any> = {
  * Creates a mock tool for testing.
  *
  * @param options - Configuration options.
- * @returns A mock ToolboxTool.
+ * @returns A mock Tool.
  */
 export function createMockTool<TInput extends object = any, TOutput = any>(
   options: MockToolOptions<TInput, TOutput> = {},
-): ToolboxTool<z.ZodType<TInput>, any, TOutput> & {
+): Tool<z.ZodType<TInput>, any, TOutput> & {
   calls: TInput[];
   mockResolve: (value: TOutput) => void;
   mockReject: (error: Error) => void;

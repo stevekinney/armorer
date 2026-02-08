@@ -30,7 +30,7 @@ chroma run --path ./chroma-data
 Here's a simple example using Chroma's embedded mode:
 
 ```typescript
-import { createToolbox, createTool, type ToolboxTool } from 'armorer';
+import { createToolbox, createTool, type Tool } from 'armorer';
 import { ChromaClient } from 'chromadb';
 import OpenAI from 'openai';
 import { z } from 'zod';
@@ -132,7 +132,7 @@ armorer.addEventListener('registered', async (event) => {
 Chroma's query API makes semantic search straightforward:
 
 ```typescript
-async function searchTools(query: string, limit = 5): Promise<ToolboxTool[]> {
+async function searchTools(query: string, limit = 5): Promise<Tool[]> {
   // Generate embedding for the query
   const [queryEmbedding] = await embed([query]);
 
@@ -144,7 +144,7 @@ async function searchTools(query: string, limit = 5): Promise<ToolboxTool[]> {
 
   // Deduplicate by tool name
   const seen = new Set<string>();
-  const tools: ToolboxTool[] = [];
+  const tools: Tool[] = [];
 
   for (const metadata of results.metadatas?.[0] ?? []) {
     const toolName = metadata?.toolName as string;
@@ -167,7 +167,7 @@ async function searchTools(query: string, limit = 5): Promise<ToolboxTool[]> {
 Here's a complete, production-ready example:
 
 ```typescript
-import { createToolbox, createTool, type ToolboxTool } from 'armorer';
+import { createToolbox, createTool, type Tool } from 'armorer';
 import { queryTools } from 'armorer/registry';
 import { ChromaClient, type Collection } from 'chromadb';
 import OpenAI from 'openai';
@@ -224,7 +224,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
     await syncToolToChroma(collection, tool);
   });
 
-  async function syncToolToChroma(col: Collection, tool: ToolboxTool): Promise<void> {
+  async function syncToolToChroma(col: Collection, tool: Tool): Promise<void> {
     const fields = [
       { field: 'name', text: tool.name },
       { field: 'description', text: tool.description },
@@ -264,7 +264,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
     /**
      * Semantic search for tools
      */
-    async search(query: string, limit = 10): Promise<ToolboxTool[]> {
+    async search(query: string, limit = 10): Promise<Tool[]> {
       const [queryEmbedding] = await embed([query]);
 
       const results = await collection.query({
@@ -273,7 +273,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
       });
 
       const seen = new Set<string>();
-      const tools: ToolboxTool[] = [];
+      const tools: Tool[] = [];
 
       for (const metadata of results.metadatas?.[0] ?? []) {
         const toolName = metadata?.toolName as string;
@@ -300,7 +300,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
         toolNames?: string[];
       },
       limit = 10,
-    ): Promise<ToolboxTool[]> {
+    ): Promise<Tool[]> {
       const [queryEmbedding] = await embed([query]);
 
       // Build Chroma where clause
@@ -326,7 +326,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
       });
 
       const seen = new Set<string>();
-      const tools: ToolboxTool[] = [];
+      const tools: Tool[] = [];
 
       for (const metadata of results.metadatas?.[0] ?? []) {
         const toolName = metadata?.toolName as string;
@@ -350,7 +350,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
       query: string,
       documentFilter: string,
       limit = 10,
-    ): Promise<ToolboxTool[]> {
+    ): Promise<Tool[]> {
       const [queryEmbedding] = await embed([query]);
 
       const results = await collection.query({
@@ -360,7 +360,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
       });
 
       const seen = new Set<string>();
-      const tools: ToolboxTool[] = [];
+      const tools: Tool[] = [];
 
       for (const metadata of results.metadatas?.[0] ?? []) {
         const toolName = metadata?.toolName as string;
@@ -387,7 +387,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
         metadata?: { eq?: Record<string, unknown> };
       },
       limit = 10,
-    ): Promise<ToolboxTool[]> {
+    ): Promise<Tool[]> {
       const [queryEmbedding] = await embed([query]);
 
       // Get semantic candidates from Chroma
@@ -407,7 +407,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
       // Get tools and apply Toolbox filters
       const tools = Array.from(candidates)
         .map((name) => armorer.getTool(name))
-        .filter((t): t is ToolboxTool => t !== undefined);
+        .filter((t): t is Tool => t !== undefined);
 
       if (!armorerFilter) {
         return tools.slice(0, limit);
@@ -423,7 +423,7 @@ export async function createChromaToolRegistry(options: ChromaToolRegistryOption
     /**
      * Get similar tools based on an existing tool
      */
-    async findSimilar(toolName: string, limit = 5): Promise<ToolboxTool[]> {
+    async findSimilar(toolName: string, limit = 5): Promise<Tool[]> {
       const tool = armorer.getTool(toolName);
       if (!tool) return [];
 

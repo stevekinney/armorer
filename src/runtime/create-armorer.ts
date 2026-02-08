@@ -42,7 +42,7 @@ import type {
   DefaultToolEvents,
   MinimalAbortSignal,
   OutputValidationMode,
-  ToolboxTool,
+  Tool,
   ToolCallWithArguments,
   ToolConfig,
   ToolDigestOptions,
@@ -107,10 +107,7 @@ export interface ToolboxOptions {
   readOnly?: boolean;
   allowMutation?: boolean;
   allowDangerous?: boolean;
-  toolFactory?: (
-    configuration: ToolConfig,
-    context: ToolboxFactoryContext,
-  ) => ToolboxTool;
+  toolFactory?: (configuration: ToolConfig, context: ToolboxFactoryContext) => Tool;
   /**
    * Called when a tool configuration doesn't have an execute method.
    * This typically happens when deserializing an armorer.
@@ -127,7 +124,7 @@ export interface ToolboxOptions {
 export interface ToolboxFactoryContext {
   dispatchEvent: ToolboxEventDispatcher;
   baseContext: ToolboxContext;
-  buildDefaultTool: (configuration: ToolConfig) => ToolboxTool;
+  buildDefaultTool: (configuration: ToolConfig) => Tool;
 }
 
 /**
@@ -143,48 +140,48 @@ export interface ToolStatusUpdate {
 }
 
 export interface ToolboxEvents {
-  registering: ToolboxTool;
-  registered: ToolboxTool;
-  call: { tool: ToolboxTool; call: ToolCall };
-  complete: { tool: ToolboxTool; result: ToolResult };
-  error: { tool?: ToolboxTool; result: ToolResult };
+  registering: Tool;
+  registered: Tool;
+  call: { tool: Tool; call: ToolCall };
+  complete: { tool: Tool; result: ToolResult };
+  error: { tool?: Tool; result: ToolResult };
   'not-found': ToolCall;
   query: { criteria?: ToolQuery; results: QuerySelectionResult };
   search: { options: ToolSearchOptions; results: ToolMatch<unknown>[] };
   /** Tool status/progress updates for UI display */
   'status:update': ToolStatusUpdate;
   // Bubbled tool events (when executing multiple tools in parallel)
-  'execute-start': { tool: ToolboxTool; call: ToolCall; params: unknown };
+  'execute-start': { tool: Tool; call: ToolCall; params: unknown };
   'validate-success': {
-    tool: ToolboxTool;
+    tool: Tool;
     call: ToolCall;
     params: unknown;
     parsed: unknown;
   };
   'validate-error': {
-    tool: ToolboxTool;
+    tool: Tool;
     call: ToolCall;
     params: unknown;
     error: unknown;
   };
-  'execute-success': { tool: ToolboxTool; call: ToolCall; result: unknown };
-  'execute-error': { tool: ToolboxTool; call: ToolCall; error: unknown };
-  'output-validate-success': { tool: ToolboxTool; call: ToolCall; result: unknown };
+  'execute-success': { tool: Tool; call: ToolCall; result: unknown };
+  'execute-error': { tool: Tool; call: ToolCall; error: unknown };
+  'output-validate-success': { tool: Tool; call: ToolCall; result: unknown };
   'output-validate-error': {
-    tool: ToolboxTool;
+    tool: Tool;
     call: ToolCall;
     result: unknown;
     error: unknown;
   };
-  settled: { tool: ToolboxTool; call: ToolCall; result?: unknown; error?: unknown };
+  settled: { tool: Tool; call: ToolCall; result?: unknown; error?: unknown };
   'policy-denied': {
-    tool: ToolboxTool;
+    tool: Tool;
     call: ToolCall;
     params: unknown;
     reason?: string;
   };
   'tool.started': {
-    tool: ToolboxTool;
+    tool: Tool;
     call: ToolCall;
     // Original event properties
     toolCall: ToolCallWithArguments;
@@ -195,7 +192,7 @@ export interface ToolboxEvents {
     dryRun?: boolean;
   };
   'tool.finished': {
-    tool: ToolboxTool;
+    tool: Tool;
     call: ToolCall;
     // Original event properties
     toolCall: ToolCallWithArguments;
@@ -213,17 +210,17 @@ export interface ToolboxEvents {
     outputValidation?: { success: boolean; error?: unknown };
     dryRun?: boolean;
   };
-  'budget-exceeded': { tool: ToolboxTool; call: ToolCall; reason: string };
-  progress: { tool: ToolboxTool; call: ToolCall; percent?: number; message?: string };
-  'output-chunk': { tool: ToolboxTool; call: ToolCall; chunk: unknown };
+  'budget-exceeded': { tool: Tool; call: ToolCall; reason: string };
+  progress: { tool: Tool; call: ToolCall; percent?: number; message?: string };
+  'output-chunk': { tool: Tool; call: ToolCall; chunk: unknown };
   log: {
-    tool: ToolboxTool;
+    tool: Tool;
     call: ToolCall;
     level: 'debug' | 'info' | 'warn' | 'error';
     message: string;
     data?: unknown;
   };
-  cancelled: { tool: ToolboxTool; call: ToolCall; reason?: string };
+  cancelled: { tool: Tool; call: ToolCall; reason?: string };
 }
 
 type ToolboxEventType = Extract<keyof ToolboxEvents, string>;
@@ -239,7 +236,7 @@ export interface ToolboxExecuteOptions extends ToolExecuteOptions {
 }
 
 export interface Toolbox {
-  register: (...entries: (ToolConfig | ToolboxTool)[]) => Toolbox;
+  register: (...entries: (ToolConfig | Tool)[]) => Toolbox;
   createTool: <
     TInput extends object = Record<string, unknown>,
     TOutput = unknown,
@@ -248,11 +245,11 @@ export interface Toolbox {
     M extends ToolMetadata | undefined = undefined,
   >(
     options: CreateToolOptions<TInput, TOutput, E, Tags, M>,
-  ) => ToolboxTool<z.ZodType<TInput>, E, TOutput, M>;
+  ) => Tool<z.ZodType<TInput>, E, TOutput, M>;
   execute(call: ToolCallInput, options?: ToolExecuteOptions): Promise<ToolResult>;
   execute(calls: ToolCallInput[], options?: ToolExecuteOptions): Promise<ToolResult[]>;
-  tools: () => ToolboxTool[];
-  getTool: (nameOrId: string) => ToolboxTool | undefined;
+  tools: () => Tool[];
+  getTool: (nameOrId: string) => Tool | undefined;
   /**
    * Returns names of tools that are not registered.
    * Useful for fail-soft agent gating.
@@ -388,11 +385,11 @@ export function createToolbox(
   serialized: SerializedToolbox = [],
   options: ToolboxOptions = {},
 ): Toolbox {
-  const toolsById = new Map<string, ToolboxTool>();
-  const toolsByName = new Map<string, ToolboxTool[]>();
+  const toolsById = new Map<string, Tool>();
+  const toolsByName = new Map<string, Tool[]>();
   // Backward compat: registry acts as 'name' based lookup for simple cases
   // but we need to change how we access it.
-  // const registry = new Map<string, ToolboxTool>();
+  // const registry = new Map<string, Tool>();
 
   const storedConfigurations = new Map<string, ToolConfig>();
   const hub = createEventTarget<ToolboxEvents>();
@@ -448,7 +445,7 @@ export function createToolbox(
     }
   }
 
-  function register(...entries: (ToolConfig | ToolboxTool)[]): Toolbox {
+  function register(...entries: (ToolConfig | Tool)[]): Toolbox {
     for (const entry of entries) {
       let configuration = normalizeRegistration(entry);
 
@@ -493,7 +490,7 @@ export function createToolbox(
     M extends ToolMetadata | undefined = undefined,
   >(
     options: CreateToolOptions<TInput, TOutput, E, Tags, M>,
-  ): ToolboxTool<z.ZodType<TInput>, E, TOutput, M> {
+  ): Tool<z.ZodType<TInput>, E, TOutput, M> {
     const schema = normalizeToolSchema(options.schema);
     const normalizedTags = Array.isArray(options.tags)
       ? uniqTags(
@@ -555,7 +552,7 @@ export function createToolbox(
     if (!tool) {
       throw new Error(`Failed to register tool: ${configuration.identity.name}`);
     }
-    return tool as unknown as ToolboxTool<z.ZodType<TInput>, E, TOutput, M>;
+    return tool as unknown as Tool<z.ZodType<TInput>, E, TOutput, M>;
   }
 
   async function execute(
@@ -586,7 +583,7 @@ export function createToolbox(
       const toolCall = normalizeToolCall(call);
       const tool = getTool(toolCall.name); // toolCall.name might be ID
       if (!tool) {
-        const toolError = createToolboxToolError(
+        const toolError = createToolError(
           'not_found',
           `Tool not found: ${toolCall.name}`,
           'NOT_FOUND',
@@ -615,7 +612,7 @@ export function createToolbox(
 
       const budgetReason = checkBudget(budget, budgetStart, budgetCalls);
       if (budgetReason) {
-        const toolError = createToolboxToolError(
+        const toolError = createToolError(
           'conflict',
           budgetReason,
           'BUDGET_EXCEEDED',
@@ -716,7 +713,7 @@ export function createToolbox(
           throw error;
         }
         const message = error instanceof Error ? error.message : String(error);
-        const toolError = createToolboxToolError(
+        const toolError = createToolError(
           'internal',
           message,
           extractErrorCode(error) ?? 'EXECUTION_ERROR',
@@ -751,11 +748,11 @@ export function createToolbox(
     return createToolCall(call.name, args, id);
   }
 
-  function tools(): ToolboxTool[] {
+  function tools(): Tool[] {
     return Array.from(toolsById.values());
   }
 
-  function getTool(nameOrId: string): ToolboxTool | undefined {
+  function getTool(nameOrId: string): Tool | undefined {
     if (toolsById.has(nameOrId)) return toolsById.get(nameOrId);
     const matches = toolsByName.get(nameOrId);
     if (matches && matches.length > 0) {
@@ -820,7 +817,7 @@ export function createToolbox(
 
   return api;
 
-  function buildDefaultTool(configuration: ToolConfig): ToolboxTool {
+  function buildDefaultTool(configuration: ToolConfig): Tool {
     const resolveExecute = createLazyExecuteResolver(configuration.execute);
     const resolvedPolicy = mergePolicies(registryPolicy, configuration.policy, {
       readOnly,
@@ -906,7 +903,7 @@ export function createToolbox(
     if (configuration.diagnostics) {
       options.diagnostics = configuration.diagnostics;
     }
-    return createToolFactory(options) as unknown as ToolboxTool;
+    return createToolFactory(options) as unknown as Tool;
   }
 
   function normalizeConfiguration(configuration: ToolConfig): ToolConfig {
@@ -997,7 +994,7 @@ export function createToolbox(
     return result;
   }
 
-  function normalizeRegistration(entry: ToolConfig | ToolboxTool): ToolConfig {
+  function normalizeRegistration(entry: ToolConfig | Tool): ToolConfig {
     if (isTool(entry)) {
       return normalizeConfiguration(entry.configuration);
     }
@@ -1320,7 +1317,7 @@ function deriveRiskFromMetadata(metadata: ToolMetadata | undefined) {
   return Object.keys(risk).length ? risk : undefined;
 }
 
-function createToolboxToolError(
+function createToolError(
   category: ToolErrorCategory,
   message: string,
   code: string,

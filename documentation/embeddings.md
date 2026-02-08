@@ -211,7 +211,7 @@ import { queryTools } from 'armorer/registry';
 async function hybridToolSearch(
   query: string,
   filters?: { tags?: string[]; metadata?: Record<string, unknown> },
-): Promise<ToolboxTool[]> {
+): Promise<Tool[]> {
   // Step 1: Get semantically similar tools from Pinecone
   const [queryEmbedding] = await embed([query]);
   const pineconeResults = await index.query({
@@ -293,7 +293,7 @@ armorer.register(toolWithEmbeddings);
 Here's a complete example of a production-ready tool registry with Pinecone:
 
 ```typescript
-import { createToolbox, createTool, type ToolboxTool } from 'armorer';
+import { createToolbox, createTool, type Tool } from 'armorer';
 import { searchTools } from 'armorer/registry';
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
@@ -380,7 +380,7 @@ async function createPineconeToolbox() {
     index,
 
     // Semantic search via Pinecone
-    async search(query: string, limit = 10): Promise<ToolboxTool[]> {
+    async search(query: string, limit = 10): Promise<Tool[]> {
       const [queryEmbedding] = await embed([query]);
 
       const results = await index.query({
@@ -390,7 +390,7 @@ async function createPineconeToolbox() {
       });
 
       const seen = new Set<string>();
-      const tools: ToolboxTool[] = [];
+      const tools: Tool[] = [];
 
       for (const match of results.matches ?? []) {
         const toolName = match.metadata?.toolName as string;

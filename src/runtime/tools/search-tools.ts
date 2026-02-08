@@ -7,7 +7,7 @@ import {
 } from '../../core/registry';
 import type { Toolbox } from '../create-armorer';
 import { createTool } from '../create-tool';
-import type { ToolboxTool } from '../is-tool';
+import type { Tool } from '../is-tool';
 
 /**
  * Options for configuring the search tool.
@@ -132,7 +132,7 @@ export interface SearchToolsInput {
 export function createSearchTool(
   armorer: Toolbox,
   options: CreateSearchToolOptions = {},
-): ToolboxTool {
+): Tool {
   const {
     limit: defaultLimit = 10,
     explain = false,

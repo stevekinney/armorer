@@ -24,7 +24,7 @@ import type {
   OutputShapingOptions,
   OutputValidationMode,
   OutputValidationResult,
-  ToolboxTool,
+  Tool,
   ToolCallWithArguments,
   ToolConfig,
   ToolContext,
@@ -184,7 +184,7 @@ export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
  * @param options.version - Semantic version string
  * @param armorer - Optional armorer instance to auto-register this tool
  *
- * @returns An ToolboxTool that can be executed, registered, or exported to provider formats
+ * @returns An Tool that can be executed, registered, or exported to provider formats
  *
  * @example Basic tool
  * ```typescript
@@ -262,7 +262,7 @@ export function createTool<
     TReturn
   > & { schema: TSchema },
   armorer?: Toolbox,
-): ToolboxTool<z.ZodType<InferSchemaInput<TSchema>>, E, TReturn, M>;
+): Tool<z.ZodType<InferSchemaInput<TSchema>>, E, TReturn, M>;
 
 export function createTool<
   TInput extends object = Record<string, unknown>,
@@ -276,7 +276,7 @@ export function createTool<
 >(
   options: CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
   armorer?: Toolbox,
-): ToolboxTool<z.ZodType<TInput>, E, TReturn, M>;
+): Tool<z.ZodType<TInput>, E, TReturn, M>;
 export function createTool<
   TInput extends object = Record<string, unknown>,
   TOutput = unknown,
@@ -313,7 +313,7 @@ export function createTool<
     diagnostics,
   }: CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
   armorer?: Toolbox,
-): ToolboxTool<z.ZodType<TInput>, E, TReturn, M> {
+): Tool<z.ZodType<TInput>, E, TReturn, M> {
   const normalizedSchema = normalizeSchema(toolSchema);
 
   const hub = createEventTarget<E>();
@@ -1026,40 +1026,37 @@ export function createTool<
     metadata: configuration.metadata,
   };
 
-  const tool = new Proxy(
-    callable as unknown as ToolboxTool<z.ZodType<TInput>, E, TReturn, M>,
-    {
-      get(target, prop, receiver) {
-        if (Object.prototype.hasOwnProperty.call(bag, prop)) {
-          return bag[prop];
-        }
-        return Reflect.get(
-          target as object,
-          prop,
-          receiver as unknown as object,
-        ) as unknown;
-      },
-      has(_target, prop) {
-        if (Object.prototype.hasOwnProperty.call(bag, prop)) return true;
-        return Reflect.has(callable as unknown as object, prop);
-      },
-      apply(_target, _thisArg, argArray) {
-        return callable(argArray[0]);
-      },
-      // Optional: cleanup on dispose
-      getOwnPropertyDescriptor(_target, prop) {
-        if (Object.prototype.hasOwnProperty.call(bag, prop)) {
-          return {
-            configurable: true,
-            enumerable: true,
-            writable: false,
-            value: bag[prop],
-          };
-        }
-        return Object.getOwnPropertyDescriptor(callable, prop);
-      },
+  const tool = new Proxy(callable as unknown as Tool<z.ZodType<TInput>, E, TReturn, M>, {
+    get(target, prop, receiver) {
+      if (Object.prototype.hasOwnProperty.call(bag, prop)) {
+        return bag[prop];
+      }
+      return Reflect.get(
+        target as object,
+        prop,
+        receiver as unknown as object,
+      ) as unknown;
     },
-  );
+    has(_target, prop) {
+      if (Object.prototype.hasOwnProperty.call(bag, prop)) return true;
+      return Reflect.has(callable as unknown as object, prop);
+    },
+    apply(_target, _thisArg, argArray) {
+      return callable(argArray[0]);
+    },
+    // Optional: cleanup on dispose
+    getOwnPropertyDescriptor(_target, prop) {
+      if (Object.prototype.hasOwnProperty.call(bag, prop)) {
+        return {
+          configurable: true,
+          enumerable: true,
+          writable: false,
+          value: bag[prop],
+        };
+      }
+      return Object.getOwnPropertyDescriptor(callable, prop);
+    },
+  });
 
   // Provide [Symbol.dispose] to complete the event target (clears listeners and marks complete)
   bag[Symbol.dispose] = () => {
@@ -1076,11 +1073,11 @@ export function createTool<
     return runWithConcurrency(() => executeInner(toolCall, executeOptions));
   };
 
-  const finalTool = tool as unknown as ToolboxTool<z.ZodType<TInput>, E, TReturn, M>;
+  const finalTool = tool as unknown as Tool<z.ZodType<TInput>, E, TReturn, M>;
 
   // Register with armorer if provided
   if (armorer) {
-    armorer.register(finalTool as unknown as ToolboxTool);
+    armorer.register(finalTool as unknown as Tool);
   }
 
   return finalTool;
@@ -1224,7 +1221,7 @@ type AnyToolWithContextOptions<Ctx extends Record<string, unknown>> =
 export function withContext<Ctx extends Record<string, unknown>>(
   context: Ctx,
   options?: AnyToolWithContextOptions<Ctx>,
-): ToolboxTool | ((options: AnyToolWithContextOptions<Ctx>) => ToolboxTool) {
+): Tool | ((options: AnyToolWithContextOptions<Ctx>) => Tool) {
   const build = (opts: AnyToolWithContextOptions<Ctx>) => {
     const { execute, ...rest } = opts;
     const resolveExecute = createLazyExecuteResolver(execute);

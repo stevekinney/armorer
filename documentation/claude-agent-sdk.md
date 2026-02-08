@@ -179,7 +179,7 @@ console.log(deleteDecision); // { behavior: 'deny', message: 'Use --dangerous to
 ```typescript
 type ClaudeToolGateOptions = {
   // The registry, tool, or array of tools to gate
-  registry: Toolbox | ToolboxTool | ToolboxTool[];
+  registry: Toolbox | Tool | Tool[];
 
   // Enable read-only mode (denies all mutating tools)
   readOnly?: boolean;
@@ -201,7 +201,7 @@ type ClaudeToolGateOptions = {
   allowUnknown?: boolean;
 
   // Custom tool configuration (for name overrides)
-  toolConfig?: (tool: ToolboxTool) => ClaudeAgentSdkToolConfig;
+  toolConfig?: (tool: Tool) => ClaudeAgentSdkToolConfig;
 
   // Custom deny messages
   messages?: {

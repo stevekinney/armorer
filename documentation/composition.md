@@ -6,7 +6,7 @@ Compose tools with pipelines and branching utilities.
 
 Chain and specialize tools with `pipe()`, `compose()`, `bind()`, `tap()`, `when()`, `parallel()`, and `retry()`. The output of each tool flows as input to the next, with full TypeScript type inference preserved across the chain. Composition helpers are exported from `armorer/utilities` to keep the core export small.
 
-Pipelines are first-class tools. The result of `pipe()` or `compose()` is an `ToolboxTool`, so you can register it, query it via registry helpers, serialize it, and export it to provider adapters just like any other tool.
+Pipelines are first-class tools. The result of `pipe()` or `compose()` is an `Tool`, so you can register it, query it via registry helpers, serialize it, and export it to provider adapters just like any other tool.
 
 ### pipe()
 
@@ -197,7 +197,7 @@ const result = await fetchUserFormatted({ id: '123' });
 
 ### Composed Tools are Tools
 
-Pipelines created with `pipe()` or `compose()`, as well as tools created with `bind()`, `tap()`, `when()`, `parallel()`, `retry()`, `preprocess()`, and `postprocess()`, are valid tools in their own right. They implement the full `ToolboxTool` interface (and pass `isTool()`), so you can register, query via registry helpers, serialize, and adapt them just like any other tool.
+Pipelines created with `pipe()` or `compose()`, as well as tools created with `bind()`, `tap()`, `when()`, `parallel()`, `retry()`, `preprocess()`, and `postprocess()`, are valid tools in their own right. They implement the full `Tool` interface (and pass `isTool()`), so you can register, query via registry helpers, serialize, and adapt them just like any other tool.
 
 ```typescript
 import { isTool } from 'armorer';

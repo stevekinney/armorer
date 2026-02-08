@@ -22,7 +22,7 @@ Options (`CreateToolOptions`):
 - `timeoutMs?`: number.
 - `concurrency?`: number (per-tool concurrency limit).
 
-Returns: `ToolboxTool`.
+Returns: `Tool`.
 
 Exposed properties and methods:
 
@@ -40,7 +40,7 @@ Exposed properties and methods:
 function createTool<...>(
   options: CreateToolOptions<...>,
   armorer?: Toolbox,
-): ToolboxTool;
+): Tool;
 ```
 
 #### `createToolbox(serialized?, options?)`
@@ -101,10 +101,10 @@ Converts a tool definition to a provider-neutral JSON-serializable format.
 
 Registry surface (`Toolbox`):
 
-- `register(...entries: (ToolConfig | ToolboxTool)[])`
+- `register(...entries: (ToolConfig | Tool)[])`
 - `createTool(options)`: create and register a tool in one call
 - `execute(call | calls)`
-- `tools()` (returns registered `ToolboxTool[]` for registry helpers)
+- `tools()` (returns registered `Tool[]` for registry helpers)
 - `getTool(name)`
 - `getMissingTools(names)`
 - `hasAllTools(names)`
@@ -121,7 +121,7 @@ Signature:
 const tool = armorer.createTool(options);
 ```
 
-`ToolConfig.execute` receives `ToolboxToolRuntimeContext`, which includes any base context plus `dispatchEvent`, `configuration`, `toolCall`, `signal`, and `timeoutMs`. `ToolConfig.execute` may also be a `Promise` that resolves to an execute function, or use `lazy(() => import(...))` to defer dynamic imports.
+`ToolConfig.execute` receives `ToolRuntimeContext`, which includes any base context plus `dispatchEvent`, `configuration`, `toolCall`, `signal`, and `timeoutMs`. `ToolConfig.execute` may also be a `Promise` that resolves to an execute function, or use `lazy(() => import(...))` to defer dynamic imports.
 
 #### `getMissingTools(names)`
 
@@ -142,12 +142,12 @@ function createToolbox(serialized?: SerializedToolbox, options?: ToolboxOptions)
 
 #### `isTool(value)`
 
-Type guard for `ToolboxTool`.
+Type guard for `Tool`.
 
 Signature:
 
 ```typescript
-function isTool(value: unknown): value is ToolboxTool;
+function isTool(value: unknown): value is Tool;
 ```
 
 #### Tool events (`DefaultToolEvents`)
@@ -205,7 +205,7 @@ Functions:
 
 #### Type guards
 
-- `isTool(obj)`: returns `obj is ToolboxTool` - checks if an object is a tool
+- `isTool(obj)`: returns `obj is Tool` - checks if an object is a tool
 - `isToolbox(input)`: returns `input is Toolbox` - checks if an object is an Toolbox registry
 
 #### Inspection helpers and schemas
@@ -230,13 +230,13 @@ Core registry types (main export):
 - `ToolboxContext`: base context bag for registry execution
 - `ToolboxOptions`: options for `createToolbox`
 - `ToolboxEvents`: registry event map
-- `ToolboxToolRuntimeContext`: context passed to `ToolConfig.execute`
+- `ToolRuntimeContext`: context passed to `ToolConfig.execute`
 - `SerializedToolbox`: serialized `ToolConfig[]`
 - `ToolStatusUpdate`: registry status payload
 
 Registry helper types (`armorer/registry`):
 
-- `QueryResult`: array of `ToolboxTool`
+- `QueryResult`: array of `Tool`
 - `QuerySelectionResult`: query result union for selections
 - `Embedder`: `(texts: string[]) => number[][] | Promise<number[][]>` - function to generate embeddings
 - `EmbeddingVector`: numeric vector returned by `Embedder`
@@ -265,7 +265,7 @@ Tool types:
 
 - `CreateToolOptions`: options for `createTool`
 - `WithContext`: helper type for merged context
-- `ToolboxTool`: callable tool interface
+- `Tool`: callable tool interface
 - `ToolConfig`: registry tool configuration (execute may be lazy)
 - `ToolMetadata`: metadata bag for filtering and inspection
 - `ToolParametersSchema`: Zod object schema alias
@@ -366,15 +366,15 @@ Composition helpers and types.
 
 #### Composition API
 
-- `pipe(...tools)`: left-to-right composition (2 to 9 tools); returns an `ToolboxTool`
-- `compose(...tools)`: right-to-left composition; returns an `ToolboxTool`
-- `bind(tool, bound, options?)`: bind tool parameters; returns an `ToolboxTool`
+- `pipe(...tools)`: left-to-right composition (2 to 9 tools); returns an `Tool`
+- `compose(...tools)`: right-to-left composition; returns an `Tool`
+- `bind(tool, bound, options?)`: bind tool parameters; returns an `Tool`
 - `tap(tool, effect)`: run a side effect and return the original output
 - `when(predicate, whenTrue, whenFalse?)`: conditional tool routing
 - `parallel(...tools)`: run tools concurrently (2 to 9 tools); returns an array of outputs
 - `retry(tool, options?)`: retry a tool on failure with backoff options
-- `preprocess(tool, mapper)`: transform inputs before passing to tool; returns an `ToolboxTool`
-- `postprocess(tool, mapper)`: transform outputs after tool executes; returns an `ToolboxTool`
+- `preprocess(tool, mapper)`: transform inputs before passing to tool; returns an `Tool`
+- `postprocess(tool, mapper)`: transform outputs after tool executes; returns an `Tool`
 - `PipelineError`: error with `{ stepIndex, stepName, originalError }`
 
 Pipelines created with `pipe()`/`compose()` and tools created with `parallel()` emit `ComposedToolEvents` including `step-start`, `step-complete`, and `step-error`.

@@ -2,7 +2,7 @@ import type { z } from 'zod';
 
 import type {
   DefaultToolEvents,
-  ToolboxTool,
+  Tool,
   ToolEventsMap,
   ToolMetadata,
   ToolParametersSchema,
@@ -10,7 +10,7 @@ import type {
 
 /** Extract input type from a tool's schema */
 export type InferToolInput<T> =
-  T extends ToolboxTool<infer S, infer _E, infer _R, infer _M>
+  T extends Tool<infer S, infer _E, infer _R, infer _M>
     ? z.infer<S> extends object
       ? z.infer<S>
       : Record<string, unknown>
@@ -18,10 +18,10 @@ export type InferToolInput<T> =
 
 /** Extract output type from a tool */
 export type InferToolOutput<T> =
-  T extends ToolboxTool<infer _S, infer _E, infer R, infer _M> ? R : never;
+  T extends Tool<infer _S, infer _E, infer R, infer _M> ? R : never;
 
 /** Any tool (for constraint purposes) */
-export type AnyTool = ToolboxTool<
+export type AnyTool = Tool<
   ToolParametersSchema,
   ToolEventsMap,
   unknown,
@@ -29,7 +29,7 @@ export type AnyTool = ToolboxTool<
 >;
 
 /** Tool that accepts a specific input type */
-export type ToolWithInput<I extends object> = ToolboxTool<
+export type ToolWithInput<I extends object> = Tool<
   ToolParametersSchema,
   ToolEventsMap,
   unknown,
@@ -64,7 +64,7 @@ export type ComposedToolEvents = DefaultToolEvents & {
 };
 
 /** Composed tool result type - uses DefaultToolEvents by default */
-export type ComposedTool<TInput extends object, TOutput> = ToolboxTool<
+export type ComposedTool<TInput extends object, TOutput> = Tool<
   z.ZodType<TInput>,
   DefaultToolEvents,
   TOutput,

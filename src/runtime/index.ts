@@ -34,7 +34,7 @@ export type {
   OutputValidationResult,
   RunnableTool,
   Subscription,
-  ToolboxTool,
+  Tool,
   ToolCallWithArguments,
   ToolConfig,
   ToolContext,
