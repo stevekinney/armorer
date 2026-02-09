@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.7.1
+
+### Documentation
+
+- **Common Patterns Guide**: Added comprehensive `documentation/patterns.md` with practical examples for implementing advanced patterns using existing primitives:
+  - Circuit breaker pattern for preventing cascading failures
+  - Session management with context and middleware
+  - Request deduplication for concurrent identical requests
+  - Resource pooling for database connections and API clients
+  - Fallback tools for graceful degradation
+  - Tool dependency management and execution order
+  - Audit trails for compliance and debugging
+  - Cost tracking and per-user quotas
+  - Conditional execution and multi-way branching
+  - State management with persistence
+  - Structured logging middleware
+  - Streaming responses with events and async iterators
+
 ## 0.7.0
 
 ### Breaking Changes
