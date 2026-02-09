@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createSearchTool, createTool,createToolbox } from '../src/runtime';
+import { createSearchTool, createTool, createToolbox } from '../src/runtime';
 
 describe('createSearchTool', () => {
   const makeTool = (
