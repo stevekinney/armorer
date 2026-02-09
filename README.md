@@ -711,6 +711,10 @@ Longer-form docs live in `documentation/`:
 
 See `documentation/migration.md` for before/after import examples, error model updates, and adapter path changes.
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned features, community requests, and version goals.
+
 ## License
 
 MIT. See `LICENSE`.
