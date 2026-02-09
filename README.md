@@ -690,6 +690,7 @@ const result = await tool({ count: 5 }); // number
 
 Longer-form docs live in `documentation/`:
 
+- [Common Patterns](documentation/patterns.md) - Circuit breakers, session management, request deduplication, resource pooling, fallback tools, audit trails, cost tracking, and more
 - [Toolbox Registry](documentation/registry.md) - Registration, execution, querying, searching, middleware, and serialization
 - [Tool Composition](documentation/composition.md) - `pipe`, `compose`, `bind`, `tap`, `when`, `parallel`, `retry`, `preprocess`, `postprocess`
 - [Embeddings & Semantic Search](documentation/embeddings.md) - Vector embeddings with OpenAI and Pinecone
