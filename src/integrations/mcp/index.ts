@@ -17,10 +17,13 @@ import { z } from 'zod';
 
 import { isZodSchema } from '../../core/schema-utilities';
 import { createTool } from '../../create-tool';
-import { isToolbox, type Toolbox } from '../../create-toolbox';
 import type { Tool, ToolExecuteWithOptions } from '../../is-tool';
 import { isTool } from '../../is-tool';
 import type { ToolResult } from '../../types';
+
+type ToolboxLike = {
+  tools: () => readonly Tool[];
+};
 
 export type MCPToolConfiguration = {
   title?: string;
@@ -69,7 +72,6 @@ export type FromMCPToolsOptions = {
     arguments?: Record<string, unknown>;
   }) => Promise<CallToolResult>;
   formatResult?: (result: CallToolResult, tool: MCPToolSource) => unknown;
-  toolbox?: Toolbox;
 };
 
 export type CreateMCPOptions = ServerOptions & {
@@ -85,7 +87,7 @@ const DEFAULT_SERVER_INFO: Implementation = {
   version: '0.0.0',
 };
 
-export function createMCP(toolbox: Toolbox, options: CreateMCPOptions = {}): McpServer {
+export function createMCP(toolbox: ToolboxLike, options: CreateMCPOptions = {}): McpServer {
   const {
     serverInfo,
     toolConfiguration,
@@ -121,21 +123,11 @@ export function createMCP(toolbox: Toolbox, options: CreateMCPOptions = {}): Mcp
   applyRegistrars(server, resources);
   applyRegistrars(server, prompts);
 
-  toolbox.addEventListener('registered', (event) => {
-    const [nextTool] = toMcpTools(event.detail, { toolConfiguration, formatResult });
-    if (nextTool) {
-      registerTool(nextTool);
-    }
-    if (server.isConnected()) {
-      void server.sendToolListChanged();
-    }
-  });
-
   return server;
 }
 
 export function toMcpTools(
-  input: Toolbox | Tool | Tool[],
+  input: ToolboxLike | Tool | readonly Tool[],
   options: ToMCPToolsOptions = {},
 ): MCPToolDefinition[] {
   const tools = normalizeToolInput(input);
@@ -163,7 +155,7 @@ export function fromMcpTools(
     if (metadata) {
       createOptions.metadata = metadata;
     }
-    return createTool(createOptions, options.toolbox);
+    return createTool(createOptions);
   }) as Tool[];
 }
 
@@ -277,9 +269,9 @@ function toMcpRegisteredToolConfiguration(tool: MCPToolDefinition): {
   return configuration;
 }
 
-function normalizeToolInput(input: Toolbox | Tool | Tool[]): Tool[] {
-  if (isToolbox(input)) {
-    return input.tools();
+function normalizeToolInput(input: ToolboxLike | Tool | readonly Tool[]): Tool[] {
+  if (isToolboxLike(input)) {
+    return [...input.tools()];
   }
   if (Array.isArray(input)) {
     return input.map((tool) => {
@@ -293,6 +285,14 @@ function normalizeToolInput(input: Toolbox | Tool | Tool[]): Tool[] {
     return [input];
   }
   throw new TypeError('Invalid input: expected tool, tool array, or Toolbox');
+}
+
+function isToolboxLike(value: unknown): value is ToolboxLike {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as { tools?: unknown };
+  return typeof candidate.tools === 'function';
 }
 
 function isToolLike(value: unknown): value is Tool {

@@ -34,7 +34,7 @@ export function normalizeToSerializedDefinitions(
   input:
     | SerializedToolDefinition
     | AnyToolDefinition
-    | (SerializedToolDefinition | AnyToolDefinition)[]
+    | readonly (SerializedToolDefinition | AnyToolDefinition)[]
     | ToolRegistryLike,
 ): SerializedToolDefinition[] {
   const toSerialized = (item: SerializedToolDefinition | AnyToolDefinition) => {
@@ -50,14 +50,19 @@ export function normalizeToSerializedDefinitions(
     if (!Array.isArray(tools)) {
       throw new Error('Registry tools() must return an array.');
     }
-    return tools.map((tool) => toSerialized(tool));
+    const registryTools: readonly (
+      | SerializedToolDefinition
+      | AnyToolDefinition
+    )[] = tools;
+    return registryTools.map((tool) => toSerialized(tool));
   }
 
   if (Array.isArray(input)) {
-    return input.map((item) => toSerialized(item));
+    const items: readonly (SerializedToolDefinition | AnyToolDefinition)[] = input;
+    return items.map((item) => toSerialized(item));
   }
 
-  return [toSerialized(input)];
+  return [toSerialized(input as SerializedToolDefinition | AnyToolDefinition)];
 }
 
 /**
@@ -67,7 +72,7 @@ export function isSingleInput(
   input:
     | SerializedToolDefinition
     | AnyToolDefinition
-    | (SerializedToolDefinition | AnyToolDefinition)[]
+    | readonly (SerializedToolDefinition | AnyToolDefinition)[]
     | ToolRegistryLike,
 ): boolean {
   return !Array.isArray(input) && !isToolRegistryLike(input);
@@ -79,12 +84,12 @@ export function isSingleInput(
 export type AdapterInput =
   | SerializedToolDefinition
   | AnyToolDefinition
-  | (SerializedToolDefinition | AnyToolDefinition)[]
+  | readonly (SerializedToolDefinition | AnyToolDefinition)[]
   | ToolRegistryLike;
 
 export type ToolRegistryLike = {
-  tools?: () => AnyToolDefinition[] | SerializedToolDefinition[];
-  list?: () => AnyToolDefinition[] | SerializedToolDefinition[];
+  tools?: () => readonly AnyToolDefinition[] | readonly SerializedToolDefinition[];
+  list?: () => readonly AnyToolDefinition[] | readonly SerializedToolDefinition[];
 };
 
 function isToolRegistryLike(value: unknown): value is ToolRegistryLike {

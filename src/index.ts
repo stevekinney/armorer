@@ -5,11 +5,15 @@ export type {
   SerializedToolbox,
   SerializedToolboxJSONSchema,
   Toolbox,
+  ToolboxCallInputForTools,
   ToolboxContext,
+  ToolboxEntries,
+  ToolboxEntry,
   ToolboxEvents,
   ToolboxOptions,
   ToolboxRuntimeContext,
   ToolMiddleware,
+  ToolsFromEntries,
   ToolStatusUpdate,
 } from './create-toolbox';
 export { createMiddleware, createToolbox, isToolbox } from './create-toolbox';

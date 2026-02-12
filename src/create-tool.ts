@@ -15,7 +15,6 @@ import {
 } from './core/tag-utilities';
 import type { AnyToolDefinition, ToolLifecycle } from './core/tool-definition';
 import { defineTool } from './core/tool-definition';
-import type { Toolbox } from './create-toolbox';
 import { errorString, normalizeError } from './errors';
 import type {
   DefaultToolEvents,
@@ -113,7 +112,16 @@ type InferSchemaInput<TSchema extends SchemaInput> = TSchema extends z.ZodRawSha
       : Record<string, unknown>
     : Record<string, unknown>;
 
+type NamedTool<
+  TName extends string,
+  TSchema extends z.ZodTypeAny,
+  E extends ToolEventsMap,
+  TReturn,
+  M extends ToolMetadata | undefined,
+> = Tool<TSchema, E, TReturn, M> & { name: TName };
+
 type CreateToolReturn<
+  TName extends string,
   TSchema extends z.ZodTypeAny,
   E extends ToolEventsMap,
   TReturn,
@@ -121,8 +129,8 @@ type CreateToolReturn<
   TMetadataInput extends ToolMetadataInput<M> | undefined,
 > =
   TMetadataInput extends AsyncToolMetadataInput<M>
-    ? Promise<Tool<TSchema, E, TReturn, M>>
-    : Tool<TSchema, E, TReturn, M>;
+    ? Promise<NamedTool<TName, TSchema, E, TReturn, M>>
+    : NamedTool<TName, TSchema, E, TReturn, M>;
 
 export type WithContext<
   T extends object = Record<string, unknown>,
@@ -192,7 +200,7 @@ export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
  *
  * Tools define their input parameters using Zod, execute logic, and optional features like
  * dry-run simulation, policies, event handlers, and output validation. Tools can be
- * registered with a toolbox or used standalone.
+ * used standalone or provided to `createToolbox(...)`.
  *
  * @param options - Tool configuration object
  * @param options.name - Unique tool name (alphanumeric, hyphens, underscores)
@@ -207,9 +215,8 @@ export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
  * @param options.timeout - Hard execution timeout in milliseconds
  * @param options.namespace - Optional namespace for organizing tools
  * @param options.version - Semantic version string
- * @param toolbox - Optional toolbox instance to auto-register this tool
  *
- * @returns An Tool that can be executed, registered, or exported to provider formats
+ * @returns A Tool that can be executed directly or provided to `createToolbox(...)`
  *
  * @example Basic tool
  * ```typescript
@@ -278,6 +285,7 @@ export function createTool<
   TMetadataInput extends ToolMetadataInput<M> | undefined =
     | SyncToolMetadataInput<M>
     | undefined,
+  TName extends string = string,
 >(
   options: Omit<
     CreateToolOptions<
@@ -290,14 +298,14 @@ export function createTool<
       InferSchemaInput<TSchema>,
       TReturn
     >,
-    'metadata'
+    'metadata' | 'name'
   > & {
+    name: TName;
     metadata?: TMetadataInput;
     parameters: TSchema;
     schema?: SchemaInput;
   },
-  toolbox?: Toolbox,
-): CreateToolReturn<z.ZodType<InferSchemaInput<TSchema>>, E, TReturn, M, TMetadataInput>;
+): CreateToolReturn<TName, z.ZodType<InferSchemaInput<TSchema>>, E, TReturn, M, TMetadataInput>;
 
 export function createTool<
   TSchema extends SchemaInput,
@@ -310,6 +318,7 @@ export function createTool<
   TMetadataInput extends ToolMetadataInput<M> | undefined =
     | SyncToolMetadataInput<M>
     | undefined,
+  TName extends string = string,
 >(
   options: Omit<
     CreateToolOptions<
@@ -322,14 +331,14 @@ export function createTool<
       InferSchemaInput<TSchema>,
       TReturn
     >,
-    'metadata'
+    'metadata' | 'name'
   > & {
+    name: TName;
     metadata?: TMetadataInput;
     schema: TSchema;
     parameters?: SchemaInput;
   },
-  toolbox?: Toolbox,
-): CreateToolReturn<z.ZodType<InferSchemaInput<TSchema>>, E, TReturn, M, TMetadataInput>;
+): CreateToolReturn<TName, z.ZodType<InferSchemaInput<TSchema>>, E, TReturn, M, TMetadataInput>;
 
 export function createTool<
   TInput extends object = Record<string, unknown>,
@@ -343,15 +352,16 @@ export function createTool<
   TMetadataInput extends ToolMetadataInput<M> | undefined =
     | SyncToolMetadataInput<M>
     | undefined,
+  TName extends string = string,
 >(
   options: Omit<
     CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
-    'metadata'
+    'metadata' | 'name'
   > & {
+    name: TName;
     metadata?: TMetadataInput;
   },
-  toolbox?: Toolbox,
-): CreateToolReturn<z.ZodType<TInput>, E, TReturn, M, TMetadataInput>;
+): CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, TMetadataInput>;
 export function createTool<
   TInput extends object = Record<string, unknown>,
   TOutput = unknown,
@@ -364,15 +374,16 @@ export function createTool<
   TMetadataInput extends ToolMetadataInput<M> | undefined =
     | ToolMetadataInput<M>
     | undefined,
+  TName extends string = string,
 >(
   options: Omit<
     CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
-    'metadata'
+    'metadata' | 'name'
   > & {
+    name: TName;
     metadata?: TMetadataInput;
   },
-  toolbox?: Toolbox,
-): CreateToolReturn<z.ZodType<TInput>, E, TReturn, M, TMetadataInput> {
+): CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, TMetadataInput> {
   const metadataInput = options.metadata as ToolMetadataInput<M> | undefined;
   const resolvedMetadata = resolveMetadataInput(metadataInput);
   if (isPromise<M>(resolvedMetadata)) {
@@ -387,9 +398,8 @@ export function createTool<
         > & {
           metadata: M;
         },
-        toolbox,
       ),
-    ) as CreateToolReturn<z.ZodType<TInput>, E, TReturn, M, TMetadataInput>;
+    ) as CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, TMetadataInput>;
   }
 
   const {
@@ -792,9 +802,6 @@ export function createTool<
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
       }
-      // Merge toolbox context if tool was created with a toolbox that has context
-      const toolboxContext = toolbox?.getContext?.();
-
       const toolContext: ToolContext<E> = {
         dispatch: dispatchEvent,
         meta,
@@ -802,13 +809,12 @@ export function createTool<
         configuration,
         ...(options.signal ? { signal: options.signal } : {}),
         ...(options.timeout !== undefined ? { timeout: options.timeout } : {}),
-        ...(toolboxContext || {}),
         dryRun: isDryRun,
       };
 
       // `TContext` may be a subtype of `ToolContext<E>` (e.g. with extra fields).
-      // At runtime we can only guarantee the base ToolContext shape plus any toolbox context,
-      // so we cast to avoid `exactOptionalPropertyTypes` assignability issues.
+      // At runtime we can only guarantee the base ToolContext shape, so we cast to
+      // avoid `exactOptionalPropertyTypes` assignability issues.
 
       const runner = resolvedExecute(parsed, toolContext as unknown as TContext);
 
@@ -1192,12 +1198,14 @@ export function createTool<
 
   const finalTool = tool as unknown as Tool<z.ZodType<TInput>, E, TReturn, M>;
 
-  // Register with toolbox if provided
-  if (toolbox) {
-    toolbox.register(finalTool as unknown as Tool);
-  }
-
-  return finalTool as CreateToolReturn<z.ZodType<TInput>, E, TReturn, M, TMetadataInput>;
+  return finalTool as CreateToolReturn<
+    TName,
+    z.ZodType<TInput>,
+    E,
+    TReturn,
+    M,
+    TMetadataInput
+  >;
 
   function asError(error: unknown): Error {
     if (error instanceof Error) return error;
@@ -1343,13 +1351,7 @@ export function withContext<Ctx extends Record<string, unknown>>(
   const build = (opts: AnyToolWithContextOptions<Ctx>) => {
     const { execute, ...rest } = opts;
     const resolveExecute = createLazyExecuteResolver(execute);
-    return createTool<
-      Record<string, unknown>,
-      unknown,
-      DefaultToolEvents,
-      readonly string[],
-      ToolMetadata | undefined
-    >({
+    return createTool({
       ...rest,
       async execute(params, toolContext) {
         const extended = Object.assign({}, toolContext, context);
@@ -1382,14 +1384,13 @@ const ABORT_REJECTION_SYMBOL = Symbol('toolbox.abort');
  * import { createToolbox, createTool, createToolCall } from 'armorer';
  * import { z } from 'zod';
  *
- * const toolbox = createToolbox();
- * toolbox.register(
+ * const toolbox = createToolbox([
  *   createTool({
  *     name: 'add',
  *     parameters: z.object({ a: z.number(), b: z.number() }),
  *     execute: async ({ a, b }) => a + b,
- *   })
- * );
+ *   }),
+ * ]);
  *
  * // Create a tool call
  * const call = createToolCall('add', { a: 5, b: 3 });

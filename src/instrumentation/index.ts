@@ -9,6 +9,10 @@ import {
 
 import type { Toolbox } from '../create-toolbox';
 
+type InstrumentableToolbox = {
+  addEventListener: Toolbox['addEventListener'];
+};
+
 export type InstrumentationOptions = {
   tracer?: Tracer;
   tracerName?: string;
@@ -25,7 +29,7 @@ export type InstrumentationOptions = {
  * @returns A function to unregister the instrumentation.
  */
 export function instrument(
-  toolbox: Toolbox,
+  toolbox: InstrumentableToolbox,
   options: InstrumentationOptions = {},
 ): () => void {
   const tracer =

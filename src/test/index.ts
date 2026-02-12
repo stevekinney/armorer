@@ -5,6 +5,8 @@ import { createToolbox, type Toolbox } from '../create-toolbox';
 import type { Tool, ToolCallWithArguments } from '../is-tool';
 import type { ToolResult } from '../types';
 
+type AnyToolbox = Toolbox<any>;
+
 export type MockToolOptions<TInput = any, TOutput = any> = {
   name?: string;
   parameters?: z.ZodType<TInput>;
@@ -73,7 +75,7 @@ export function createMockTool<TInput extends object = any, TOutput = any>(
   return mockTool;
 }
 
-export type TestRegistry = Toolbox & {
+export type TestRegistry = AnyToolbox & {
   history: { call: ToolCallWithArguments; result?: ToolResult; error?: unknown }[];
   clearHistory: () => void;
 };
@@ -83,7 +85,7 @@ export type TestRegistry = Toolbox & {
  * Records execution history.
  */
 export function createTestRegistry(): TestRegistry {
-  const toolbox = createToolbox();
+  const toolbox = createToolbox([] as Tool[]);
   const history: TestRegistry['history'] = [];
 
   // Listen to finished events to record history.

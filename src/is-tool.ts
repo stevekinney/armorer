@@ -308,7 +308,7 @@ export function isTool(obj: unknown): obj is Tool {
 }
 
 /**
- * A tool that can be registered with Toolbox and executed.
+ * A tool that can be included in a Toolbox and executed.
  *
  * Use with type parameters for compile-time safety on a specific tool:
  * ```ts

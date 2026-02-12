@@ -92,8 +92,8 @@ export type RiskFilter = {
 
 export type ToolQuerySelect = 'tool' | 'name' | 'configuration' | 'summary';
 
-export type ToolSummary = {
-  id: ToolDefinition['id'];
+export type ToolSummary<TTool extends ToolDefinition = ToolDefinition> = {
+  id: TTool['id'];
   identity: ToolIdentity;
   name: string;
   description: string;
@@ -101,10 +101,10 @@ export type ToolSummary = {
   schemaKeys?: readonly string[];
   metadata?: JsonObject;
   risk?: ToolRisk;
-  lifecycle?: ToolDefinition['lifecycle'];
+  lifecycle?: TTool['lifecycle'];
   deprecated?: boolean;
   schema?: ToolSchema;
-  configuration?: ToolDefinition;
+  configuration?: TTool;
 };
 
 /**
@@ -112,7 +112,7 @@ export type ToolSummary = {
  *
  * All criteria are combined with AND logic.
  */
-export type ToolQueryCriteria = {
+export type ToolQueryCriteria<TTool extends ToolDefinition = ToolDefinition> = {
   /** Match tools within a specific namespace. */
   namespace?: string | readonly string[];
   /** Match tools by exact version. */
@@ -130,13 +130,13 @@ export type ToolQueryCriteria = {
   /** Metadata filtering. */
   metadata?: MetadataFilter;
   /** Custom predicate over the full tool. */
-  predicate?: ToolPredicate<ToolDefinition>;
+  predicate?: ToolPredicate<TTool>;
   /** Require all nested criteria to match. */
-  and?: ToolQueryCriteria[];
+  and?: ToolQueryCriteria<TTool>[];
   /** Require at least one nested criterion to match. */
-  or?: ToolQueryCriteria[];
+  or?: ToolQueryCriteria<TTool>[];
   /** Exclude tools that match the nested criteria. */
-  not?: ToolQueryCriteria | ToolQueryCriteria[];
+  not?: ToolQueryCriteria<TTool> | ToolQueryCriteria<TTool>[];
 };
 
 export type ToolQueryOptions = {
@@ -152,11 +152,15 @@ export type ToolQueryOptions = {
   includeSchema?: boolean;
 };
 
-export type ToolQuery = ToolQueryCriteria & ToolQueryOptions;
+export type ToolQuery<TTool extends ToolDefinition = ToolDefinition> =
+  ToolQueryCriteria<TTool> & ToolQueryOptions;
 
-export type QueryResult = ToolDefinition[];
+export type QueryResult<TTool extends ToolDefinition = ToolDefinition> = TTool[];
 
-export type QuerySelectionResult = ToolDefinition[] | string[] | ToolSummary[];
+export type QuerySelectionResult<TTool extends ToolDefinition = ToolDefinition> =
+  | TTool[]
+  | string[]
+  | ToolSummary<TTool>[];
 
 export type ToolSearchRank = {
   /** Prefer tools with these tags. */
@@ -204,28 +208,29 @@ export type ToolRankContext = {
   index: TextSearchIndex;
 };
 
-export type ToolRanker = (
-  tool: ToolDefinition,
+export type ToolRanker<TTool extends ToolDefinition = ToolDefinition> = (
+  tool: TTool,
   context: ToolRankContext,
 ) => ToolRankResult | number | null | undefined;
 
 /** Alias for ToolRanker for clarity when used with searchTools. */
-export type ToolSearchRanker = ToolRanker;
+export type ToolSearchRanker<TTool extends ToolDefinition = ToolDefinition> =
+  ToolRanker<TTool>;
 
-export type ToolTieBreaker =
+export type ToolTieBreaker<TTool extends ToolDefinition = ToolDefinition> =
   | 'name'
   | 'none'
-  | ((a: ToolMatch<ToolDefinition>, b: ToolMatch<ToolDefinition>) => number);
+  | ((a: ToolMatch<TTool>, b: ToolMatch<TTool>) => number);
 
-export type ToolSearchOptions = {
+export type ToolSearchOptions<TTool extends ToolDefinition = ToolDefinition> = {
   /** Filter tools before ranking. */
-  filter?: ToolQueryCriteria;
+  filter?: ToolQueryCriteria<TTool>;
   /** Ranking preferences. */
   rank?: ToolSearchRank;
   /** Custom ranker for domain-specific scoring. */
-  ranker?: ToolRanker;
+  ranker?: ToolRanker<TTool>;
   /** Deterministic tie-breaking for equal scores. */
-  tieBreaker?: ToolTieBreaker;
+  tieBreaker?: ToolTieBreaker<TTool>;
   /** Limit the number of results returned. */
   limit?: number;
   /** Skip a number of results before applying limit. */
@@ -247,22 +252,28 @@ export type ToolMatch<T = ToolDefinition> = {
   matches?: ToolMatchDetails;
 };
 
-export type ToolRegistryLike = {
-  tools: () => ToolDefinition[];
+export type ToolRegistryLike<TTool extends ToolDefinition = ToolDefinition> = {
+  tools: () => readonly TTool[];
   dispatchEvent?: (event: EmissionEvent<unknown>) => boolean;
 };
 
-export type ToolQueryInput =
+export type ToolQueryInput<TTool extends ToolDefinition = ToolDefinition> =
   | ToolRegistry
-  | ToolDefinition
-  | ToolRegistryLike
-  | Iterable<ToolDefinition>
-  | ToolDefinition[];
+  | TTool
+  | ToolRegistryLike<TTool>
+  | Iterable<TTool>
+  | readonly TTool[];
 
 export type { Embedder, EmbeddingVector };
 
-export type QueryEvent = { criteria?: ToolQuery; results: QuerySelectionResult };
-export type SearchEvent = { options: ToolSearchOptions; results: ToolMatch<unknown>[] };
+export type QueryEvent<TTool extends ToolDefinition = ToolDefinition> = {
+  criteria?: ToolQuery<TTool>;
+  results: QuerySelectionResult<TTool>;
+};
+export type SearchEvent<TTool extends ToolDefinition = ToolDefinition> = {
+  options: ToolSearchOptions<TTool>;
+  results: ToolMatch<TTool>[];
+};
 
 const searchIndex = new WeakMap<ToolDefinition, TextSearchIndex>();
 const toolLookupCache = new WeakMap<ToolDefinition, ToolLookupCache>();
@@ -319,23 +330,25 @@ type EmbeddingIndex = {
   size: number;
 };
 
-export function queryTools(input: ToolQueryInput): QueryResult;
-export function queryTools(
-  input: ToolQueryInput,
-  criteria?: ToolQuery & { select?: 'tool' },
-): QueryResult;
-export function queryTools(
-  input: ToolQueryInput,
-  criteria: ToolQuery & { select: 'name' },
+export function queryTools<TTool extends ToolDefinition>(
+  input: ToolQueryInput<TTool>,
+): QueryResult<TTool>;
+export function queryTools<TTool extends ToolDefinition>(
+  input: ToolQueryInput<TTool>,
+  criteria?: ToolQuery<TTool> & { select?: 'tool' },
+): QueryResult<TTool>;
+export function queryTools<TTool extends ToolDefinition>(
+  input: ToolQueryInput<TTool>,
+  criteria: ToolQuery<TTool> & { select: 'name' },
 ): string[];
-export function queryTools(
-  input: ToolQueryInput,
-  criteria: ToolQuery & { select: 'configuration' },
-): ToolDefinition[];
-export function queryTools(
-  input: ToolQueryInput,
-  criteria: ToolQuery & { select: 'summary' },
-): ToolSummary[];
+export function queryTools<TTool extends ToolDefinition>(
+  input: ToolQueryInput<TTool>,
+  criteria: ToolQuery<TTool> & { select: 'configuration' },
+): TTool[];
+export function queryTools<TTool extends ToolDefinition>(
+  input: ToolQueryInput<TTool>,
+  criteria: ToolQuery<TTool> & { select: 'summary' },
+): ToolSummary<TTool>[];
 export function queryTools(
   input: ToolQueryInput,
   criteria?: ToolQuery,
@@ -382,23 +395,25 @@ export function queryTools(
   return results;
 }
 
-export function searchTools(input: ToolQueryInput): ToolMatch[];
-export function searchTools(
-  input: ToolQueryInput,
-  options?: ToolSearchOptions & { select?: 'tool' },
-): ToolMatch[];
-export function searchTools(
-  input: ToolQueryInput,
-  options: ToolSearchOptions & { select: 'name' },
+export function searchTools<TTool extends ToolDefinition>(
+  input: ToolQueryInput<TTool>,
+): ToolMatch<TTool>[];
+export function searchTools<TTool extends ToolDefinition>(
+  input: ToolQueryInput<TTool>,
+  options?: ToolSearchOptions<TTool> & { select?: 'tool' },
+): ToolMatch<TTool>[];
+export function searchTools<TTool extends ToolDefinition>(
+  input: ToolQueryInput<TTool>,
+  options: ToolSearchOptions<TTool> & { select: 'name' },
 ): ToolMatch<string>[];
-export function searchTools(
-  input: ToolQueryInput,
-  options: ToolSearchOptions & { select: 'configuration' },
-): ToolMatch<ToolDefinition>[];
-export function searchTools(
-  input: ToolQueryInput,
-  options: ToolSearchOptions & { select: 'summary' },
-): ToolMatch<ToolSummary>[];
+export function searchTools<TTool extends ToolDefinition>(
+  input: ToolQueryInput<TTool>,
+  options: ToolSearchOptions<TTool> & { select: 'configuration' },
+): ToolMatch<TTool>[];
+export function searchTools<TTool extends ToolDefinition>(
+  input: ToolQueryInput<TTool>,
+  options: ToolSearchOptions<TTool> & { select: 'summary' },
+): ToolMatch<ToolSummary<TTool>>[];
 export function searchTools(
   input: ToolQueryInput,
   options: ToolSearchOptions = {},
@@ -428,7 +443,9 @@ export function searchTools(
   return results;
 }
 
-export function reindexSearchIndex(input: ToolQueryInput): void {
+export function reindexSearchIndex<TTool extends ToolDefinition>(
+  input: ToolQueryInput<TTool>,
+): void {
   const resolved = resolveTools(input);
   const updateEmbeddingIndex =
     resolved.registry && resolved.embedder
@@ -545,7 +562,7 @@ export function unregisterToolIndexes(
 }
 
 function resolveTools(input: ToolQueryInput): {
-  tools: ToolDefinition[];
+  tools: readonly ToolDefinition[];
   dispatchEvent?: ToolRegistryLike['dispatchEvent'];
   getIndex: (tool: ToolDefinition) => TextSearchIndex;
   getInvertedIndex?: () => InvertedIndex;
@@ -644,7 +661,7 @@ function getToolLookup(tool: ToolDefinition): ToolLookupCache {
   return lookup;
 }
 
-function buildInvertedIndex(tools: ToolDefinition[]): InvertedIndex {
+function buildInvertedIndex(tools: readonly ToolDefinition[]): InvertedIndex {
   const tagIndex = new Map<string, Set<ToolDefinition>>();
   const schemaKeyIndex = new Map<string, Set<ToolDefinition>>();
   for (const tool of tools) {
@@ -674,7 +691,7 @@ function buildInvertedIndex(tools: ToolDefinition[]): InvertedIndex {
 }
 
 function buildTextInvertedIndex(
-  tools: ToolDefinition[],
+  tools: readonly ToolDefinition[],
   getIndex: (tool: ToolDefinition) => TextSearchIndex,
 ): TextInvertedIndex {
   const fields: Record<TextQueryField, FieldTokenIndex> = {
@@ -977,7 +994,7 @@ function removeFieldTokens(
   }
 }
 
-function buildEmbeddingIndex(tools: ToolDefinition[]): EmbeddingIndex {
+function buildEmbeddingIndex(tools: readonly ToolDefinition[]): EmbeddingIndex {
   const index: EmbeddingIndex = {
     dimensions: new Map(),
     missing: new Set(),
@@ -1186,7 +1203,7 @@ function createRng(seed: number): () => number {
 
 function getRegistryInvertedIndex(
   registry: object,
-  tools: ToolDefinition[],
+  tools: readonly ToolDefinition[],
 ): InvertedIndex {
   const cached = registryInvertedIndex.get(registry);
   if (cached && cached.size === tools.length) {
@@ -1199,7 +1216,7 @@ function getRegistryInvertedIndex(
 
 function getRegistryTextIndex(
   registry: object,
-  tools: ToolDefinition[],
+  tools: readonly ToolDefinition[],
   getIndex: (tool: ToolDefinition) => TextSearchIndex,
 ): TextInvertedIndex {
   const cached = registryTextIndex.get(registry);
@@ -1213,7 +1230,7 @@ function getRegistryTextIndex(
 
 function getRegistryEmbeddingIndex(
   registry: object,
-  tools: ToolDefinition[],
+  tools: readonly ToolDefinition[],
 ): EmbeddingIndex {
   const cached = registryEmbeddingIndex.get(registry);
   if (cached && cached.size === tools.length) {
@@ -1225,7 +1242,7 @@ function getRegistryEmbeddingIndex(
 }
 
 function filterTools(
-  tools: ToolDefinition[],
+  tools: readonly ToolDefinition[],
   criteria: ToolQueryCriteria | undefined,
   getIndex: (tool: ToolDefinition) => TextSearchIndex,
   getInvertedIndex: (() => InvertedIndex) | undefined,
@@ -1233,7 +1250,7 @@ function filterTools(
   embedder?: Embedder,
 ): ToolDefinition[] {
   if (criteria === undefined) {
-    return tools;
+    return [...tools];
   }
   if (!isPlainObject(criteria)) {
     throw new TypeError('query expects a ToolQuery object');
@@ -1251,7 +1268,7 @@ function filterTools(
 }
 
 function selectCandidateTools(
-  tools: ToolDefinition[],
+  tools: readonly ToolDefinition[],
   criteria: ToolQueryCriteria,
   getInvertedIndex: (() => InvertedIndex) | undefined,
   getTextIndex: () => TextInvertedIndex,
@@ -1263,7 +1280,7 @@ function selectCandidateTools(
   const schemaKeys = normalizeSchemaKeys(criteria.schema?.keys ?? []);
   const normalizedText = criteria.text ? normalizeTextQuery(criteria.text) : null;
   if (!anyTags.length && !allTags.length && !schemaKeys.length && !normalizedText) {
-    return tools;
+    return [...tools];
   }
   const index = getInvertedIndex ? getInvertedIndex() : buildInvertedIndex(tools);
   let candidateSet: Set<ToolDefinition> | null = null;
@@ -1290,7 +1307,7 @@ function selectCandidateTools(
   }
 
   if (!candidateSet) {
-    return tools;
+    return [...tools];
   }
   if (!candidateSet.size) {
     return [];

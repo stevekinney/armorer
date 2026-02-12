@@ -61,8 +61,7 @@ describe('toOpenAI', () => {
 
   describe('registry conversion', () => {
     it('returns array for registry input', () => {
-      const toolbox = createToolbox();
-      toolbox.register(tool);
+      const toolbox = createToolbox([tool]);
       const openAI = toOpenAI(toolbox);
       expect(Array.isArray(openAI)).toBe(true);
       expect(openAI).toHaveLength(1);

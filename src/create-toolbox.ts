@@ -28,16 +28,12 @@ import {
   type SerializedToolDefinition,
   serializeToolDefinition,
 } from './core/serialization';
-import { assertKebabCaseTag, uniqTags } from './core/tag-utilities';
 import type { AnyToolDefinition } from './core/tool-definition';
 import { defineTool } from './core/tool-definition';
 import {
-  type AsyncToolMetadataInput,
   createTool as createToolFactory,
   createToolCall,
   type CreateToolOptions,
-  type SyncToolMetadataInput,
-  type ToolMetadataInput,
 } from './create-tool';
 import type {
   DefaultToolEvents,
@@ -125,8 +121,8 @@ export interface ToolboxOptions {
     configuration: Omit<ToolConfiguration, 'execute'>,
   ) => ToolConfiguration['execute'];
   /**
-   * Array of middleware functions to transform tool configurations during registration.
-   * Middleware is applied in order before the tool is built.
+   * Array of middleware functions to transform tool configurations during toolbox creation.
+   * Middleware is applied in order before each tool is built.
    */
   middleware?: ToolMiddleware[];
 }
@@ -150,8 +146,6 @@ export interface ToolStatusUpdate {
 }
 
 export interface ToolboxEvents {
-  registering: Tool;
-  registered: Tool;
   call: { tool: Tool; call: ToolCall };
   complete: { tool: Tool; result: ToolResult };
   error: { tool?: Tool; result: ToolResult };
@@ -245,48 +239,76 @@ export interface ToolboxExecuteOptions extends ToolExecuteOptions {
   errorMode?: 'failFast' | 'collect';
 }
 
-type CreateToolboxToolReturn<
-  TInput extends object,
-  E extends ToolEventsMap,
-  TOutput,
-  M extends ToolMetadata | undefined,
-  TMetadataInput extends ToolMetadataInput<M> | undefined,
-> =
-  TMetadataInput extends AsyncToolMetadataInput<M>
-    ? Promise<Tool<z.ZodType<TInput>, E, TOutput, M>>
-    : Tool<z.ZodType<TInput>, E, TOutput, M>;
+export type ToolboxEntry = ToolConfiguration | Tool;
+export type ToolboxEntries = readonly ToolboxEntry[];
 
-export interface Toolbox {
-  register: (...entries: (ToolConfiguration | Tool)[]) => Toolbox;
-  createTool: <
-    TInput extends object = Record<string, unknown>,
-    TOutput = unknown,
-    E extends ToolEventsMap = DefaultToolEvents,
-    Tags extends readonly string[] = readonly string[],
-    M extends ToolMetadata | undefined = ToolMetadata | undefined,
-    TMetadataInput extends ToolMetadataInput<M> | undefined =
-      | SyncToolMetadataInput<M>
-      | undefined,
-  >(
-    options: Omit<CreateToolOptions<TInput, TOutput, E, Tags, M>, 'metadata'> & {
-      metadata?: TMetadataInput;
-    },
-  ) => CreateToolboxToolReturn<TInput, E, TOutput, M, TMetadataInput>;
-  execute(call: ToolCallInput, options?: ToolExecuteOptions): Promise<ToolResult>;
-  execute(calls: ToolCallInput[], options?: ToolExecuteOptions): Promise<ToolResult[]>;
-  tools: () => Tool[];
-  getTool: (nameOrId: string) => Tool | undefined;
+type EntryToTool<TEntry> = TEntry extends Tool ? TEntry : Tool;
+
+export type ToolsFromEntries<TEntries extends ToolboxEntries> = ReadonlyArray<
+  EntryToTool<TEntries[number]>
+>;
+
+type ToolboxToolName<TTools extends readonly Tool[]> = TTools[number]['name'] & string;
+
+type ToolboxToolInput<TTool extends Tool> = TTool extends Tool<infer TSchema, any, any, any>
+  ? z.infer<TSchema>
+  : unknown;
+
+type ToolboxToolOutput<TTool extends Tool> = TTool extends Tool<any, any, infer TOutput, any>
+  ? TOutput
+  : unknown;
+
+type ToolboxToolByNameOrFallback<
+  TTools extends readonly Tool[],
+  Name extends string,
+> = Extract<TTools[number], { name: Name }> extends never
+  ? TTools[number]
+  : Extract<TTools[number], { name: Name }>;
+
+export type ToolboxCallInputForTools<TTools extends readonly Tool[]> = {
+  [Name in ToolboxToolName<TTools>]: {
+    id?: string;
+    name: Name;
+    arguments?: ToolboxToolInput<ToolboxToolByNameOrFallback<TTools, Name>>;
+  };
+}[ToolboxToolName<TTools>];
+
+type ToolboxResultForTool<TTool extends Tool> = Omit<ToolResult, 'toolName' | 'result'> & {
+  toolName: TTool['name'];
+  result: ToolboxToolOutput<TTool> | undefined;
+};
+
+type ToolboxResultForCall<
+  TTools extends readonly Tool[],
+  TCall extends { name: string },
+> = TCall['name'] extends ToolboxToolName<TTools>
+  ? ToolboxResultForTool<ToolboxToolByNameOrFallback<TTools, TCall['name']>>
+  : ToolResult;
+
+export interface Toolbox<TTools extends readonly Tool[] = readonly Tool[]> {
+  execute<const TCall extends ToolboxCallInputForTools<TTools>>(
+    call: TCall,
+    options?: ToolboxExecuteOptions,
+  ): Promise<ToolboxResultForCall<TTools, TCall>>;
+  execute<const TCalls extends readonly ToolboxCallInputForTools<TTools>[]>(
+    calls: [...TCalls],
+    options?: ToolboxExecuteOptions,
+  ): Promise<{ [K in keyof TCalls]: ToolboxResultForCall<TTools, TCalls[K]> }>;
+  execute(call: ToolCallInput, options?: ToolboxExecuteOptions): Promise<ToolResult>;
+  execute(calls: ToolCallInput[], options?: ToolboxExecuteOptions): Promise<ToolResult[]>;
+  tools: () => TTools;
+  getTool(nameOrId: string): TTools[number] | undefined;
   /**
-   * Returns names of tools that are not registered.
+   * Returns names of tools that are not present in this toolbox.
    * Useful for fail-soft agent gating.
    */
   getMissingTools: (names: string[]) => string[];
   /**
-   * Checks if all specified tools are registered.
+   * Checks if all specified tools are present in this toolbox.
    */
   hasAllTools: (names: string[]) => boolean;
   /**
-   * Inspects the registry and returns a typed JSON summary of all registered tools.
+   * Inspects the toolbox and returns a typed JSON summary of all configured tools.
    * Useful for debugging and logging which tools are available before model calls.
    *
    * @param detailLevel - Level of detail to include:
@@ -337,21 +359,21 @@ export interface Toolbox {
   complete: () => void;
   readonly completed: boolean;
 
-  // Internal method to get toolbox context (for use by createTool)
+  // Internal method to get toolbox context.
   getContext?: () => ToolboxContext;
 }
 
 /**
- * Creates a tool registry (toolbox) for managing and executing AI tools.
+ * Creates an immutable toolbox for managing and executing AI tools.
  *
- * A toolbox provides a central registry for tools with validation, execution,
- * event hooks, policies, and provider adapters. Tools can be registered, queried,
- * executed individually or in batch, and exported to various AI provider formats.
+ * A toolbox provides a central immutable tool set with validation, execution,
+ * event hooks, policies, and provider adapters. Tools are provided up front at
+ * creation time and can be executed individually or in batch.
  *
- * @param serialized - Optional array of serialized tool definitions to pre-register
+ * @param entries - Optional array of tool configurations or built tools
  * @param options - Configuration options for the toolbox
  * @param options.context - Shared context object passed to all tool executions
- * @param options.middleware - Array of middleware functions to transform tools during registration
+ * @param options.middleware - Array of middleware functions to transform tools during toolbox creation
  * @param options.policy - Global policy hooks for access control and validation
  * @param options.policyContext - Provider function for dynamic policy context
  * @param options.digests - Configuration for input/output hashing
@@ -360,28 +382,25 @@ export interface Toolbox {
  * @param options.telemetry - Enable telemetry events (tool.started, tool.finished)
  * @param options.embed - Embedding function for semantic search capabilities
  * @param options.budget - Execution budget limits (maxCalls, maxDurationMs)
- * @param options.readOnly - If true, prevents new tool registration
- * @param options.allowMutation - If true, allows tools to be re-registered (default: true)
+ * @param options.readOnly - If true, blocks mutating tool execution by default
+ * @param options.allowMutation - If false, blocks mutating tool execution
  * @param options.allowDangerous - If true, allows tools with 'dangerous' risk level (default: true)
  *
- * @returns A Toolbox instance with methods for registering, querying, and executing tools
+ * @returns A Toolbox instance with methods for inspecting and executing tools
  *
  * @example
  * ```typescript
  * import { createToolbox, createTool } from 'armorer';
  * import { z } from 'zod';
  *
- * // Create a toolbox
- * const toolbox = createToolbox();
- *
- * // Register a tool
+ * // Create a toolbox with tools up front
  * const addTool = createTool({
  *   name: 'add',
  *   description: 'Add two numbers',
  *   schema: z.object({ a: z.number(), b: z.number() }),
  *   execute: async ({ a, b }) => a + b,
  * });
- * toolbox.register(addTool);
+ * const toolbox = createToolbox([addTool]);
  *
  * // Execute a tool
  * const result = await toolbox.execute({
@@ -394,7 +413,7 @@ export interface Toolbox {
  *
  * @example With middleware and policies
  * ```typescript
- * const toolbox = createToolbox([], {
+ * const toolbox = createToolbox([addTool], {
  *   middleware: [
  *     (tool) => ({ ...tool, tags: [...tool.tags, 'monitored'] })
  *   ],
@@ -411,10 +430,10 @@ export interface Toolbox {
  * });
  * ```
  */
-export function createToolbox(
-  serialized: SerializedToolbox = [],
+export function createToolbox<const TEntries extends ToolboxEntries = []>(
+  entries: TEntries = [] as unknown as TEntries,
   options: ToolboxOptions = {},
-): Toolbox {
+): Toolbox<ToolsFromEntries<TEntries>> {
   const toolsById = new Map<string, Tool>();
   const toolsByName = new Map<string, Tool[]>();
   // Backward compat: registry acts as 'name' based lookup for simple cases
@@ -475,129 +494,20 @@ export function createToolbox(
     }
   }
 
-  function register(...entries: (ToolConfiguration | Tool)[]): Toolbox {
-    for (const entry of entries) {
-      let configuration = normalizeConfiguration(
-        resolveMissingExecute(normalizeRegistration(entry)),
-      );
-
-      // Apply middleware if provided (synchronously if possible, otherwise queue)
-      if (options.middleware && options.middleware.length > 0) {
-        for (const middleware of options.middleware) {
-          const result = middleware(configuration);
-          if (isPromise(result)) {
-            throw new Error(
-              'Async middleware is not supported. Provide synchronous middleware only.',
-            );
-          }
-          configuration = result;
-        }
-      }
-
-      configuration = resolveMissingExecute(configuration);
-
-      registerConfiguration(configuration);
-    }
-    return api;
-  }
-
-  function createTool<
-    TInput extends object = Record<string, unknown>,
-    TOutput = unknown,
-    E extends ToolEventsMap = DefaultToolEvents,
-    Tags extends readonly string[] = readonly string[],
-    M extends ToolMetadata | undefined = ToolMetadata | undefined,
-    TMetadataInput extends ToolMetadataInput<M> | undefined =
-      | SyncToolMetadataInput<M>
-      | undefined,
+  async function execute<
+    const TCall extends ToolboxCallInputForTools<ToolsFromEntries<TEntries>>,
   >(
-    options: Omit<CreateToolOptions<TInput, TOutput, E, Tags, M>, 'metadata'> & {
-      metadata?: TMetadataInput;
-    },
-  ): CreateToolboxToolReturn<TInput, E, TOutput, M, TMetadataInput> {
-    const metadataInput = options.metadata as ToolMetadataInput<M> | undefined;
-    const resolvedMetadata = resolveToolMetadataInput(metadataInput);
-    if (isPromise<M>(resolvedMetadata)) {
-      return Promise.resolve(resolvedMetadata).then((metadata) =>
-        createTool({
-          ...options,
-          metadata: metadata as M,
-        } as Omit<CreateToolOptions<TInput, TOutput, E, Tags, M>, 'metadata'> & {
-          metadata: M;
-        }),
-      ) as CreateToolboxToolReturn<TInput, E, TOutput, M, TMetadataInput>;
-    }
-
-    const schema = normalizeToolSchema(options.parameters ?? options.schema);
-    const normalizedTags = Array.isArray(options.tags)
-      ? uniqTags(
-          (options.tags as readonly string[]).map((tag) =>
-            assertKebabCaseTag(tag, `Tool "${options.name}"`),
-          ),
-        )
-      : undefined;
-    if (typeof options.execute !== 'function' && !isPromise(options.execute)) {
-      throw new TypeError(
-        'execute must be a function or a promise that resolves to a function',
-      );
-    }
-    const definition = defineTool({
-      name: options.name,
-      description: options.description,
-      ...(options.namespace !== undefined ? { namespace: options.namespace } : {}),
-      ...(options.version !== undefined ? { version: options.version } : {}),
-      ...(options.title !== undefined ? { title: options.title } : {}),
-      ...(options.examples !== undefined ? { examples: options.examples } : {}),
-      ...(normalizedTags ? { tags: normalizedTags } : {}),
-      ...(resolvedMetadata !== undefined ? { metadata: resolvedMetadata } : {}),
-      ...(options.risk !== undefined ? { risk: options.risk } : {}),
-      ...(options.lifecycle !== undefined ? { lifecycle: options.lifecycle } : {}),
-      parameters: schema,
-      ...(options.outputSchema !== undefined
-        ? { outputSchema: options.outputSchema }
-        : {}),
-    }) as AnyToolDefinition;
-
-    const configuration = {
-      ...definition,
-      parameters: schema,
-      execute: options.execute as ToolConfiguration['execute'],
-    } as unknown as ToolConfiguration;
-    if (options.policy) {
-      configuration.policy = options.policy;
-    }
-    if (options.policyContext) {
-      configuration.policyContext = options.policyContext;
-    }
-    if (options.digests !== undefined) {
-      configuration.digests = options.digests;
-    }
-    if (options.outputValidationMode) {
-      configuration.outputValidationMode = options.outputValidationMode;
-    }
-    if (options.outputShaping !== undefined) {
-      configuration.outputShaping = options.outputShaping;
-    }
-    if (options.concurrency !== undefined) {
-      configuration.concurrency = options.concurrency;
-    }
-    if (options.diagnostics) {
-      configuration.diagnostics = options.diagnostics;
-    }
-    register(configuration);
-    const tool = getTool(configuration.id);
-    if (!tool) {
-      throw new Error(`Failed to register tool: ${configuration.identity.name}`);
-    }
-    return tool as unknown as CreateToolboxToolReturn<
-      TInput,
-      E,
-      TOutput,
-      M,
-      TMetadataInput
-    >;
-  }
-
+    call: TCall,
+    options?: ToolboxExecuteOptions,
+  ): Promise<ToolboxResultForCall<ToolsFromEntries<TEntries>, TCall>>;
+  async function execute<
+    const TCalls extends readonly ToolboxCallInputForTools<ToolsFromEntries<TEntries>>[],
+  >(
+    calls: [...TCalls],
+    options?: ToolboxExecuteOptions,
+  ): Promise<
+    { [K in keyof TCalls]: ToolboxResultForCall<ToolsFromEntries<TEntries>, TCalls[K]> }
+  >;
   async function execute(
     call: ToolCallInput,
     options?: ToolboxExecuteOptions,
@@ -624,7 +534,7 @@ export function createToolbox(
     // Map calls to tasks
     const tasks = calls.map((call) => async () => {
       const toolCall = normalizeToolCall(call);
-      const tool = getTool(toolCall.name); // toolCall.name might be ID
+      const tool = getTool(toolCall.name) as Tool | undefined; // toolCall.name might be ID
       if (!tool) {
         const toolError = createToolError(
           'not_found',
@@ -789,15 +699,16 @@ export function createToolbox(
     return createToolCall(call.name, args, id);
   }
 
-  function tools(): Tool[] {
-    return Array.from(toolsById.values());
+  function tools(): ToolsFromEntries<TEntries> {
+    return Array.from(toolsById.values()) as unknown as ToolsFromEntries<TEntries>;
   }
 
+  function getTool(nameOrId: string): ToolsFromEntries<TEntries>[number] | undefined;
   function getTool(nameOrId: string): Tool | undefined {
     if (toolsById.has(nameOrId)) return toolsById.get(nameOrId);
     const matches = toolsByName.get(nameOrId);
     if (matches && matches.length > 0) {
-      // Return the last registered tool with this name (priority to latest)
+      // Return the last configured tool with this name (priority to latest)
       return matches[matches.length - 1];
     }
     return undefined;
@@ -831,9 +742,7 @@ export function createToolbox(
     return Array.from(storedConfigurations.values());
   }
 
-  const api: Toolbox = {
-    register,
-    createTool,
+  const api: Toolbox<ToolsFromEntries<TEntries>> = {
     execute,
     tools,
     getTool,
@@ -863,8 +772,8 @@ export function createToolbox(
     registerRegistryEmbedder(api, embedder);
   }
 
-  if (serialized.length) {
-    registerSerialized(serialized);
+  if (entries.length) {
+    registerSerialized(entries);
   }
 
   return api;
@@ -986,13 +895,13 @@ export function createToolbox(
 
   function normalizeConfiguration(configuration: ToolConfiguration): ToolConfiguration {
     if (!configuration || typeof configuration !== 'object') {
-      throw new TypeError('register expects ToolConfiguration objects');
+      throw new TypeError('createToolbox entries must be ToolConfiguration objects');
     }
     const candidate = configuration as unknown as Record<string, unknown>;
     const name =
       (candidate['name'] as string | undefined) ?? configuration.identity?.name;
     if (typeof name !== 'string' || !name.trim()) {
-      throw new TypeError('register expects ToolConfiguration objects');
+      throw new TypeError('createToolbox entries must be ToolConfiguration objects');
     }
     const rawSchema =
       configuration.schema ??
@@ -1016,7 +925,7 @@ export function createToolbox(
       (candidate['description'] as string | undefined) ??
       configuration.display?.description;
     if (typeof description !== 'string' || !description.trim()) {
-      throw new TypeError('register expects ToolConfiguration objects');
+      throw new TypeError('createToolbox entries must be ToolConfiguration objects');
     }
     const resolvedRisk =
       configuration.risk ?? deriveRiskFromMetadata(configuration.metadata);
@@ -1101,8 +1010,6 @@ export function createToolbox(
   function registerConfiguration(configuration: ToolConfiguration): void {
     const normalized = normalizeConfiguration(configuration);
     const tool = buildTool(normalized);
-    // const existing = registry.get(tool.name);
-    emit('registering', tool);
     storedConfigurations.set(normalized.id, normalized);
 
     toolsById.set(tool.id, tool);
@@ -1121,12 +1028,11 @@ export function createToolbox(
         registerToolIndexes(api, resolvedTool, toolsById.size);
       });
     }
-    emit('registered', tool);
   }
 
-  function registerSerialized(configurations: SerializedToolbox): void {
+  function registerSerialized(configurations: ToolboxEntries): void {
     for (let index = 0; index < configurations.length; index += 1) {
-      const serializedConfiguration = configurations[index]!;
+      const serializedConfiguration = normalizeRegistration(configurations[index]!);
       let configuration = normalizeConfiguration(
         resolveMissingExecute(serializedConfiguration),
       );
@@ -1381,15 +1287,6 @@ function createLazyExecuteResolver(
   };
 }
 
-function resolveToolMetadataInput<M extends ToolMetadata | undefined>(
-  metadata: ToolMetadataInput<M> | undefined,
-): M | Promise<M> | undefined {
-  if (typeof metadata === 'function') {
-    return metadata();
-  }
-  return metadata;
-}
-
 function isPromise<T>(value: unknown): value is PromiseLike<T> {
   if (!value || typeof value !== 'object') return false;
   if (!('then' in value)) return false;
@@ -1479,14 +1376,13 @@ function createCachedEmbedder(embedder: Embedder): Embedder {
 /**
  * Type guard to check if a value is a Toolbox instance.
  */
-export function isToolbox(value: unknown): value is Toolbox {
+export function isToolbox(value: unknown): value is Toolbox<any> {
   return (
     typeof value === 'object' &&
     value !== null &&
-    typeof (value as Toolbox).register === 'function' &&
-    typeof (value as Toolbox).tools === 'function' &&
-    typeof (value as Toolbox).getTool === 'function' &&
-    typeof (value as Toolbox).execute === 'function' &&
-    typeof (value as Toolbox).toJSON === 'function'
+    typeof (value as Toolbox<any>).tools === 'function' &&
+    typeof (value as Toolbox<any>).getTool === 'function' &&
+    typeof (value as Toolbox<any>).execute === 'function' &&
+    typeof (value as Toolbox<any>).toJSON === 'function'
   );
 }

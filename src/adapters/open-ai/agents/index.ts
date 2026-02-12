@@ -1,6 +1,9 @@
-import { isToolbox } from '../../../create-toolbox';
-import type { Tool, Toolbox, ToolResult } from '../../../index';
+import type { Tool, ToolResult } from '../../../index';
 import { isTool } from '../../../is-tool';
+
+type ToolboxLike = {
+  tools: () => readonly Tool[];
+};
 
 type OpenAIAgentsModule = typeof import('@openai/agents');
 type OpenAIAgentsStrictToolOptions = Extract<
@@ -30,7 +33,7 @@ export type OpenAIAgentToolsResult = {
 };
 
 export type OpenAIToolGateOptions = {
-  registry: Toolbox | Tool | Tool[];
+  registry: ToolboxLike | Tool | readonly Tool[];
   readOnly?: boolean;
   allowMutation?: boolean;
   allowDangerous?: boolean;
@@ -67,7 +70,7 @@ export type OpenAIToolGateDecision = { behavior: 'allow' | 'deny'; message?: str
  * ```
  */
 export async function toOpenAIAgentTools(
-  input: Toolbox | Tool | Tool[],
+  input: ToolboxLike | Tool | readonly Tool[],
   options: OpenAIAgentToolOptions = {},
 ): Promise<OpenAIAgentToolsResult> {
   const tools = normalizeToTools(input);
@@ -190,9 +193,9 @@ export function createOpenAIToolGate(
   };
 }
 
-function normalizeToTools(input: Toolbox | Tool | Tool[]): Tool[] {
-  if (isToolbox(input)) {
-    return input.tools();
+function normalizeToTools(input: ToolboxLike | Tool | readonly Tool[]): Tool[] {
+  if (isToolboxLike(input)) {
+    return [...input.tools()];
   }
   if (Array.isArray(input)) {
     return input.map((tool) => {
@@ -206,6 +209,14 @@ function normalizeToTools(input: Toolbox | Tool | Tool[]): Tool[] {
     return [input];
   }
   throw new TypeError('Invalid input: expected tool, tool array, or Toolbox');
+}
+
+function isToolboxLike(value: unknown): value is ToolboxLike {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as { tools?: unknown };
+  return typeof candidate.tools === 'function';
 }
 
 function isMutating(tool: Tool): boolean {

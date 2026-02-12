@@ -7,20 +7,16 @@ import { createOpenAIToolGate, toOpenAIAgentTools } from './index';
 
 describe('open-ai agents adapter', () => {
   it('creates SDK tools with mutating and dangerous lists', async () => {
-    const toolbox = createToolbox();
-    createTool(
-      {
+    const toolbox = createToolbox([
+      createTool({
         name: 'safe-tool',
         description: 'safe',
         schema: z.object({}),
         async execute() {
           return { ok: true };
         },
-      },
-      toolbox,
-    );
-    createTool(
-      {
+      }),
+      createTool({
         name: 'mutating-tool',
         description: 'mutates',
         schema: z.object({}),
@@ -28,11 +24,8 @@ describe('open-ai agents adapter', () => {
         async execute() {
           return { ok: true };
         },
-      },
-      toolbox,
-    );
-    createTool(
-      {
+      }),
+      createTool({
         name: 'dangerous-tool',
         description: 'dangerous',
         schema: z.object({}),
@@ -40,9 +33,8 @@ describe('open-ai agents adapter', () => {
         async execute() {
           return { ok: true };
         },
-      },
-      toolbox,
-    );
+      }),
+    ]);
 
     const { toolNames, mutatingToolNames, dangerousToolNames } =
       await toOpenAIAgentTools(toolbox);
@@ -53,9 +45,8 @@ describe('open-ai agents adapter', () => {
   });
 
   it('denies mutating and dangerous tools when gated', async () => {
-    const toolbox = createToolbox();
-    createTool(
-      {
+    const toolbox = createToolbox([
+      createTool({
         name: 'mutating-tool',
         description: 'mutates',
         schema: z.object({}),
@@ -63,11 +54,8 @@ describe('open-ai agents adapter', () => {
         async execute() {
           return { ok: true };
         },
-      },
-      toolbox,
-    );
-    createTool(
-      {
+      }),
+      createTool({
         name: 'dangerous-tool',
         description: 'dangerous',
         schema: z.object({}),
@@ -75,9 +63,8 @@ describe('open-ai agents adapter', () => {
         async execute() {
           return { ok: true };
         },
-      },
-      toolbox,
-    );
+      }),
+    ]);
 
     const gate = createOpenAIToolGate({
       registry: toolbox,
@@ -113,9 +100,8 @@ describe('open-ai agents adapter', () => {
   });
 
   it('uses tags and readOnly metadata to classify tools', async () => {
-    const toolbox = createToolbox();
-    createTool(
-      {
+    const toolbox = createToolbox([
+      createTool({
         name: 'tag-mutating',
         description: 'mutating via tag',
         schema: z.object({}),
@@ -123,11 +109,8 @@ describe('open-ai agents adapter', () => {
         async execute() {
           return { ok: true };
         },
-      },
-      toolbox,
-    );
-    createTool(
-      {
+      }),
+      createTool({
         name: 'tag-readonly',
         description: 'read-only via metadata',
         schema: z.object({}),
@@ -136,11 +119,8 @@ describe('open-ai agents adapter', () => {
         async execute() {
           return { ok: true };
         },
-      },
-      toolbox,
-    );
-    createTool(
-      {
+      }),
+      createTool({
         name: 'tag-dangerous',
         description: 'dangerous via tag',
         schema: z.object({}),
@@ -148,9 +128,8 @@ describe('open-ai agents adapter', () => {
         async execute() {
           return { ok: true };
         },
-      },
-      toolbox,
-    );
+      }),
+    ]);
 
     const { mutatingToolNames, dangerousToolNames } = await toOpenAIAgentTools(toolbox);
 

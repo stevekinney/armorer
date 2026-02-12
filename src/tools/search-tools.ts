@@ -6,8 +6,11 @@ import {
   type ToolSearchOptions,
 } from '../core/registry';
 import { createTool } from '../create-tool';
-import type { Toolbox } from '../create-toolbox';
 import type { Tool } from '../is-tool';
+
+type SearchableToolbox = {
+  tools: () => readonly Tool[];
+};
 
 /**
  * Options for configuring the search tool.
@@ -41,12 +44,6 @@ export interface CreateSearchToolOptions {
    * Additional tags to add to the tool.
    */
   tags?: string[];
-
-  /**
-   * Automatically register the tool with the toolbox.
-   * @default true
-   */
-  register?: boolean;
 }
 
 /**
@@ -93,7 +90,7 @@ export interface SearchToolsInput {
  *
  * const toolbox = createToolbox();
  *
- * // Create and register the search tool
+ * // Create the search tool
  * const searchTool = createSearchTool(toolbox);
  *
  * // Now the LLM can search for tools
@@ -130,7 +127,7 @@ export interface SearchToolsInput {
  * @returns A tool that can search for other tools
  */
 export function createSearchTool(
-  toolbox: Toolbox,
+  toolbox: SearchableToolbox,
   options: CreateSearchToolOptions = {},
 ): Tool {
   const {
@@ -139,61 +136,55 @@ export function createSearchTool(
     name = 'search-tools',
     description = 'Search for available tools by query. Returns tools that match the search query, using semantic search when embeddings are configured or text-based search otherwise.',
     tags: additionalTags = [],
-    register = true,
   } = options;
 
-  const tool = createTool(
-    {
-      name,
-      description,
-      schema: z.object({
-        query: z.string().describe('The search query to find relevant tools'),
-        limit: z
-          .number()
-          .int()
-          .positive()
-          .optional()
-          .describe('Maximum number of tools to return'),
-        tags: z
-          .array(z.string())
-          .optional()
-          .describe('Filter by tags (tools must have at least one of these tags)'),
-      }),
-      tags: ['utility', 'search', 'readonly', ...additionalTags],
-      metadata: { readOnly: true },
-      async execute({ query, limit: queryLimit, tags }): Promise<SearchToolsResult[]> {
-        const searchOptions: ToolSearchOptions & { select?: 'tool' } = {
-          rank: {
-            text: { query, mode: 'fuzzy' },
-            ...(tags?.length ? { tags } : {}),
-          },
-          limit: queryLimit ?? defaultLimit,
-          explain,
+  return createTool({
+    name,
+    description,
+    schema: z.object({
+      query: z.string().describe('The search query to find relevant tools'),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe('Maximum number of tools to return'),
+      tags: z
+        .array(z.string())
+        .optional()
+        .describe('Filter by tags (tools must have at least one of these tags)'),
+    }),
+    tags: ['utility', 'search', 'readonly', ...additionalTags],
+    metadata: { readOnly: true },
+    async execute({ query, limit: queryLimit, tags }): Promise<SearchToolsResult[]> {
+      const searchOptions: ToolSearchOptions & { select?: 'tool' } = {
+        rank: {
+          text: { query, mode: 'fuzzy' },
+          ...(tags?.length ? { tags } : {}),
+        },
+        limit: queryLimit ?? defaultLimit,
+        explain,
+      };
+
+      if (tags?.length) {
+        searchOptions.filter = {
+          tags: { any: tags },
         };
+      }
 
-        if (tags?.length) {
-          searchOptions.filter = {
-            tags: { any: tags },
-          };
-        }
+      const results = await Promise.resolve(
+        searchTools(toolbox as unknown as ToolQueryInput, searchOptions),
+      );
 
-        const results = await Promise.resolve(
-          searchTools(toolbox as unknown as ToolQueryInput, searchOptions),
-        );
-
-        return results.map((match) => ({
-          name: match.tool.identity.name,
-          description: match.tool.display.description,
-          ...(match.tool.tags?.length ? { tags: match.tool.tags } : {}),
-          score: match.score,
-          ...(explain && match.reasons.length ? { reasons: match.reasons } : {}),
-        }));
-      },
+      return results.map((match) => ({
+        name: match.tool.identity.name,
+        description: match.tool.display.description,
+        ...(match.tool.tags?.length ? { tags: match.tool.tags } : {}),
+        score: match.score,
+        ...(explain && match.reasons.length ? { reasons: match.reasons } : {}),
+      }));
     },
-    register ? toolbox : undefined,
-  );
-
-  return tool;
+  });
 }
 
 /**

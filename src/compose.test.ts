@@ -280,8 +280,8 @@ describe('pipe()', () => {
   describe('composability', () => {
     it('composed tools can be registered in Toolbox', () => {
       const pipeline = pipe(parseNumber, double);
-      const toolbox = createToolbox().register(pipeline);
-      const found = toolbox.getTool('pipe(parse-number, double)');
+      const toolbox = createToolbox([pipeline]);
+      const found = toolbox.getTool('pipe(parse-number, double)') as any;
       expect(found).toBeDefined();
       expect(found?.name).toBe('pipe(parse-number, double)');
     });
