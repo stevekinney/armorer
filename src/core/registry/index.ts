@@ -90,7 +90,7 @@ export type RiskFilter = {
   permissions?: readonly string[];
 };
 
-export type ToolQuerySelect = 'tool' | 'name' | 'config' | 'summary';
+export type ToolQuerySelect = 'tool' | 'name' | 'configuration' | 'summary';
 
 export type ToolSummary = {
   id: ToolDefinition['id'];
@@ -148,8 +148,6 @@ export type ToolQueryOptions = {
   select?: ToolQuerySelect;
   /** Include the tool configuration on summary results. */
   includeToolConfiguration?: boolean;
-  /** @deprecated Use includeToolConfiguration instead */
-  includeToolConfig?: boolean;
   /** Include the tool schema on summary results. */
   includeSchema?: boolean;
 };
@@ -236,8 +234,6 @@ export type ToolSearchOptions = {
   select?: ToolQuerySelect;
   /** Include the tool configuration on summary results. */
   includeToolConfiguration?: boolean;
-  /** @deprecated Use includeToolConfiguration instead */
-  includeToolConfig?: boolean;
   /** Include the tool schema on summary results. */
   includeSchema?: boolean;
   /** Include match details in results. */
@@ -334,7 +330,7 @@ export function queryTools(
 ): string[];
 export function queryTools(
   input: ToolQueryInput,
-  criteria: ToolQuery & { select: 'config' },
+  criteria: ToolQuery & { select: 'configuration' },
 ): ToolDefinition[];
 export function queryTools(
   input: ToolQueryInput,
@@ -397,7 +393,7 @@ export function searchTools(
 ): ToolMatch<string>[];
 export function searchTools(
   input: ToolQueryInput,
-  options: ToolSearchOptions & { select: 'config' },
+  options: ToolSearchOptions & { select: 'configuration' },
 ): ToolMatch<ToolDefinition>[];
 export function searchTools(
   input: ToolQueryInput,
@@ -626,7 +622,9 @@ function buildToolLookup(tool: ToolDefinition): ToolLookupCache {
     .filter((tag): tag is string => Boolean(tag))
     .map((tag) => String(tag));
   const tagsLower = tags.map((tag) => tag.toLowerCase());
-  const schemaKeysLower = getSchemaKeys(tool.schema).map((key) => key.toLowerCase());
+  const schemaKeysLower = getSchemaKeys(getToolSchema(tool)).map((key) =>
+    key.toLowerCase(),
+  );
   return {
     tags,
     tagsLower,
@@ -1004,14 +1002,14 @@ function getEmbeddingBucketIndex(
 }
 
 function createEmbeddingBucketIndex(dimension: number): EmbeddingBucketIndex {
-  const config = getEmbeddingConfig(dimension);
+  const configuration = getEmbeddingConfiguration(dimension);
   return {
     dimension,
-    hashBits: config.hashBits,
-    bandSize: config.bandSize,
-    bands: config.bands,
-    bucketSize: config.bucketSize,
-    projections: createProjectionMatrix(dimension, config.hashBits),
+    hashBits: configuration.hashBits,
+    bandSize: configuration.bandSize,
+    bands: configuration.bands,
+    bucketSize: configuration.bucketSize,
+    projections: createProjectionMatrix(dimension, configuration.hashBits),
     buckets: {
       name: new Map(),
       description: new Map(),
@@ -1155,7 +1153,7 @@ function createProjectionMatrix(dimension: number, hashBits: number): number[][]
   return projections;
 }
 
-function getEmbeddingConfig(dimension: number): {
+function getEmbeddingConfiguration(dimension: number): {
   hashBits: number;
   bandSize: number;
   bands: number;
@@ -1365,28 +1363,14 @@ function selectTextCandidates(
     }
     for (const queryToken of normalized.tokens) {
       if (!queryToken) continue;
-      let tokenCandidates: Set<ToolDefinition> | null = null;
-      if (queryToken.length >= GRAM_SIZE) {
-        tokenCandidates = collectGramCandidates(
-          fieldIndex.gramMap,
-          queryToken,
-          GRAM_SIZE,
-        );
-        if (!tokenCandidates) {
-          tokenCandidates = collectCharIntersectionCandidates(fieldIndex, queryToken);
-        }
-      } else if (queryToken.length === BIGRAM_SIZE) {
-        tokenCandidates = collectGramCandidates(
-          fieldIndex.bigramMap,
-          queryToken,
-          BIGRAM_SIZE,
-        );
-        if (!tokenCandidates) {
-          tokenCandidates = collectCharIntersectionCandidates(fieldIndex, queryToken);
-        }
-      } else {
-        tokenCandidates = collectCharIntersectionCandidates(fieldIndex, queryToken);
-      }
+      const tokenCandidates =
+        queryToken.length >= GRAM_SIZE
+          ? (collectGramCandidates(fieldIndex.gramMap, queryToken, GRAM_SIZE) ??
+            collectCharIntersectionCandidates(fieldIndex, queryToken))
+          : queryToken.length === BIGRAM_SIZE
+            ? (collectGramCandidates(fieldIndex.bigramMap, queryToken, BIGRAM_SIZE) ??
+              collectCharIntersectionCandidates(fieldIndex, queryToken))
+            : collectCharIntersectionCandidates(fieldIndex, queryToken);
       if (!tokenCandidates?.size) {
         continue;
       }
@@ -2101,14 +2085,14 @@ function selectMatchResults(
       tool: (match.tool as unknown as { name: string }).name,
     }));
   }
-  if (select === 'config') {
+  if (select === 'configuration') {
     return matches;
   }
   if (select === 'summary') {
-    const includeConfig = options.includeToolConfiguration ?? options.includeToolConfig;
+    const includeConfiguration = options.includeToolConfiguration;
     return matches.map((match) => ({
       ...match,
-      tool: createToolSummary(match.tool, includeConfig, options.includeSchema),
+      tool: createToolSummary(match.tool, includeConfiguration, options.includeSchema),
     }));
   }
   return matches;
@@ -2127,13 +2111,13 @@ function selectQueryResults(
       return (tool as unknown as { name: string }).name;
     });
   }
-  if (select === 'config') {
+  if (select === 'configuration') {
     return tools;
   }
   if (select === 'summary') {
-    const includeConfig = criteria.includeToolConfiguration ?? criteria.includeToolConfig;
+    const includeConfiguration = criteria.includeToolConfiguration;
     return tools.map((tool) =>
-      createToolSummary(tool, includeConfig, criteria.includeSchema),
+      createToolSummary(tool, includeConfiguration, criteria.includeSchema),
     );
   }
   return tools;
@@ -2141,7 +2125,7 @@ function selectQueryResults(
 
 function createToolSummary(
   tool: ToolDefinition,
-  includeConfig?: boolean,
+  includeConfiguration?: boolean,
   includeSchema?: boolean,
 ): ToolSummary {
   const summary: ToolSummary = {
@@ -2149,7 +2133,7 @@ function createToolSummary(
     identity: tool.identity,
     name: tool.name,
     description: tool.description,
-    schemaKeys: getSchemaKeys(tool.schema),
+    schemaKeys: getSchemaKeys(getToolSchema(tool)),
   };
   if (tool.tags) summary.tags = tool.tags;
   if (tool.metadata) summary.metadata = tool.metadata;
@@ -2158,11 +2142,11 @@ function createToolSummary(
     summary.lifecycle = tool.lifecycle;
     if (tool.lifecycle.deprecated) summary.deprecated = true;
   }
-  if (includeConfig) {
+  if (includeConfiguration) {
     summary.configuration = tool;
   }
   if (includeSchema) {
-    summary.schema = tool.schema;
+    summary.schema = getToolSchema(tool);
   }
   return summary;
 }
@@ -2188,8 +2172,13 @@ function isToolDefinition(value: unknown): value is ToolDefinition {
     typeof candidate['identity'] === 'object' &&
     candidate['identity'] !== null &&
     typeof (candidate['identity'] as Record<string, unknown>)['name'] === 'string' &&
-    candidate['schema'] !== undefined
+    (candidate['schema'] !== undefined || candidate['parameters'] !== undefined)
   );
+}
+
+function getToolSchema(tool: ToolDefinition): ToolSchema {
+  const candidate = tool as ToolDefinition & { parameters?: ToolSchema };
+  return candidate.parameters ?? tool.schema;
 }
 
 function isToolRegistry(value: unknown): value is ToolRegistryLike {

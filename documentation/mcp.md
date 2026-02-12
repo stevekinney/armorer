@@ -2,7 +2,7 @@
 
 ## Overview
 
-Expose an Toolbox registry as an MCP server, with tools, resources, and prompts.
+Expose a Toolbox registry as an MCP server, with tools, resources, and prompts.
 Toolbox handles tool registration; MCP handles transport and protocol details.
 
 ## Prerequisites
@@ -18,7 +18,7 @@ import { createMCP } from 'armorer/mcp';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-const armorer = createToolbox();
+const toolbox = createToolbox();
 createTool(
   {
     name: 'sum',
@@ -28,15 +28,22 @@ createTool(
       return a + b;
     },
   },
-  armorer,
+  toolbox,
 );
 
-const mcp = createMCP(armorer, {
-  serverInfo: { name: 'armorer-tools', version: '0.1.0' },
+const mcp = createMCP(toolbox, {
+  serverInfo: { name: 'toolbox-tools', version: '0.1.0' },
 });
 
 await mcp.connect(new StdioServerTransport());
 ```
+
+## Conversion helpers
+
+`armorer/mcp` also exposes conversion helpers for MCP tool interoperability:
+
+- `toMcpTools(input, options?)`: convert Toolbox tools to MCP tool definitions with handlers.
+- `fromMcpTools(tools, options?)`: convert MCP tool definitions back into executable Toolbox tools.
 
 ## Streamable HTTP transport (Node.js)
 
@@ -46,8 +53,8 @@ Use the Streamable HTTP server transport to expose MCP over HTTP.
 import { createMCP } from 'armorer/mcp';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
-const mcp = createMCP(armorer, {
-  serverInfo: { name: 'armorer-tools', version: '0.1.0' },
+const mcp = createMCP(toolbox, {
+  serverInfo: { name: 'toolbox-tools', version: '0.1.0' },
 });
 
 // Create an HTTP transport and hand requests to it.
@@ -80,37 +87,37 @@ createTool(
         outputSchema: z.object({ ok: z.boolean() }),
         annotations: { readOnlyHint: true },
         execution: { taskSupport: 'optional' },
-        meta: { source: 'armorer' },
+        meta: { source: 'toolbox' },
       },
     },
     async execute() {
       return { ok: true };
     },
   },
-  armorer,
+  toolbox,
 );
 ```
 
-You can override or extend this with `toolConfig`:
+You can override or extend this with `toolConfiguration`:
 
 ```typescript
-const mcp = createMCP(armorer, {
-  toolConfig: (tool) => ({
+const mcp = createMCP(toolbox, {
+  toolConfiguration: (tool) => ({
     title: tool.name.toUpperCase(),
   }),
 });
 ```
 
-#### Tool config precedence
+#### Tool configuration precedence
 
-`toolConfigFromMetadata` reads `tool.metadata.mcp`, then `toolConfig` overrides
-any overlapping fields. The effective MCP tool config is:
+`toolConfigurationFromMetadata` reads `tool.metadata.mcp`, then `toolConfiguration` overrides
+any overlapping fields. The effective MCP tool configuration is:
 
 1. `metadata.mcp` (if present and valid)
-2. `toolConfig(tool)` (overrides any fields from metadata)
+2. `toolConfiguration(tool)` (overrides any fields from metadata)
 3. Runtime defaults: `description` and `schema` fall back to the tool definition
 
-If `meta` is set by either config, it is exposed as `_meta`. When no `meta` is set,
+If `meta` is set by either configuration, it is exposed as `_meta`. When no `meta` is set,
 the tool's `metadata` object is used as `_meta` (if it's a plain object).
 
 ### Result formatting
@@ -123,7 +130,7 @@ By default, tool results are returned as:
 You can customize this with `formatResult`:
 
 ```typescript
-const mcp = createMCP(armorer, {
+const mcp = createMCP(toolbox, {
   formatResult: (result) => {
     if (result.outcome === 'error') {
       return {
@@ -147,14 +154,14 @@ Client aborts are respected via the MCP `signal` that is passed into tool execut
 Register additional MCP resources and prompts via registrars:
 
 ```typescript
-const mcp = createMCP(armorer, {
+const mcp = createMCP(toolbox, {
   resources: (server) => {
     server.registerResource(
       'readme',
-      'armorer://readme',
+      'toolbox://readme',
       { title: 'README' },
       async () => ({
-        contents: [{ uri: 'armorer://readme', text: 'hello' }],
+        contents: [{ uri: 'toolbox://readme', text: 'hello' }],
       }),
     );
   },
@@ -169,7 +176,7 @@ const mcp = createMCP(armorer, {
 You can pass a single registrar or an array of registrars:
 
 ```typescript
-const mcp = createMCP(armorer, {
+const mcp = createMCP(toolbox, {
   resources: [registerDocs, registerSchemas],
   prompts: [registerAssistantPrompts],
 });
@@ -182,134 +189,8 @@ the tool definitions and notifies connected clients with `toolListChanged`.
 
 ## Agent SDK integrations
 
-### OpenAI Agents SDK (`@openai/agents`)
+Agent SDK integration examples are documented in [Agent SDK Integrations](./agent-sdk-integrations.md), including:
 
-The OpenAI Agents SDK can consume Toolbox tools in two ways:
-
-1. **MCP servers** (shown below) - Run Toolbox as an MCP server that the SDK connects to
-2. **Direct integration** - Convert tools directly using the [OpenAI Agents SDK integration](./openai-agents-sdk.md)
-
-The MCP approach is useful when you want to run tools in a separate process or expose them over HTTP. The direct integration is simpler for in-process usage.
-
-#### stdio (local subprocess)
-
-Run an Toolbox MCP server as a local process and let the agent SDK spawn it.
-
-```typescript
-// mcp-server.ts
-import { createToolbox, createTool } from 'armorer';
-import { createMCP } from 'armorer/mcp';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { z } from 'zod';
-
-const armorer = createToolbox();
-createTool(
-  {
-    name: 'sum',
-    description: 'adds two numbers',
-    schema: z.object({ a: z.number(), b: z.number() }),
-    async execute({ a, b }) {
-      return a + b;
-    },
-  },
-  armorer,
-);
-
-const mcp = createMCP(armorer, {
-  serverInfo: { name: 'armorer-tools', version: '0.1.0' },
-});
-await mcp.connect(new StdioServerTransport());
-```
-
-```typescript
-// agent.ts
-import { Agent, MCPServerStdio, run } from '@openai/agents';
-
-const server = new MCPServerStdio({
-  name: 'armorer-tools',
-  command: 'node',
-  args: ['dist/mcp-server.js'],
-});
-
-const agent = new Agent({
-  name: 'Assistant',
-  instructions: 'Use MCP tools to answer the question.',
-  mcpServers: [server],
-});
-
-const result = await run(agent, 'Add 7 and 22.');
-console.log(result.finalOutput);
-```
-
-#### Streamable HTTP
-
-Expose Toolbox over HTTP and connect via the Streamable HTTP MCP server.
-
-```typescript
-import { Agent, MCPServerStreamableHttp, run } from '@openai/agents';
-
-const server = new MCPServerStreamableHttp({
-  url: 'http://localhost:8000/mcp',
-  name: 'armorer-tools',
-  requestInit: {
-    headers: { Authorization: `Bearer ${process.env.MCP_SERVER_TOKEN}` },
-  },
-  cacheToolsList: true,
-});
-
-const agent = new Agent({
-  name: 'Assistant',
-  instructions: 'Use MCP tools to answer the question.',
-  mcpServers: [server],
-});
-
-const result = await run(agent, 'Add 7 and 22.');
-console.log(result.finalOutput);
-```
-
-### Anthropic Agent SDK (`@anthropic-ai/claude-agent-sdk`)
-
-Use the in-process MCP server instance with the SDK `mcpServers` config.
-
-```typescript
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import { createToolbox, createTool } from 'armorer';
-import { createMCP } from 'armorer/mcp';
-import { z } from 'zod';
-
-const armorer = createToolbox();
-createTool(
-  {
-    name: 'sum',
-    description: 'adds two numbers',
-    schema: z.object({ a: z.number(), b: z.number() }),
-    async execute({ a, b }) {
-      return a + b;
-    },
-  },
-  armorer,
-);
-
-const mcp = createMCP(armorer, {
-  serverInfo: { name: 'armorer-tools', version: '0.1.0' },
-});
-
-const result = await query({
-  prompt: 'Add 7 and 22.',
-  options: {
-    mcpServers: {
-      armorer: {
-        type: 'sdk',
-        name: 'armorer-tools',
-        instance: mcp,
-      },
-    },
-  },
-});
-
-for await (const event of result) {
-  if (event.type === 'result') {
-    console.log(event.result);
-  }
-}
-```
+- OpenAI Agents SDK via MCP (`stdio` and Streamable HTTP)
+- Anthropic Claude Agent SDK via in-process MCP server
+- Guidance on when to use MCP vs direct OpenAI Agents adapter

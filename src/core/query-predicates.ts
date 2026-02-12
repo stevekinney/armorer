@@ -140,11 +140,11 @@ export function tagsMatchNone(tags: readonly string[]): ToolPredicate {
  * import { z } from 'zod';
  *
  * const predicate = schemaMatches(z.object({ userId: z.string() }));
- * const compatible = armorer.tools().filter(predicate);
+ * const compatible = toolbox.tools().filter(predicate);
  * ```
  */
 export function schemaMatches(schema: ToolSchema): ToolPredicate {
-  return (tool) => schemasLooselyMatch(tool.schema, schema);
+  return (tool) => schemasLooselyMatch(getToolSchema(tool), schema);
 }
 
 /**
@@ -161,7 +161,7 @@ export function schemaMatches(schema: ToolSchema): ToolPredicate {
  * import { textMatches } from 'armorer/query';
  *
  * const predicate = textMatches('user profile');
- * const matches = armorer.tools().filter(predicate);
+ * const matches = toolbox.tools().filter(predicate);
  * ```
  *
  * @example With custom weights
@@ -229,7 +229,7 @@ export function buildTextSearchIndex(tool: ToolDefinition): TextSearchIndex {
     descriptionTokens: tokenize(description),
     tags: (tool.tags ?? []).map(toToken),
     schemaKeys: getSchemaKeys(
-      tool.schema ?? (candidate['inputSchema'] as z.ZodTypeAny | undefined),
+      getToolSchema(tool) ?? (candidate['inputSchema'] as z.ZodTypeAny | undefined),
     ).map(toToken),
     metadataKeys: extractMetadataKeys(tool.metadata).map(toToken),
   };
@@ -411,7 +411,7 @@ export function scoreTextMatchValueFromIndex(
  * import { schemaHasKeys } from 'armorer/query';
  *
  * const predicate = schemaHasKeys(['userId', 'action']);
- * const tools = armorer.tools().filter(predicate);
+ * const tools = toolbox.tools().filter(predicate);
  * // Returns tools that have both 'userId' and 'action' in their schema
  * ```
  */
@@ -423,10 +423,20 @@ export function schemaHasKeys(keys: readonly string[]): ToolPredicate {
     return () => true;
   }
   return (tool) => {
-    const schemaKeys = getSchemaKeys(tool.schema).map((key) => key.toLowerCase());
+    const schemaKeys = getSchemaKeys(getToolSchema(tool)).map((key) => key.toLowerCase());
     if (!schemaKeys.length) return false;
     return normalized.every((needle) => schemaKeys.includes(needle));
   };
+}
+
+function getToolSchema(tool: ToolDefinition): ToolSchema {
+  const candidate = tool as ToolDefinition & {
+    parameters?: z.ZodTypeAny;
+    inputSchema?: z.ZodTypeAny;
+  };
+  return (
+    candidate.parameters ?? candidate.schema ?? candidate.inputSchema ?? z.object({})
+  );
 }
 
 function normalizeTags(tags: readonly string[]): string[] {

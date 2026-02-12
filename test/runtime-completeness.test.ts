@@ -2,10 +2,10 @@ import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
 import { createNameMapper, toOpenAI } from '../src/adapters/openai/index';
-import { pipe } from '../src/runtime/compose';
-import { createToolbox } from '../src/runtime/create-armorer';
-import { createTool } from '../src/runtime/create-tool';
-import { type ToolResult } from '../src/runtime/is-tool';
+import { pipe } from '../src/compose';
+import { createTool } from '../src/create-tool';
+import { createToolbox } from '../src/create-toolbox';
+import { type ToolResult } from '../src/is-tool';
 
 describe('Core Runtime Completeness', () => {
   describe('Dry-Run in Composition', () => {
@@ -105,7 +105,7 @@ describe('Core Runtime Completeness', () => {
     });
   });
 
-  describe('Tool Identity and Armorer', () => {
+  describe('Tool Identity and Toolbox', () => {
     it('supports multiple tools with same name but different ID', () => {
       const tool1 = createTool({
         name: 'my-tool',
@@ -125,19 +125,19 @@ describe('Core Runtime Completeness', () => {
         execute: async () => '2',
       });
 
-      const armorer = createToolbox();
-      armorer.register(tool1);
-      armorer.register(tool2);
+      const toolbox = createToolbox();
+      toolbox.register(tool1);
+      toolbox.register(tool2);
 
-      const retrieved1 = armorer.getTool(tool1.id);
-      const retrieved2 = armorer.getTool(tool2.id);
+      const retrieved1 = toolbox.getTool(tool1.id);
+      const retrieved2 = toolbox.getTool(tool2.id);
 
       expect(retrieved1).toBeDefined();
       expect(retrieved2).toBeDefined();
       expect(retrieved1?.id).not.toBe(retrieved2?.id);
 
       // Retrieve by name gets the last one (tool2)
-      const retrievedByName = armorer.getTool('my-tool');
+      const retrievedByName = toolbox.getTool('my-tool');
       expect(retrievedByName?.id).toBe(tool2.id);
     });
 
@@ -157,8 +157,8 @@ describe('Core Runtime Completeness', () => {
         execute: async () => '2',
       });
 
-      const armorer = createToolbox().register(tool1, tool2);
-      const json = armorer.toJSON();
+      const toolbox = createToolbox().register(tool1, tool2);
+      const json = toolbox.toJSON();
       expect(json).toHaveLength(2);
       const ids = json.map((c) => c.id);
       expect(ids).toContain(tool1.id);

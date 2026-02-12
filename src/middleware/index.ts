@@ -1,4 +1,4 @@
-import type { ToolConfig } from '../runtime/is-tool';
+import type { ToolConfiguration } from '../is-tool';
 
 /**
  * Creates a rate limiting middleware that restricts the number of tool executions
@@ -24,16 +24,16 @@ export function createRateLimitMiddleware(
   // State: Map<ToolName, Map<Key, { count: number; resetTime: number }>>
   const state = new Map<string, Map<string, { count: number; resetTime: number }>>();
 
-  return (config: ToolConfig): ToolConfig => {
-    const originalExecute = config.execute;
+  return (configuration: ToolConfiguration): ToolConfiguration => {
+    const originalExecute = configuration.execute;
 
     // We need to resolve the potentially lazy execute function
     const wrappedExecute = async (params: unknown, context: unknown) => {
       // Initialize state for this tool
-      if (!state.has(config.identity.name)) {
-        state.set(config.identity.name, new Map());
+      if (!state.has(configuration.name)) {
+        state.set(configuration.name, new Map());
       }
-      const toolState = state.get(config.identity.name)!;
+      const toolState = state.get(configuration.name)!;
 
       const key = keyGenerator(params, context);
       const now = Date.now();
@@ -46,7 +46,7 @@ export function createRateLimitMiddleware(
 
       if (record.count >= limit) {
         throw new Error(
-          `Rate limit exceeded for tool "${config.identity.name}". Limit: ${limit} per ${windowMs}ms.`,
+          `Rate limit exceeded for tool "${configuration.name}". Limit: ${limit} per ${windowMs}ms.`,
         );
       }
 
@@ -64,7 +64,7 @@ export function createRateLimitMiddleware(
     };
 
     return {
-      ...config,
+      ...configuration,
       execute: wrappedExecute,
     };
   };
@@ -100,20 +100,20 @@ export function createCacheMiddleware(
 
   const keyGenerator = options.keyGenerator ?? defaultKeyGenerator;
 
-  return (config: ToolConfig): ToolConfig => {
+  return (configuration: ToolConfiguration): ToolConfiguration => {
     // Skip caching for mutating or dangerous tools unless explicitly forced?
     // For safety, we should probably check metadata, but middleware is opted-in by the user.
     // If the user adds cache middleware to a mutating tool, they probably know what they're doing (or making a mistake).
     // Let's assume safety is handled by policy or user discretion.
 
-    const originalExecute = config.execute;
+    const originalExecute = configuration.execute;
 
     const wrappedExecute = async (params: unknown, context: unknown) => {
       // Initialize cache for this tool
-      if (!cache.has(config.identity.name)) {
-        cache.set(config.identity.name, new Map());
+      if (!cache.has(configuration.name)) {
+        cache.set(configuration.name, new Map());
       }
-      const toolCache = cache.get(config.identity.name)!;
+      const toolCache = cache.get(configuration.name)!;
       const key = keyGenerator(params);
       const now = Date.now();
       const cached = toolCache.get(key);
@@ -139,7 +139,7 @@ export function createCacheMiddleware(
     };
 
     return {
-      ...config,
+      ...configuration,
       execute: wrappedExecute,
     };
   };
@@ -152,8 +152,8 @@ export function createCacheMiddleware(
  * @returns A middleware function.
  */
 export function createTimeoutMiddleware(ms: number) {
-  return (config: ToolConfig): ToolConfig => {
-    const originalExecute = config.execute;
+  return (configuration: ToolConfiguration): ToolConfiguration => {
+    const originalExecute = configuration.execute;
 
     const wrappedExecute = async (params: unknown, context: unknown) => {
       let executeFn: (params: unknown, context: unknown) => Promise<unknown>;
@@ -165,7 +165,7 @@ export function createTimeoutMiddleware(ms: number) {
 
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
-          reject(new Error(`Tool "${config.identity.name}" timed out after ${ms}ms`));
+          reject(new Error(`Tool "${configuration.name}" timed out after ${ms}ms`));
         }, ms);
 
         executeFn(params, context)
@@ -181,7 +181,7 @@ export function createTimeoutMiddleware(ms: number) {
     };
 
     return {
-      ...config,
+      ...configuration,
       execute: wrappedExecute,
     };
   };

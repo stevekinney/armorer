@@ -78,7 +78,7 @@ describe('retry coverage edges', () => {
         { value: 1 },
         {
           signal: controller.signal,
-          timeoutMs: 10,
+          timeout: 10,
         },
       ),
     ).rejects.toThrow('cancelled');

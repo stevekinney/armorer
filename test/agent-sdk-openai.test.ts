@@ -6,13 +6,13 @@ import { MCPServerStdio, MCPServerStreamableHttp } from '@openai/agents';
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createToolbox } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
+import { createToolbox } from '../src/create-toolbox';
 import { createMCP } from '../src/mcp';
 
 const fixturePath = () => {
   const currentDir = dirname(fileURLToPath(import.meta.url));
-  return join(currentDir, 'fixtures', 'armorer-mcp-server.ts');
+  return join(currentDir, 'fixtures', 'toolbox-mcp-server.ts');
 };
 
 describe('OpenAI Agents SDK MCP integration', () => {
@@ -20,7 +20,7 @@ describe('OpenAI Agents SDK MCP integration', () => {
     const server = new MCPServerStdio({
       command: 'bun',
       args: [fixturePath()],
-      name: 'armorer-tools',
+      name: 'toolbox-tools',
       cacheToolsList: true,
     });
 
@@ -34,7 +34,7 @@ describe('OpenAI Agents SDK MCP integration', () => {
   });
 
   it('lists tools over streamable HTTP', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'sum',
@@ -44,18 +44,20 @@ describe('OpenAI Agents SDK MCP integration', () => {
           return a + b;
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const mcp = createMCP(armorer, {
-      serverInfo: { name: 'armorer-tools', version: '0.1.0' },
+    const mcp = createMCP(toolbox, {
+      serverInfo: { name: 'toolbox-tools', version: '0.1.0' },
     });
-    const transport = new WebStandardStreamableHTTPServerTransport();
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
+    });
     await mcp.connect(transport);
 
     const server = new MCPServerStreamableHttp({
-      url: 'http://armorer.local/mcp',
-      name: 'armorer-tools',
+      url: 'http://toolbox.local/mcp',
+      name: 'toolbox-tools',
       cacheToolsList: true,
       fetch: (input: RequestInfo | URL, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(input, init);

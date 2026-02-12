@@ -45,7 +45,8 @@ export function serializeToolDefinition(
     ? (sortJsonValue(definition.lifecycle) as JsonObject)
     : undefined;
 
-  const schema = toJsonSchema(definition.schema, 'input');
+  const schemaSource = definition.parameters ?? definition.schema;
+  const schema = toJsonSchema(schemaSource, 'input');
   const outputSchema = definition.outputSchema
     ? toJsonSchema(definition.outputSchema, 'output')
     : undefined;

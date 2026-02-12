@@ -15,8 +15,8 @@ const FORBIDDEN_CORE_PACKAGES = [
   '@google/genai',
 ];
 
-const FORBIDDEN_CORE_PATHS = ['runtime', 'adapters', 'integrations', 'mcp'];
-const FORBIDDEN_ADAPTER_PATHS = ['runtime'];
+const FORBIDDEN_CORE_PATHS = ['adapters', 'integrations', 'mcp'];
+const FORBIDDEN_ADAPTER_PATHS = ['utilities'];
 
 const IMPORT_RE = /(?:import|export)\s+(?:[^'"()]*?from\s+)?['"]([^'"]+)['"]/g;
 const DYNAMIC_IMPORT_RE = /import\(\s*['"]([^'"]+)['"]\s*\)/g;
@@ -116,7 +116,7 @@ function checkCoreImport(file: string, spec: string): string | null {
 }
 
 function checkAdapterImport(file: string, spec: string): string | null {
-  if (spec === 'armorer/runtime' || spec.startsWith('armorer/runtime/')) {
+  if (spec === 'armorer/utilities' || spec.startsWith('armorer/utilities/')) {
     return ` forbidden import from ${spec}`;
   }
   if (!isRelative(spec)) return null;

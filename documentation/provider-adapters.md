@@ -6,7 +6,7 @@ Export tools as static JSON Schema definitions for use with LLM provider SDKs. E
 
 These adapters are **schema-only converters**. They serialize your tool definitions (name, description, and Zod schema) into the JSON format each provider expects, but they do not execute tools or handle results. You pass the output directly to the provider SDK when making API calls.
 
-> **Anthropic SDK vs Claude Agent SDK**: The `toAnthropic()` adapter here produces static `input_schema` objects for the [Anthropic Messages API](https://docs.anthropic.com/en/docs/tool-use). If you're building with the **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`), use the separate [Claude Agent SDK integration](./claude-agent-sdk.md) instead — it produces live, executable SDK tool objects with result handling, MCP server support, and tool gating.
+> **Anthropic SDK vs Claude Agent SDK**: The `toAnthropic()` adapter here produces static `input_schema` objects for the [Anthropic Messages API](https://docs.anthropic.com/en/docs/tool-use). If you're building with the **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`), use [MCP](./mcp.md) with `createMCP()` (and optionally `toMcpTools()` / `fromMcpTools()`) for live executable tools.
 
 ### OpenAI
 
@@ -20,17 +20,17 @@ const openAITool = toOpenAI(myTool);
 const openAITools = toOpenAI([tool1, tool2]);
 
 // From registry
-const openAITools = toOpenAI(armorer);
+const openAITools = toOpenAI(toolbox);
 
 // Use with OpenAI SDK
 const response = await openai.chat.completions.create({
   model: 'gpt-4',
   messages,
-  tools: toOpenAI(armorer),
+  tools: toOpenAI(toolbox),
 });
 ```
 
-> **OpenAI Chat Completions vs OpenAI Agents SDK**: The `toOpenAI()` adapter here produces static tool definitions for the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat). If you're building with the **OpenAI Agents SDK** (`@openai/agents`), use the separate [OpenAI Agents SDK integration](./openai-agents-sdk.md) instead — it produces executable tool objects with result handling and tool gating.
+> **OpenAI Chat Completions vs OpenAI Agents SDK**: The `toOpenAI()` adapter here produces static tool definitions for the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat). If you're building with the **OpenAI Agents SDK** (`@openai/agents`), use the separate [OpenAI Agents adapter](./openai-agents-sdk.md) (`armorer/open-ai/agents` or `armorer/adapters/open-ai/agents`) instead — it produces executable tool objects with result handling and tool gating.
 
 ### Anthropic
 
@@ -44,13 +44,13 @@ const anthropicTool = toAnthropic(myTool);
 const anthropicTools = toAnthropic([tool1, tool2]);
 
 // From registry
-const anthropicTools = toAnthropic(armorer);
+const anthropicTools = toAnthropic(toolbox);
 
 // Use with Anthropic SDK
 const response = await anthropic.messages.create({
   model: 'claude-sonnet-4-20250514',
   messages,
-  tools: toAnthropic(armorer),
+  tools: toAnthropic(toolbox),
 });
 ```
 
@@ -66,11 +66,11 @@ const geminiDeclaration = toGemini(myTool);
 const geminiDeclarations = toGemini([tool1, tool2]);
 
 // From registry
-const geminiDeclarations = toGemini(armorer);
+const geminiDeclarations = toGemini(toolbox);
 
 // Use with Gemini SDK
 const model = genAI.getGenerativeModel({
   model: 'gemini-pro',
-  tools: [{ functionDeclarations: toGemini(armorer) }],
+  tools: [{ functionDeclarations: toGemini(toolbox) }],
 });
 ```

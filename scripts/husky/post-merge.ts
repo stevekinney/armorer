@@ -25,7 +25,7 @@ const changed = changedList.split('\n').filter(Boolean);
 const has = (f: string) => changed.includes(f);
 const any = (files: string[]) => files.some((f) => has(f));
 
-const configFiles = [
+const configurationFiles = [
   'tsconfig.json',
   'eslint.config.js',
   '.prettierrc',
@@ -34,11 +34,12 @@ const configFiles = [
 ];
 
 const needsInstall = any(['package.json', 'bun.lock']);
-const needsClean = any(configFiles);
+const needsClean = any(configurationFiles);
 
 const important: string[] = [];
 if (needsInstall) important.push('Dependencies updated');
-for (const f of configFiles) if (has(f)) important.push(`${f} configuration updated`);
+for (const f of configurationFiles)
+  if (has(f)) important.push(`${f} configuration updated`);
 
 if (needsInstall) {
   info('Installing dependencies…');

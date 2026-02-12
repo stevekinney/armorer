@@ -4,23 +4,26 @@
 
 Register tools, execute tool calls, and query or search the registry.
 
+For a dedicated guide to tool and registry event streams, see [Eventing](eventing.md).
+For a dedicated guide to `queryTools`/`searchTools`, see [Searching Tools](searching-tools.md).
+
 ### Registration
 
 ```typescript
-const armorer = createToolbox();
+const toolbox = createToolbox();
 
 // Register individual tools
-armorer.register(tool1);
-armorer.register(tool2, tool3);
+toolbox.register(tool1);
+toolbox.register(tool2, tool3);
 
 // Or register configurations directly
-armorer.register(tool1.configuration, tool2.configuration);
+toolbox.register(tool1.configuration, tool2.configuration);
 
 // Or initialize with tool configurations
-const armorer = createToolbox([tool1.configuration, tool2.configuration]);
+const toolbox = createToolbox([tool1.configuration, tool2.configuration]);
 
 // Or create + register in one step
-const registered = armorer.createTool({
+const registered = toolbox.createTool({
   name: 'quick-tool',
   description: 'Registered on creation',
   schema: z.object({ value: z.string() }),
@@ -30,33 +33,33 @@ const registered = armorer.createTool({
 });
 ```
 
-Tool configs also support lazy execute functions (import from `armorer/lazy`):
+Tool configurations also support lazy execute functions (import from `armorer/lazy`):
 
 ```typescript
 import { lazy } from 'armorer/lazy';
 
-armorer.register({
-  name: 'lazy-config',
+toolbox.register({
+  name: 'lazy-configuration',
   description: 'Loads on first use',
   schema: z.object({ id: z.string() }),
-  execute: lazy(() => import('./tools/lazy-config').then((mod) => mod.execute)),
+  execute: lazy(() => import('./tools/lazy-configuration').then((mod) => mod.execute)),
 });
 ```
 
-Tool configs require an object schema. For a no-params tool config, use `schema: z.object({})`. (Only `createTool` defaults the schema when omitted.)
+Tool configurations and `createTool()` are consistent: if `schema`/`parameters` is omitted, Toolbox defaults it to `z.object({})` for no-params tools.
 
 ### Execution
 
 ```typescript
 // Execute a single tool call
-const result = await armorer.execute({
+const result = await toolbox.execute({
   id: 'call-id',
   name: 'tool-name',
   arguments: { key: 'value' },
 });
 
 // Execute multiple tool calls in parallel
-const results = await armorer.execute([
+const results = await toolbox.execute([
   { id: 'call-1', name: 'tool-a', arguments: { x: 1 } },
   { id: 'call-2', name: 'tool-b', arguments: { y: 2 } },
 ]);
@@ -64,10 +67,10 @@ const results = await armorer.execute([
 
 // Execute with AbortSignal support
 const controller = new AbortController();
-const results = await armorer.execute(calls, { signal: controller.signal });
+const results = await toolbox.execute(calls, { signal: controller.signal });
 
 // Dry Run: Preview effects without executing the main logic
-const preview = await armorer.execute(
+const preview = await toolbox.execute(
   { name: 'fs.delete', arguments: { path: 'file.txt' } },
   { dryRun: true },
 );
@@ -75,20 +78,20 @@ console.log(preview.dryRun); // true
 console.log(preview.content); // "Would delete file.txt" (returned by tool's dryRun handler)
 ```
 
-When executing multiple tool calls, they are executed in parallel using `Promise.all()`. The return value is an array of `ToolResult` objects in the same order as the input calls. You can listen to events from individual tools using `armorer.addEventListener`:
+When executing multiple tool calls, they are executed in parallel using `Promise.all()`. The return value is an array of `ToolResult` objects in the same order as the input calls. You can listen to events from individual tools using `toolbox.addEventListener`:
 
 ```typescript
 // Listen for progress events from any tool during parallel execution
-armorer.addEventListener('progress', (event) => {
+toolbox.addEventListener('progress', (event) => {
   console.log(`Tool ${event.detail.tool.identity.name}: ${event.detail.percent}%`);
 });
 
 // Listen for execution events
-armorer.addEventListener('execute-start', (event) => {
+toolbox.addEventListener('execute-start', (event) => {
   console.log(`Starting: ${event.detail.tool.identity.name}`);
 });
 
-armorer.addEventListener('execute-success', (event) => {
+toolbox.addEventListener('execute-success', (event) => {
   console.log(`Completed: ${event.detail.tool.identity.name}`, event.detail.result);
 });
 ```
@@ -101,10 +104,10 @@ Toolbox provides native OpenTelemetry instrumentation via the `armorer/instrumen
 import { createToolbox } from 'armorer';
 import { instrument } from 'armorer/instrumentation';
 
-const armorer = createToolbox();
-const unregister = instrument(armorer);
+const toolbox = createToolbox();
+const unregister = instrument(toolbox);
 
-// All subsequent calls via armorer.execute() will create OTel Spans
+// All subsequent calls via toolbox.execute() will create OTel Spans
 ```
 
 ### Middleware
@@ -115,7 +118,7 @@ Toolbox supports middleware to wrap tool execution logic. This is useful for cro
 import { createToolbox } from 'armorer';
 import { createCacheMiddleware, createRateLimitMiddleware } from 'armorer/middleware';
 
-const armorer = createToolbox([], {
+const toolbox = createToolbox([], {
   middleware: [
     // Cache results for 1 minute
     createCacheMiddleware({ ttlMs: 60000 }),
@@ -142,14 +145,14 @@ import { createMockTool, createTestRegistry } from 'armorer/test';
 const weatherMock = createMockTool({ name: 'get_weather' });
 weatherMock.mockResolve({ temp: 72 });
 
-const armorer = createTestRegistry();
-armorer.register(weatherMock);
+const toolbox = createTestRegistry();
+toolbox.register(weatherMock);
 
 // Execute your agent logic using the test registry
 // ...
 
 // Assert on execution history
-console.log(armorer.history[0].call.name); // 'get_weather'
+console.log(toolbox.history[0].call.name); // 'get_weather'
 console.log(weatherMock.calls.length); // 1
 ```
 
@@ -160,7 +163,7 @@ Use `searchTools` to rank tools and optionally include match explanations:
 ```typescript
 import { searchTools } from 'armorer/registry';
 
-const matches = searchTools(armorer, {
+const matches = searchTools(toolbox, {
   filter: { tags: { none: ['dangerous'] } },
   rank: {
     tags: ['summarize', 'fast'],
@@ -183,19 +186,19 @@ for (const match of matches) {
 import { queryTools } from 'armorer/registry';
 
 // Query by tag (OR match)
-const mathTools = queryTools(armorer, { tags: { any: ['math'] } });
+const mathTools = queryTools(toolbox, { tags: { any: ['math'] } });
 
 // Require all tags (AND match)
-const fastMath = queryTools(armorer, { tags: { all: ['math', 'fast'] } });
+const fastMath = queryTools(toolbox, { tags: { all: ['math', 'fast'] } });
 
 // Exclude tags
-const safeTools = queryTools(armorer, { tags: { none: ['destructive', 'dangerous'] } });
+const safeTools = queryTools(toolbox, { tags: { none: ['destructive', 'dangerous'] } });
 
 // Query by text (name, description, tags, schema keys, metadata keys)
-const tools = queryTools(armorer, { text: 'weather' });
+const tools = queryTools(toolbox, { text: 'weather' });
 
 // Fuzzy text with field scoping
-const fuzzy = queryTools(armorer, {
+const fuzzy = queryTools(toolbox, {
   text: {
     query: 'weathr',
     mode: 'fuzzy',
@@ -205,22 +208,22 @@ const fuzzy = queryTools(armorer, {
 });
 
 // Query by schema keys or shape
-const toolsByKeys = queryTools(armorer, { schema: { keys: ['city'] } });
-const toolsByShape = queryTools(armorer, {
+const toolsByKeys = queryTools(toolbox, { schema: { keys: ['city'] } });
+const toolsByShape = queryTools(toolbox, {
   schema: { matches: z.object({ city: z.string() }) },
 });
 
 // Query by metadata
-const premiumTools = queryTools(armorer, { metadata: { eq: { tier: 'premium' } } });
-const keyedTools = queryTools(armorer, { metadata: { has: ['capabilities'] } });
-const ranged = queryTools(armorer, { metadata: { range: { score: { min: 5 } } } });
-const owned = queryTools(armorer, { metadata: { contains: { owner: 'team-' } } });
+const premiumTools = queryTools(toolbox, { metadata: { eq: { tier: 'premium' } } });
+const keyedTools = queryTools(toolbox, { metadata: { has: ['capabilities'] } });
+const ranged = queryTools(toolbox, { metadata: { range: { score: { min: 5 } } } });
+const owned = queryTools(toolbox, { metadata: { contains: { owner: 'team-' } } });
 
 // Custom predicate
-const tools = queryTools(armorer, { predicate: (tool) => tool.tags?.includes('api') });
+const tools = queryTools(toolbox, { predicate: (tool) => tool.tags?.includes('api') });
 
 // Boolean groups + pagination + selection
-const summaries = queryTools(armorer, {
+const summaries = queryTools(toolbox, {
   or: [{ tags: { any: ['fast'] } }, { text: 'priority' }],
   not: { tags: { any: ['deprecated'] } },
   select: 'summary',
@@ -231,7 +234,7 @@ const summaries = queryTools(armorer, {
 
 #### Query Details
 
-`queryTools(input, criteria?)` filters tools with AND semantics across the provided criteria. It accepts an armorer registry, a single tool, an array of tools, or any iterable of tools. The `criteria` object is optional; if omitted, all tools are returned.
+`queryTools(input, criteria?)` filters tools with AND semantics across the provided criteria. It accepts a toolbox registry, a single tool, an array of tools, or any iterable of tools. The `criteria` object is optional; if omitted, all tools are returned.
 
 Core criteria:
 
@@ -249,9 +252,9 @@ Boolean groups:
 
 Selection and paging:
 
-- `select`: `'tool' | 'name' | 'config' | 'summary'` (default: `tool`)
+- `select`: `'tool' | 'name' | 'configuration' | 'summary'` (default: `tool`)
 - `limit` / `offset`: pagination controls
-- `includeSchema` / `includeToolConfig`: when `select: 'summary'`, include schema/config
+- `includeSchema` / `includeToolConfiguration`: when `select: 'summary'`, include schema/configuration
 
 Text query fields (`TextQueryField`) are `name`, `description`, `tags`, `schemaKeys`, and `metadataKeys`. Text queries are tokenized (camelCase, snake_case, and diacritics are normalized) and scores scale with the number of matched tokens. Fuzzy matching uses `threshold` (default `0.7`) to determine a match score.
 
@@ -266,7 +269,7 @@ Use `searchTools` to rank tools and optionally include match explanations:
 ```typescript
 import { searchTools } from 'armorer/registry';
 
-const matches = searchTools(armorer, {
+const matches = searchTools(toolbox, {
   filter: { tags: { none: ['dangerous'] } },
   rank: {
     tags: ['summarize', 'fast'],
@@ -288,7 +291,7 @@ If you mutate tool metadata or schemas after a search has been cached, refresh t
 ```typescript
 import { reindexSearchIndex } from 'armorer/registry';
 
-reindexSearchIndex(armorer);
+reindexSearchIndex(toolbox);
 ```
 
 #### Search Details
@@ -318,14 +321,14 @@ Custom ranking and tie-breaking:
 
 Selection and paging (same as query):
 
-- `select`: `'tool' | 'name' | 'config' | 'summary'`
+- `select`: `'tool' | 'name' | 'configuration' | 'summary'`
 - `limit` / `offset`
-- `includeSchema` / `includeToolConfig`
+- `includeSchema` / `includeToolConfiguration`
 
 Example custom ranker:
 
 ```typescript
-const matches = searchTools(armorer, {
+const matches = searchTools(toolbox, {
   rank: { text: 'summarize' },
   ranker: (tool, context) => {
     if (tool.metadata?.tier === 'premium') {
@@ -345,7 +348,7 @@ Provide an embedder to `createToolbox` to enrich text search with embeddings. Th
 The embedder is called with a list of texts and must return a same-length list of numeric vectors; mismatched or invalid vectors are ignored. Embeddings are cached per tool and can be recomputed with `reindexSearchIndex`.
 
 ```typescript
-const armorer = createToolbox([], {
+const toolbox = createToolbox([], {
   embed: async (texts) => embeddingsClient.embed(texts),
 });
 ```
@@ -356,7 +359,7 @@ For detailed examples including OpenAI and Pinecone integration, see the [Embedd
 
 #### Type Guards
 
-You can use `isToolbox()` to check if an object is an Toolbox registry:
+You can use `isToolbox()` to check if an object is a Toolbox registry:
 
 ```typescript
 import { isToolbox, createToolbox } from 'armorer';
@@ -379,25 +382,25 @@ You can transform tool configurations during registration using middleware. Midd
 import { createToolbox, createMiddleware } from 'armorer';
 
 // Create middleware to add metadata
-const addSourceMetadata = createMiddleware((config) => ({
-  ...config,
-  metadata: { ...config.metadata, source: 'middleware' },
+const addSourceMetadata = createMiddleware((configuration) => ({
+  ...configuration,
+  metadata: { ...configuration.metadata, source: 'middleware' },
 }));
 
 // Create middleware to validate configurations
-const validateConfig = createMiddleware((config) => {
-  if (!config.name || config.name.length < 3) {
+const validateConfiguration = createMiddleware((configuration) => {
+  if (!configuration.name || configuration.name.length < 3) {
     throw new Error('Tool name must be at least 3 characters');
   }
-  return config;
+  return configuration;
 });
 
-const armorer = createToolbox([], {
-  middleware: [validateConfig, addSourceMetadata],
+const toolbox = createToolbox([], {
+  middleware: [validateConfiguration, addSourceMetadata],
 });
 
 // All registered tools will have the middleware applied
-armorer.register(myTool);
+toolbox.register(myTool);
 ```
 
 Common middleware patterns:
@@ -407,20 +410,23 @@ Common middleware patterns:
 - **Transformation**: Rename tools, modify schemas, or wrap execute functions
 - **Logging**: Track tool registration for observability
 
-Middleware must be synchronous when deserializing from `SerializedToolbox`. The middleware receives the full `ToolConfig` including the execute function.
+Middleware must be synchronous when deserializing from `SerializedToolbox`. The middleware receives the full `ToolConfiguration` including the execute function.
 
 #### getTool() for Deserialization
 
-When deserializing an armorer (loading from JSON), tool configurations may not have execute functions. Use `getTool()` to provide execute functions dynamically. The resolver must be synchronous.
+When deserializing a toolbox (loading from JSON), tool configurations may not have execute functions. Use `getTool()` to provide execute functions dynamically. The resolver can be synchronous or async (for lazy imports).
 
 ```typescript
-const armorer = createToolbox(serializedConfigs, {
-  getTool: (config) => {
-    // Map to a preloaded execute function based on config.name
-    return toolMap[config.name];
+const toolbox = createToolbox(serializedConfigurations, {
+  getTool: async (configuration) => {
+    // Resolve execute lazily by tool name.
+    const mod = await import(`./tools/${configuration.name}.js`);
+    return mod.execute;
   },
 });
 ```
+
+If `getTool()` cannot resolve a function (or resolves to a non-function), executing that tool returns an error with the tool name and resolver hint.
 
 #### Pre-computed Embeddings in Metadata
 
@@ -448,9 +454,9 @@ const tool = createTool({
   },
 });
 
-// When registering with an armorer that has an embedder,
+// When registering with a toolbox that has an embedder,
 // tools with pre-computed embeddings will skip embedding computation
-const armorer = createToolbox([tool], {
+const toolbox = createToolbox([tool], {
   embed: async (texts) => {
     // This won't be called for tools that already have embeddings in metadata
     return embeddingsClient.embed(texts);
@@ -458,32 +464,34 @@ const armorer = createToolbox([tool], {
 });
 ```
 
-The armorer will automatically detect and use embeddings from `metadata.embeddings` (array format) or `metadata.embedding` (object format) if present, avoiding redundant embedding computation.
+The toolbox will automatically detect and use embeddings from `metadata.embeddings` (array format) or `metadata.embedding` (object format) if present, avoiding redundant embedding computation.
 
 ### Registry Events
 
+For complete eventing patterns (including observables and async iterators), see [Eventing](eventing.md).
+
 ```typescript
-armorer.addEventListener('registered', (event) => {
+toolbox.addEventListener('registered', (event) => {
   console.log('Registered:', event.detail.name);
 });
 
-armorer.addEventListener('call', (event) => {
+toolbox.addEventListener('call', (event) => {
   console.log('Calling:', event.detail.call.name);
 });
 
-armorer.addEventListener('complete', (event) => {
+toolbox.addEventListener('complete', (event) => {
   console.log('Completed:', event.detail.result);
 });
 
-armorer.addEventListener('error', (event) => {
+toolbox.addEventListener('error', (event) => {
   console.error('Error:', event.detail.result.error);
 });
 
-armorer.addEventListener('search', (event) => {
+toolbox.addEventListener('search', (event) => {
   console.log('Search results:', event.detail.results);
 });
 
-armorer.addEventListener('status:update', (event) => {
+toolbox.addEventListener('status:update', (event) => {
   console.log(`${event.detail.name}: ${event.detail.status}`);
 });
 ```
@@ -492,15 +500,17 @@ armorer.addEventListener('status:update', (event) => {
 
 Pass shared context to all registered tools:
 
+For a complete guide to context sources and `withContext`, see [Context and withContext](context.md).
+
 ```typescript
-const armorer = createToolbox([], {
+const toolbox = createToolbox([], {
   context: {
     userId: 'user-123',
     sessionId: 'session-456',
   },
 });
 
-armorer.register({
+toolbox.register({
   name: 'context-aware',
   description: 'A tool that uses context',
   schema: z.object({}),
@@ -514,12 +524,12 @@ armorer.register({
 
 ### Inspection
 
-`armorer.inspect()` returns a snapshot of the registry for logging, diagnostics, or UI inventory screens. It reports counts plus a list of tool inspections. Detail levels control how much schema and metadata information is included: `summary` returns only name/description/tags, `standard` (default) adds schema keys and metadata flags, and `full` adds a simplified schema shape for each tool. Inspection is side-effect free and returns copies so you can safely log or mutate the output.
+`toolbox.inspect()` returns a snapshot of the registry for logging, diagnostics, or UI inventory screens. It reports counts plus a list of tool inspections. Detail levels control how much schema and metadata information is included: `summary` returns only name/description/tags, `standard` (default) adds schema keys and metadata flags, and `full` adds a simplified schema shape for each tool. Inspection is side-effect free and returns copies so you can safely log or mutate the output.
 
 ```typescript
-const inspection = armorer.inspect(); // 'standard' detail level
-const summary = armorer.inspect('summary'); // Less detail
-const full = armorer.inspect('full'); // Full schema shapes
+const inspection = toolbox.inspect(); // 'standard' detail level
+const summary = toolbox.inspect('summary'); // Less detail
+const full = toolbox.inspect('full'); // Full schema shapes
 
 console.log(inspection.counts.total); // Number of registered tools
 console.log(inspection.tools); // Array of tool inspections
@@ -528,7 +538,7 @@ console.log(inspection.tools); // Array of tool inspections
 Example shape (standard detail):
 
 ```typescript
-const inspection = armorer.inspect();
+const inspection = toolbox.inspect();
 
 console.log(inspection.counts); // { total, withTags, withMetadata }
 console.log(inspection.tools[0]);
@@ -545,13 +555,13 @@ console.log(inspection.tools[0]);
 
 ```typescript
 // Export for storage/transmission
-const serialized = armorer.toJSON();
+const serialized = toolbox.toJSON();
 
 // Rehydrate from serialized state
 const restored = createToolbox(serialized);
 ```
 
-`SerializedToolbox` is a `ToolConfig[]` that includes execute functions, so it is meant for in-process cloning. Functions are not JSON-serializable, so `JSON.stringify(armorer.toJSON())` will drop them. If you need cross-process persistence, store your own manifest (name, schema, metadata, module path) and rebuild configs at startup, typically using `lazy(() => import(...))` for the execute function.
+`SerializedToolbox` is a `ToolConfiguration[]` that includes execute functions, so it is meant for in-process cloning. Functions are not JSON-serializable, so `JSON.stringify(toolbox.toJSON())` will drop them. If you need cross-process persistence, store your own manifest (name, schema, metadata, module path) and rebuild configurations at startup, typically using `lazy(() => import(...))` for the execute function.
 
 ### Combining Toolboxs
 
@@ -573,8 +583,8 @@ console.log(combined.tools()); // All tools from both registries
 
 Behavior:
 
-- Tools are copied via `toJSON()` and registered into a new armorer
-- If multiple armorers define the same tool name, the **last** one wins
+- Tools are copied via `toJSON()` and registered into a new toolbox
+- If multiple toolboxes define the same tool name, the **last** one wins
 - Contexts are shallow-merged in the same order (last one wins on key collisions)
 
 This is useful for modular tool organization where different parts of your application define their own tools, and you want to expose them through a single registry.

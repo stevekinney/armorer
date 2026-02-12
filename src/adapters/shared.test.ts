@@ -42,39 +42,45 @@ describe('shared adapter utilities', () => {
 
   describe('normalizeToSerializedDefinitions', () => {
     it('handles single tool definition', () => {
-      const configs = normalizeToSerializedDefinitions(serializedTool);
-      expect(configs).toHaveLength(1);
-      expect(configs[0]?.identity.name).toBe('test-tool');
+      const configurations = normalizeToSerializedDefinitions(serializedTool);
+      expect(configurations).toHaveLength(1);
+      expect(configurations[0]?.identity.name).toBe('test-tool');
     });
 
     it('handles single serialized tool', () => {
-      const configs = normalizeToSerializedDefinitions(serializedTool);
-      expect(configs).toHaveLength(1);
-      expect(configs[0]?.identity.name).toBe('test-tool');
+      const configurations = normalizeToSerializedDefinitions(serializedTool);
+      expect(configurations).toHaveLength(1);
+      expect(configurations[0]?.identity.name).toBe('test-tool');
     });
 
     it('handles array of tools', () => {
-      const configs = normalizeToSerializedDefinitions([serializedTool, serializedTool]);
-      expect(configs).toHaveLength(2);
+      const configurations = normalizeToSerializedDefinitions([
+        serializedTool,
+        serializedTool,
+      ]);
+      expect(configurations).toHaveLength(2);
     });
 
     it('handles array of serialized tools', () => {
-      const configs = normalizeToSerializedDefinitions([serializedTool, serializedTool]);
-      expect(configs).toHaveLength(2);
+      const configurations = normalizeToSerializedDefinitions([
+        serializedTool,
+        serializedTool,
+      ]);
+      expect(configurations).toHaveLength(2);
     });
 
     it('handles registry-like list()', () => {
       const registryLike = { list: () => [serializedTool] };
-      const configs = normalizeToSerializedDefinitions(registryLike);
-      expect(configs).toHaveLength(1);
-      expect(configs[0]?.identity.name).toBe('test-tool');
+      const configurations = normalizeToSerializedDefinitions(registryLike);
+      expect(configurations).toHaveLength(1);
+      expect(configurations[0]?.identity.name).toBe('test-tool');
     });
 
     it('handles registry-like tools()', () => {
       const registryLike = { tools: () => [serializedTool] };
-      const configs = normalizeToSerializedDefinitions(registryLike);
-      expect(configs).toHaveLength(1);
-      expect(configs[0]?.identity.name).toBe('test-tool');
+      const configurations = normalizeToSerializedDefinitions(registryLike);
+      expect(configurations).toHaveLength(1);
+      expect(configurations[0]?.identity.name).toBe('test-tool');
     });
 
     it('throws Error when registry list returns non-array', () => {

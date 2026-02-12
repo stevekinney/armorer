@@ -168,7 +168,9 @@ export function inspectTool(
   // Only include schema and metadata for standard and full levels
   if (detailLevel !== 'summary') {
     const includeShape = detailLevel === 'full';
-    result.schema = extractSchemaSummary(tool.schema, includeShape);
+    const schema =
+      (tool as typeof tool & { parameters?: ToolSchema }).parameters ?? tool.schema;
+    result.schema = extractSchemaSummary(schema, includeShape);
     result.metadata = extractMetadataFlags(tool.metadata);
   }
 

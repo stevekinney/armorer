@@ -20,11 +20,11 @@ Use `toOpenAIAgentTools` to convert Toolbox tools to OpenAI Agents SDK tools. Th
 
 ```typescript
 import { createToolbox, createTool } from 'armorer';
-import { toOpenAIAgentTools } from 'armorer/openai-agents-sdk';
+import { toOpenAIAgentTools } from 'armorer/open-ai/agents';
 import { Agent, run } from '@openai/agents';
 import { z } from 'zod';
 
-const armorer = createToolbox();
+const toolbox = createToolbox();
 createTool(
   {
     name: 'sum',
@@ -34,11 +34,11 @@ createTool(
       return a + b;
     },
   },
-  armorer,
+  toolbox,
 );
 
 // Convert to OpenAI Agents SDK tools
-const { tools } = await toOpenAIAgentTools(armorer);
+const { tools } = await toOpenAIAgentTools(toolbox);
 
 // Use with OpenAI Agents SDK
 const agent = new Agent({
@@ -57,7 +57,7 @@ The conversion automatically classifies tools and returns lists for permission c
 
 ```typescript
 const { tools, toolNames, mutatingToolNames, dangerousToolNames } =
-  await toOpenAIAgentTools(armorer);
+  await toOpenAIAgentTools(toolbox);
 
 console.log('All tools:', toolNames);
 console.log('Mutating tools:', mutatingToolNames);
@@ -75,8 +75,8 @@ Tools are classified as:
 Override tool properties during conversion:
 
 ```typescript
-const { tools } = await toOpenAIAgentTools(armorer, {
-  toolConfig: (tool) => ({
+const { tools } = await toOpenAIAgentTools(toolbox, {
+  toolConfiguration: (tool) => ({
     name: `custom_${tool.name}`,
     description: `Enhanced: ${tool.description}`,
   }),
@@ -92,10 +92,10 @@ Use `createOpenAIToolGate` to implement permission-based tool access control. Th
 
 ```typescript
 import { createToolbox, createTool } from 'armorer';
-import { createOpenAIToolGate } from 'armorer/openai-agents-sdk';
+import { createOpenAIToolGate } from 'armorer/open-ai/agents';
 import { z } from 'zod';
 
-const armorer = createToolbox();
+const toolbox = createToolbox();
 
 createTool(
   {
@@ -107,7 +107,7 @@ createTool(
       return { content: '...' };
     },
   },
-  armorer,
+  toolbox,
 );
 
 createTool(
@@ -120,7 +120,7 @@ createTool(
       return { success: true };
     },
   },
-  armorer,
+  toolbox,
 );
 
 createTool(
@@ -133,12 +133,12 @@ createTool(
       return { success: true };
     },
   },
-  armorer,
+  toolbox,
 );
 
 // Create a gate function
 const toolGate = createOpenAIToolGate({
-  registry: armorer,
+  registry: toolbox,
   readOnly: false, // Set to true to deny all mutating tools
   allowMutation: true, // Allow mutating tools (overridden by readOnly)
   allowDangerous: false, // Deny dangerous tools
@@ -182,7 +182,7 @@ type OpenAIToolGateOptions = {
   allowUnknown?: boolean;
 
   // Custom tool configuration (for name overrides)
-  toolConfig?: (tool: Tool) => OpenAIAgentToolConfig;
+  toolConfiguration?: (tool: Tool) => OpenAIAgentToolConfiguration;
 
   // Custom deny messages
   messages?: {
@@ -199,7 +199,7 @@ When working with agent systems that have their own builtin tools (like file sys
 
 ```typescript
 const toolGate = createOpenAIToolGate({
-  registry: armorer,
+  registry: toolbox,
   readOnly: true,
   builtin: {
     readOnly: ['View', 'GlobTool', 'GrepTool', 'LS'],
@@ -219,14 +219,14 @@ console.log(editDecision); // { behavior: 'deny', message: '...' }
 
 ## Using MCP Servers
 
-Alternatively, you can expose Toolbox tools as an MCP server and connect the OpenAI Agents SDK to it. See the [MCP documentation](./mcp.md#openai-agents-sdk-openaiagents) for examples.
+Alternatively, you can expose Toolbox tools as an MCP server and connect the OpenAI Agents SDK to it. See [Agent SDK Integrations](./agent-sdk-integrations.md#openai-agents-sdk-openaiagents) for examples.
 
 ## Type Exports
 
 The integration exports the following types:
 
 - `OpenAIAgentTool`: Return type of OpenAI Agents SDK's `tool()` function
-- `OpenAIAgentToolConfig`: Tool configuration override options
+- `OpenAIAgentToolConfiguration`: Tool configuration override options
 - `OpenAIAgentToolOptions`: Options for `toOpenAIAgentTools()`
 - `OpenAIAgentToolsResult`: Return type of `toOpenAIAgentTools()`
 - `OpenAIToolGateOptions`: Options for `createOpenAIToolGate()`

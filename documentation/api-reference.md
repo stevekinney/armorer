@@ -2,9 +2,9 @@
 
 ## Overview
 
-Reference for exported functions, types, and subpath APIs. New code should prefer `armorer/core` for tool specs and registry/search, and `armorer/runtime` for execution and composition.
+Reference for exported functions, types, and subpath APIs. New code should prefer `armorer/core` for tool specs and registry/search, and `armorer/utilities` for execution and composition.
 
-### Runtime export: `armorer/runtime`
+### Utilities export: `armorer/utilities`
 
 #### `createTool(options)`
 
@@ -18,11 +18,11 @@ Options (`CreateToolOptions`):
 - `execute`: async `(params: TInput, context: ToolContext) => TOutput`.
 - `dryRun?`: async `(params: TInput, context: ToolContext) => Promise<unknown>` - optional handler for previewing effects.
 - `tags?`: kebab-case strings, de-duped.
-- `metadata?`: `ToolMetadata` bag used for filtering and inspection.
-- `timeoutMs?`: number.
+- `metadata?`: `ToolMetadata`, `Promise<ToolMetadata>`, `() => ToolMetadata`, or `() => Promise<ToolMetadata>`.
+- `timeout?`: number (milliseconds).
 - `concurrency?`: number (per-tool concurrency limit).
 
-Returns: `Tool`.
+Returns: `Tool` for sync metadata, `Promise<Tool>` for async metadata.
 
 Exposed properties and methods:
 
@@ -39,8 +39,8 @@ Exposed properties and methods:
 ```typescript
 function createTool<...>(
   options: CreateToolOptions<...>,
-  armorer?: Toolbox,
-): Tool;
+  toolbox?: Toolbox,
+): Tool | Promise<Tool>;
 ```
 
 #### `createToolbox(serialized?, options?)`
@@ -53,16 +53,17 @@ Options (`ToolboxOptions`):
 - `middleware?`: Array of `ToolMiddleware` functions.
 - `policy?`: Global policy hooks.
 - `telemetry?`: boolean - enable detailed execution events.
+- `getTool?`: resolver used when deserialized configurations are missing `execute`; may return a function or `Promise<function>`.
 
 ### Instrumentation export: `armorer/instrumentation`
 
-#### `instrument(armorer, options?)`
+#### `instrument(toolbox, options?)`
 
-Auto-instruments an Toolbox instance with OpenTelemetry tracing.
+Auto-instruments a Toolbox instance with OpenTelemetry tracing.
 
 ```typescript
 import { instrument } from 'armorer/instrumentation';
-unregister = instrument(armorer);
+unregister = instrument(toolbox);
 ```
 
 ### Middleware export: `armorer/middleware`
@@ -81,13 +82,15 @@ Enforces a hard execution timeout.
 
 ### Testing export: `armorer/test`
 
+See also: [Testing Utilities](testing.md)
+
 #### `createMockTool(options)`
 
 Creates a mock tool with `.mockResolve()` and `.mockReject()` helpers and a `.calls` history.
 
 #### `createTestRegistry()`
 
-Creates an Toolbox instance that records all execution history in a `.history` array.
+Creates a Toolbox instance that records all execution history in a `.history` array.
 
 ### Core export: `armorer/core`
 
@@ -101,7 +104,7 @@ Converts a tool definition to a provider-neutral JSON-serializable format.
 
 Registry surface (`Toolbox`):
 
-- `register(...entries: (ToolConfig | Tool)[])`
+- `register(...entries: (ToolConfiguration | Tool)[])`
 - `createTool(options)`: create and register a tool in one call
 - `execute(call | calls)`
 - `tools()` (returns registered `Tool[]` for registry helpers)
@@ -113,15 +116,15 @@ Registry surface (`Toolbox`):
 - Event methods: `addEventListener`, `dispatchEvent`, `on`, `once`, `subscribe`, `toObservable`, `events`
 - Lifecycle: `complete()`, `completed`
 
-`register()` accepts tool instances or raw configurations. When you register a tool, its `configuration` is stored for serialization. `createTool()` is a convenience that uses the same options as `createTool(options)`, registers the result, and returns the registered instance. If `schema` is omitted, it defaults to `z.object({})`.
+`register()` accepts tool instances or raw configurations. When you register a tool, its `configuration` is stored for serialization. `createTool()` is a convenience that uses the same options as `createTool(options)`, registers the result, and returns the registered instance. If `schema`/`parameters` is omitted (in either `register()` raw configuration or `createTool()`), Toolbox defaults it to `z.object({})`.
 
 Signature:
 
 ```typescript
-const tool = armorer.createTool(options);
+const tool = toolbox.createTool(options);
 ```
 
-`ToolConfig.execute` receives `ToolRuntimeContext`, which includes any base context plus `dispatchEvent`, `configuration`, `toolCall`, `signal`, and `timeoutMs`. `ToolConfig.execute` may also be a `Promise` that resolves to an execute function, or use `lazy(() => import(...))` to defer dynamic imports.
+`ToolConfiguration.execute` receives `ToolRuntimeContext`, which includes any base context plus `dispatchEvent`, `configuration`, `toolCall`, `signal`, and `timeout` (milliseconds). `ToolConfiguration.execute` may also be a `Promise` that resolves to an execute function, or use `lazy(() => import(...))` to defer dynamic imports.
 
 #### `getMissingTools(names)`
 
@@ -130,7 +133,7 @@ Returns the subset of tool names that are not registered.
 Example:
 
 ```typescript
-const missing = armorer.getMissingTools(['toolA', 'toolB', 'toolC']);
+const missing = toolbox.getMissingTools(['toolA', 'toolB', 'toolC']);
 // -> ['toolB', 'toolC']
 ```
 
@@ -152,6 +155,8 @@ function isTool(value: unknown): value is Tool;
 
 #### Tool events (`DefaultToolEvents`)
 
+See [Eventing](eventing.md) for end-to-end usage patterns.
+
 - `execute-start`: `{ params }`
 - `validate-success`: `{ params, parsed }`
 - `validate-error`: `{ params, error }`
@@ -168,6 +173,8 @@ Execution and validation events include `toolCall` and `configuration` in their 
 
 #### Registry events (`ToolboxEvents`)
 
+See [Eventing](eventing.md) for subscription patterns and bubbled event behavior.
+
 - `registering`: tool about to be registered
 - `registered`: tool registered
 - `call`: `{ tool, call }`
@@ -178,11 +185,12 @@ Execution and validation events include `toolCall` and `configuration` in their 
 - `search`: `{ options, results }`
 - `status:update`: `ToolStatusUpdate` for UI progress
 
-`query` and `search` events are emitted by `queryTools`/`searchTools` when you pass the armorer registry as the input.
+`query` and `search` events are emitted by `queryTools`/`searchTools` when you pass the toolbox registry as the input.
 
 #### Query helpers and types
 
-Registry helpers live in `armorer/registry` and accept an armorer, tool, or iterable.
+Registry helpers live in `armorer/registry` and accept a toolbox, tool, or iterable.
+See also: [Searching Tools](searching-tools.md).
 
 Functions:
 
@@ -206,7 +214,7 @@ Functions:
 #### Type guards
 
 - `isTool(obj)`: returns `obj is Tool` - checks if an object is a tool
-- `isToolbox(input)`: returns `input is Toolbox` - checks if an object is an Toolbox registry
+- `isToolbox(input)`: returns `input is Toolbox` - checks if an object is a Toolbox registry
 
 #### Inspection helpers and schemas
 
@@ -230,8 +238,8 @@ Core registry types (main export):
 - `ToolboxContext`: base context bag for registry execution
 - `ToolboxOptions`: options for `createToolbox`
 - `ToolboxEvents`: registry event map
-- `ToolRuntimeContext`: context passed to `ToolConfig.execute`
-- `SerializedToolbox`: serialized `ToolConfig[]`
+- `ToolRuntimeContext`: context passed to `ToolConfiguration.execute`
+- `SerializedToolbox`: serialized `ToolConfiguration[]`
 - `ToolStatusUpdate`: registry status payload
 
 Registry helper types (`armorer/registry`):
@@ -249,7 +257,7 @@ Registry helper types (`armorer/registry`):
 - `ToolQuery`: query input + paging/selection
 - `ToolQueryCriteria`: filter-only query input
 - `ToolQueryOptions`: paging/selection options
-- `ToolQuerySelect`: selection mode (`tool`, `name`, `config`, `summary`)
+- `ToolQuerySelect`: selection mode (`tool`, `name`, `configuration`, `summary`)
 - `ToolSummary`: summarized tool shape
 - `ToolSearchOptions`: search options (filter + rank)
 - `ToolSearchRank`: ranking preferences
@@ -266,7 +274,7 @@ Tool types:
 - `CreateToolOptions`: options for `createTool`
 - `WithContext`: helper type for merged context
 - `Tool`: callable tool interface
-- `ToolConfig`: registry tool configuration (execute may be lazy)
+- `ToolConfiguration`: registry tool configuration (execute may be lazy)
 - `ToolMetadata`: metadata bag for filtering and inspection
 - `ToolParametersSchema`: Zod object schema alias
 - `ToolEventsMap`: event name to detail map
@@ -274,8 +282,8 @@ Tool types:
 - `ToolCustomEvent`: typed event wrapper
 - `ToolContext`: tool execution context
 - `ToolCallWithArguments`: tool call with parsed arguments
-- `ToolExecuteOptions`: execution options (`signal`)
-- `ToolExecuteWithOptions`: execution options with params, callId, timeout
+- `ToolExecuteOptions`: execution options (`signal`, `timeout` in milliseconds)
+- `ToolExecuteWithOptions`: execution options with params, callId, and timeout in milliseconds
 
 Policy types:
 
@@ -323,7 +331,7 @@ Core types:
 
 - `ToolCall`: LLM tool call shape
 - `ToolResult`: execution result shape
-- `ToolConfiguration`: minimal tool configuration
+- `MinimalToolConfiguration`: minimal tool configuration
 
 Event system types (re-exported from `event-emission`):
 
@@ -338,9 +346,11 @@ Event system types (re-exported from `event-emission`):
 
 MCP server integration.
 
-- `createMCP(armorer, options?)`: build an MCP server from an armorer registry
-- `toolConfigFromMetadata(tool)`: read MCP config from `tool.metadata.mcp`
-- Types: `CreateMCPOptions`, `MCPToolConfig`, `MCPResourceRegistrar`, `MCPPromptRegistrar`
+- `createMCP(toolbox, options?)`: build an MCP server from a toolbox registry
+- `toMcpTools(input, options?)`: convert toolbox tools into MCP tool definitions with handlers
+- `fromMcpTools(tools, options?)`: convert MCP tool definitions into executable toolbox tools
+- `toolConfigurationFromMetadata(tool)`: read MCP configuration from `tool.metadata.mcp`
+- Types: `CreateMCPOptions`, `MCPToolConfiguration`, `MCPToolLike`, `MCPToolDefinition`, `MCPToolSource`, `MCPToolHandler`, `ToMCPToolsOptions`, `FromMCPToolsOptions`, `MCPResourceRegistrar`, `MCPPromptRegistrar`
 
 ### Subpath export: `armorer/registry`
 
@@ -367,7 +377,6 @@ Composition helpers and types.
 #### Composition API
 
 - `pipe(...tools)`: left-to-right composition (2 to 9 tools); returns an `Tool`
-- `compose(...tools)`: right-to-left composition; returns an `Tool`
 - `bind(tool, bound, options?)`: bind tool parameters; returns an `Tool`
 - `tap(tool, effect)`: run a side effect and return the original output
 - `when(predicate, whenTrue, whenFalse?)`: conditional tool routing
@@ -377,7 +386,7 @@ Composition helpers and types.
 - `postprocess(tool, mapper)`: transform outputs after tool executes; returns an `Tool`
 - `PipelineError`: error with `{ stepIndex, stepName, originalError }`
 
-Pipelines created with `pipe()`/`compose()` and tools created with `parallel()` emit `ComposedToolEvents` including `step-start`, `step-complete`, and `step-error`.
+Pipelines created with `pipe()` and tools created with `parallel()` emit `ComposedToolEvents` including `step-start`, `step-complete`, and `step-error`.
 
 #### Composition types
 
@@ -404,28 +413,7 @@ Pipelines created with `pipe()`/`compose()` and tools created with `parallel()` 
 - Type helper: `GeminiTool` for wrapper objects with `functionDeclarations`
 - Types: `GeminiFunctionDeclaration`, `GeminiSchema`, `GeminiTool`
 
-### Subpath export: `armorer/claude-agent-sdk`
-
-Claude Agent SDK adapter for integrating Toolbox tools with `@anthropic-ai/claude-agent-sdk`.
-
-Functions:
-
-- `toClaudeAgentSdkTools(input, options?)`: async converter for Claude Agent SDK tool format
-- `createClaudeAgentSdkServer(input, options?)`: async MCP server builder with tool metadata
-- `createClaudeToolGate(options)`: creates a permission gate function for tool access control
-
-Types:
-
-- `ClaudeAgentSdkTool`: return type of Claude Agent SDK's `tool()` function
-- `ClaudeAgentSdkServer`: return type of `createSdkMcpServer()`
-- `ClaudeAgentSdkToolConfig`: tool configuration override options
-- `ClaudeAgentSdkToolOptions`: options for `toClaudeAgentSdkTools()`
-- `CreateClaudeAgentSdkServerOptions`: options for `createClaudeAgentSdkServer()`
-- `ClaudeAgentSdkServerResult`: return type of `createClaudeAgentSdkServer()`
-- `ClaudeToolGateOptions`: options for `createClaudeToolGate()`
-- `ClaudeToolGateDecision`: return type of the gate function
-
-### Subpath export: `armorer/openai-agents-sdk`
+### Subpath export: `armorer/open-ai/agents` (also `armorer/adapters/open-ai/agents`)
 
 OpenAI Agents SDK adapter for integrating Toolbox tools with `@openai/agents`.
 
@@ -437,7 +425,7 @@ Functions:
 Types:
 
 - `OpenAIAgentTool`: return type of OpenAI Agents SDK's `tool()` function
-- `OpenAIAgentToolConfig`: tool configuration override options
+- `OpenAIAgentToolConfiguration`: tool configuration override options
 - `OpenAIAgentToolOptions`: options for `toOpenAIAgentTools()`
 - `OpenAIAgentToolsResult`: return type of `toOpenAIAgentTools()`
 - `OpenAIToolGateOptions`: options for `createOpenAIToolGate()`
@@ -449,11 +437,11 @@ Pre-configured tools for common agentic workflows.
 
 #### Search Tools Tool
 
-A tool that searches for other tools in an Toolbox registry, enabling semantic tool discovery in agentic workflows.
+A tool that searches for other tools in a Toolbox registry, enabling semantic tool discovery in agentic workflows.
 
 Functions:
 
-- `createSearchTool(armorer, options?)`: creates a search tool bound to an armorer
+- `createSearchTool(toolbox, options?)`: creates a search tool bound to a toolbox
 
 Options (`CreateSearchToolOptions`):
 
@@ -462,7 +450,7 @@ Options (`CreateSearchToolOptions`):
 - `name?`: Custom tool name (default: 'search-tools')
 - `description?`: Custom tool description
 - `tags?`: Additional tags to add to the tool
-- `register?`: Automatically register with the armorer (default: true)
+- `register?`: Automatically register with the toolbox (default: true)
 
 Types:
 
@@ -477,12 +465,12 @@ Usage:
 import { createToolbox } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 
-const armorer = createToolbox();
+const toolbox = createToolbox();
 // ... register tools
 
-const searchTool = createSearchTool(armorer);
+const searchTool = createSearchTool(toolbox);
 const results = await searchTool({ query: 'send message' });
 // [{ name: 'send-email', description: '...', score: 1.5 }, ...]
 ```
 
-See [Search Tools Tool](search-tools.md) for complete documentation.
+See [Search Tool](search-tool.md) for complete documentation.

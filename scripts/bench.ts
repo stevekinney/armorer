@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 import { defineTool } from '../src/core';
-import { createArmorer } from '../src/create-armorer';
-import type { ToolConfig } from '../src/is-tool';
+import { createToolbox } from '../src/create-toolbox';
+import type { ToolConfiguration } from '../src/is-tool';
 import {
   queryTools,
   reindexSearchIndex,
@@ -67,12 +67,14 @@ const schemas = [
   z.object({ query: z.string(), limit: z.number().optional() }),
 ];
 
-const tools = Array.from({ length: TOOL_COUNT }, (_, index) => makeToolConfig(index));
+const tools = Array.from({ length: TOOL_COUNT }, (_, index) =>
+  makeToolConfiguration(index),
+);
 
 const embed = (texts: string[]) => texts.map((text) => vectorFromText(text, EMBED_DIM));
 
-const armorer = createArmorer(tools, { embed });
-const registryInput = armorer as unknown as ToolQueryInput;
+const toolbox = createToolbox(tools, { embed });
+const registryInput = toolbox as unknown as ToolQueryInput;
 reindexSearchIndex(registryInput);
 
 console.log(
@@ -122,7 +124,7 @@ function runBench(name: string, fn: () => void): void {
   console.log(`${name}: ${perOp.toFixed(2)} ms/op (${ops.toFixed(0)} ops/s)`);
 }
 
-function makeToolConfig(index: number): ToolConfig {
+function makeToolConfiguration(index: number): ToolConfiguration {
   const verb = verbs[index % verbs.length] ?? 'process';
   const domain = domains[index % domains.length] ?? 'data';
   const tagA = tags[index % tags.length] ?? 'alpha';
@@ -141,7 +143,7 @@ function makeToolConfig(index: number): ToolConfig {
     ...definition,
     parameters: schema,
     execute: () => Promise.resolve(null),
-  } as unknown as ToolConfig;
+  } as unknown as ToolConfiguration;
 }
 
 function vectorFromText(text: string, dimension: number): number[] {

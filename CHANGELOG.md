@@ -4,7 +4,7 @@
 
 ### Documentation
 
-- **Common Patterns Guide**: Added comprehensive `documentation/patterns.md` with practical examples for implementing advanced patterns using existing primitives:
+- **Common Patterns Guide**: Added comprehensive `documentation/patterns/` with practical examples for implementing advanced patterns using existing primitives:
   - Circuit breaker pattern for preventing cascading failures
   - Session management with context and middleware
   - Request deduplication for concurrent identical requests
@@ -41,7 +41,7 @@
 
 ### Documentation
 
-- **Common Patterns Guide**: Added comprehensive `documentation/patterns.md` with practical examples for implementing advanced patterns using existing primitives:
+- **Common Patterns Guide**: Added comprehensive `documentation/patterns/` with practical examples for implementing advanced patterns using existing primitives:
   - Circuit breaker pattern for preventing cascading failures
   - Session management with context and middleware
   - Request deduplication for concurrent identical requests

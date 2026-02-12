@@ -94,14 +94,14 @@ describe('preprocess', () => {
   });
 
   it('forwards signal and timeout to the wrapped tool', async () => {
-    const observed: { signal?: AbortSignal; timeoutMs?: number } = {};
+    const observed: { signal?: AbortSignal; timeout?: number } = {};
     const tool = createTool({
       name: 'context-forward',
       description: 'captures context',
       schema: z.object({ value: z.number() }),
       async execute(_params, context) {
         observed.signal = context.signal;
-        observed.timeoutMs = context.timeoutMs;
+        observed.timeout = context.timeout;
         return 1;
       },
     });
@@ -111,11 +111,11 @@ describe('preprocess', () => {
     await (preprocessed as any).executeWith({
       params: { value: 1 },
       signal: controller.signal,
-      timeoutMs: 123,
+      timeout: 123,
     });
 
     expect(observed.signal).toBe(controller.signal);
-    expect(observed.timeoutMs).toBe(123);
+    expect(observed.timeout).toBe(123);
   });
 });
 
@@ -220,14 +220,14 @@ describe('postprocess', () => {
   });
 
   it('forwards signal and timeout to the wrapped tool', async () => {
-    const observed: { signal?: AbortSignal; timeoutMs?: number } = {};
+    const observed: { signal?: AbortSignal; timeout?: number } = {};
     const tool = createTool({
       name: 'context-forward',
       description: 'captures context',
       schema: z.object({ value: z.number() }),
       async execute(_params, context) {
         observed.signal = context.signal;
-        observed.timeoutMs = context.timeoutMs;
+        observed.timeout = context.timeout;
         return 1;
       },
     });
@@ -237,11 +237,11 @@ describe('postprocess', () => {
     await (postprocessed as any).executeWith({
       params: { value: 1 },
       signal: controller.signal,
-      timeoutMs: 321,
+      timeout: 321,
     });
 
     expect(observed.signal).toBe(controller.signal);
-    expect(observed.timeoutMs).toBe(321);
+    expect(observed.timeout).toBe(321);
   });
 });
 

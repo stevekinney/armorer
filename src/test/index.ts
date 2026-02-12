@@ -1,12 +1,14 @@
 import { z } from 'zod';
 
-import { createToolbox, type Toolbox } from '../runtime/create-armorer';
-import { createTool } from '../runtime/create-tool';
-import type { Tool, ToolCallWithArguments } from '../runtime/is-tool';
-import type { ToolResult } from '../runtime/types';
+import { createTool } from '../create-tool';
+import { createToolbox, type Toolbox } from '../create-toolbox';
+import type { Tool, ToolCallWithArguments } from '../is-tool';
+import type { ToolResult } from '../types';
 
 export type MockToolOptions<TInput = any, TOutput = any> = {
   name?: string;
+  parameters?: z.ZodType<TInput>;
+  /** @deprecated Use `parameters` instead. */
   schema?: z.ZodType<TInput>;
   impl?: (params: TInput) => Promise<TOutput> | TOutput;
 };
@@ -26,7 +28,10 @@ export function createMockTool<TInput extends object = any, TOutput = any>(
   mockReset: () => void;
 } {
   const name = options.name ?? 'mock-tool';
-  const schema = options.schema ?? (z.object({}) as unknown as z.ZodType<TInput>);
+  const schema =
+    options.parameters ??
+    options.schema ??
+    (z.object({}) as unknown as z.ZodType<TInput>);
 
   const calls: TInput[] = [];
   let nextImplementation: ((params: TInput) => Promise<TOutput> | TOutput) | undefined;
@@ -34,7 +39,7 @@ export function createMockTool<TInput extends object = any, TOutput = any>(
   const tool = createTool({
     name,
     description: 'A mock tool for testing',
-    schema,
+    parameters: schema,
     execute: async (params: TInput) => {
       calls.push(params);
       if (nextImplementation) {
@@ -74,15 +79,15 @@ export type TestRegistry = Toolbox & {
 };
 
 /**
- * Creates an Toolbox instance configured for testing.
+ * Creates a Toolbox instance configured for testing.
  * Records execution history.
  */
 export function createTestRegistry(): TestRegistry {
-  const armorer = createToolbox();
+  const toolbox = createToolbox();
   const history: TestRegistry['history'] = [];
 
   // Listen to finished events to record history.
-  armorer.addEventListener('tool.finished', (event) => {
+  toolbox.addEventListener('tool.finished', (event) => {
     const { toolCall, result, error, status } = event.detail;
 
     history.push({
@@ -92,7 +97,7 @@ export function createTestRegistry(): TestRegistry {
     });
   });
 
-  const testRegistry = armorer as TestRegistry;
+  const testRegistry = toolbox as TestRegistry;
   testRegistry.history = history;
   testRegistry.clearHistory = () => {
     history.length = 0;

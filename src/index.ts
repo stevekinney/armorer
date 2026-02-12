@@ -1,6 +1,9 @@
-export { combineToolboxes } from './runtime/combine-toolboxes';
+export { combineToolboxes } from './combine-toolboxes';
+export type { CreateToolOptions, WithContext } from './create-tool';
+export { createTool, createToolCall, lazy, withContext } from './create-tool';
 export type {
   SerializedToolbox,
+  SerializedToolboxJSONSchema,
   Toolbox,
   ToolboxContext,
   ToolboxEvents,
@@ -8,10 +11,8 @@ export type {
   ToolboxRuntimeContext,
   ToolMiddleware,
   ToolStatusUpdate,
-} from './runtime/create-armorer';
-export { createMiddleware, createToolbox, isToolbox } from './runtime/create-armorer';
-export type { CreateToolOptions, WithContext } from './runtime/create-tool';
-export { createTool, createToolCall, lazy, withContext } from './runtime/create-tool';
+} from './create-toolbox';
+export { createMiddleware, createToolbox, isToolbox } from './create-toolbox';
 export type {
   AddEventListenerOptionsLike,
   AsyncIteratorOptions,
@@ -24,7 +25,7 @@ export type {
   Subscription,
   Tool,
   ToolCallWithArguments,
-  ToolConfig,
+  ToolConfiguration,
   ToolContext,
   ToolCustomEvent,
   ToolDiagnostics,
@@ -43,13 +44,13 @@ export type {
   ToolRepairHint,
   ToolValidationReport,
   ToolValidationWarning,
-} from './runtime/is-tool';
-export { isTool } from './runtime/is-tool';
+} from './is-tool';
+export { isTool } from './is-tool';
 
 // Types
 export type {
+  MinimalToolConfiguration,
   ToolCall,
   ToolCallInput,
-  ToolConfiguration,
   ToolResult,
-} from './runtime/types';
+} from './types';

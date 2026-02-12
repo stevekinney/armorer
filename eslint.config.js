@@ -1,3 +1,4 @@
+import { fixupPluginRules } from '@eslint/compat';
 import js from '@eslint/js';
 import eslintConfigPrettier from 'eslint-config-prettier';
 import eslintComments from 'eslint-plugin-eslint-comments';
@@ -18,13 +19,13 @@ const testFiles = [
 ];
 
 const commonPlugins = {
-  promise,
-  unicorn,
-  import: importPlugin,
-  'eslint-comments': eslintComments,
-  regexp,
-  'unused-imports': unusedImports,
-  'simple-import-sort': simpleImportSort,
+  promise: fixupPluginRules(promise),
+  unicorn: fixupPluginRules(unicorn),
+  import: fixupPluginRules(importPlugin),
+  'eslint-comments': fixupPluginRules(eslintComments),
+  regexp: fixupPluginRules(regexp),
+  'unused-imports': fixupPluginRules(unusedImports),
+  'simple-import-sort': fixupPluginRules(simpleImportSort),
 };
 
 const coreRules = {
@@ -136,15 +137,15 @@ export default [
   ...tseslint.configs.recommended,
 
   // TypeScript: type-aware linting only in src for performance
-  ...tseslint.configs.recommendedTypeChecked.map((config) => ({
-    ...config,
+  ...tseslint.configs.recommendedTypeChecked.map((configuration) => ({
+    ...configuration,
     files: ['src/**/*.{ts,tsx}'],
     languageOptions: {
-      ...(config.languageOptions ?? {}),
+      ...(configuration.languageOptions ?? {}),
       parserOptions: { projectService: true },
     },
     rules: {
-      ...(config.rules ?? {}),
+      ...(configuration.rules ?? {}),
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/await-thenable': 'error',
       '@typescript-eslint/no-unused-vars': 'off',
@@ -161,7 +162,7 @@ export default [
       'src/schema-utilities.ts',
       'src/inspect.ts',
       'src/create-tool.ts',
-      'src/create-armorer.ts',
+      'src/create-toolbox.ts',
     ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',

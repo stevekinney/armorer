@@ -27,12 +27,12 @@ export type { GeminiFunctionDeclaration, GeminiSchema, GeminiTool } from './type
  * const declarations = toGemini([tool1, tool2]);
  *
  * // From registry
- * const declarations = toGemini(armorer);
+ * const declarations = toGemini(toolbox);
  *
  * // Use with Gemini SDK
  * const model = genAI.getGenerativeModel({
  *   model: 'gemini-pro',
- *   tools: [{ functionDeclarations: toGemini(armorer) }],
+ *   tools: [{ functionDeclarations: toGemini(toolbox) }],
  * });
  * ```
  */

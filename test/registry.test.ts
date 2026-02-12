@@ -2,8 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
 import { createRegistry, defineTool } from '../src/core';
-import { createToolbox } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
+import { createToolbox } from '../src/create-toolbox';
 import { queryTools, reindexSearchIndex, searchTools } from '../src/registry';
 
 const makeTool = (
@@ -37,80 +37,80 @@ describe('registry helpers', () => {
       calls += 1;
       return texts.map(() => [1, 0]);
     };
-    const armorer = createToolbox([], { embed });
-    armorer.register(makeTool('reindex'));
+    const toolbox = createToolbox([], { embed });
+    toolbox.register(makeTool('reindex'));
 
     // Initial registration should have called the embedder
     expect(calls).toBe(1);
 
     // Reindexing with cached embeddings should not make additional calls
     // because the cached embedder returns stored results for the same texts
-    reindexSearchIndex(armorer);
+    reindexSearchIndex(toolbox);
     expect(calls).toBe(1);
 
     // Register a new tool and verify embedder is called again for new content
-    armorer.register(makeTool('new-tool'));
+    toolbox.register(makeTool('new-tool'));
     expect(calls).toBe(2);
   });
 
   it('treats empty text queries as match-all', () => {
-    const armorer = createToolbox();
-    armorer.register(makeTool('alpha'), makeTool('beta'));
+    const toolbox = createToolbox();
+    toolbox.register(makeTool('alpha'), makeTool('beta'));
 
-    const results = queryTools(armorer, { text: '   ' });
+    const results = queryTools(toolbox, { text: '   ' });
     expect(results.map((tool) => tool.name).sort()).toEqual(['alpha', 'beta']);
   });
 
   it('supports AND query groups', () => {
-    const armorer = createToolbox();
-    armorer.register(
+    const toolbox = createToolbox();
+    toolbox.register(
       makeTool('alpha', { tags: ['fast'] }),
       makeTool('beta', { tags: ['slow'] }),
     );
 
-    const results = queryTools(armorer, {
+    const results = queryTools(toolbox, {
       and: [{ tags: { any: ['fast'] } }, { text: 'alpha' }],
     });
     expect(results.map((tool) => tool.name)).toEqual(['alpha']);
   });
 
-  it('supports config and summary selection', () => {
-    const armorer = createToolbox();
+  it('supports configuration and summary selection', () => {
+    const toolbox = createToolbox();
     const tool = makeTool('meta', {
       tags: ['fast'],
       metadata: { tier: 'pro' },
     });
-    armorer.register(tool);
+    toolbox.register(tool);
 
-    const configs = queryTools(armorer, { select: 'config' });
-    expect(configs[0]?.name).toBe('meta');
+    const configurations = queryTools(toolbox, { select: 'configuration' });
+    expect(configurations[0]?.name).toBe('meta');
 
-    const summaries = queryTools(armorer, {
+    const summaries = queryTools(toolbox, {
       select: 'summary',
       includeSchema: true,
-      includeToolConfig: true,
+      includeToolConfiguration: true,
     });
     expect(summaries[0]?.metadata).toEqual({ tier: 'pro' });
     expect(summaries[0]?.schema).toBe(tool.schema);
     expect(summaries[0]?.configuration?.name).toBe('meta');
   });
 
-  it('supports name and config selections in search', () => {
-    const armorer = createToolbox();
-    armorer.register(makeTool('alpha'), makeTool('beta'));
+  it('supports name and configuration selections in search', () => {
+    const toolbox = createToolbox();
+    toolbox.register(makeTool('alpha'), makeTool('beta'));
 
-    const names = searchTools(armorer, { select: 'name' });
+    const names = searchTools(toolbox, { select: 'name' });
     expect(typeof names[0]?.tool).toBe('string');
 
-    const configs = searchTools(armorer, { select: 'config' });
-    expect(configs[0]?.tool.name).toBeDefined();
+    const configurations = searchTools(toolbox, { select: 'configuration' });
+    expect(configurations[0]?.tool.name).toBeDefined();
   });
 
   it('includes tag matches in explain details', () => {
-    const armorer = createToolbox();
-    armorer.register(makeTool('tagged', { tags: ['fast'] }));
+    const toolbox = createToolbox();
+    toolbox.register(makeTool('tagged', { tags: ['fast'] }));
 
-    const results = searchTools(armorer, {
+    const results = searchTools(toolbox, {
       rank: { tags: ['fast'] },
       explain: true,
     });
@@ -119,13 +119,13 @@ describe('registry helpers', () => {
   });
 
   it('supports ranker exclude and match merging', () => {
-    const armorer = createToolbox();
-    armorer.register(
+    const toolbox = createToolbox();
+    toolbox.register(
       makeTool('keep', { tags: ['fast'], metadata: { tier: 'pro' } }),
       makeTool('skip'),
     );
 
-    const results = searchTools(armorer, {
+    const results = searchTools(toolbox, {
       rank: { tags: ['fast'], text: 'keep' },
       explain: true,
       ranker: (tool) => {
@@ -152,10 +152,10 @@ describe('registry helpers', () => {
   });
 
   it('supports numeric ranker scores and tieBreaker none', () => {
-    const armorer = createToolbox();
-    armorer.register(makeTool('alpha'), makeTool('beta'));
+    const toolbox = createToolbox();
+    toolbox.register(makeTool('alpha'), makeTool('beta'));
 
-    const results = searchTools(armorer, {
+    const results = searchTools(toolbox, {
       ranker: () => 1,
       tieBreaker: 'none',
     });
@@ -164,22 +164,22 @@ describe('registry helpers', () => {
   });
 
   it('treats empty schema and tag filters as match-all', () => {
-    const armorer = createToolbox();
-    armorer.register(makeTool('alpha'), makeTool('beta'));
+    const toolbox = createToolbox();
+    toolbox.register(makeTool('alpha'), makeTool('beta'));
 
-    const bySchema = queryTools(armorer, { schema: { keys: [''] } });
+    const bySchema = queryTools(toolbox, { schema: { keys: [''] } });
     expect(bySchema).toHaveLength(2);
 
-    const byAnyTags = queryTools(armorer, { tags: { any: [''] } });
+    const byAnyTags = queryTools(toolbox, { tags: { any: [''] } });
     expect(byAnyTags).toHaveLength(2);
 
-    const byAllTags = queryTools(armorer, { tags: { all: [''] } });
+    const byAllTags = queryTools(toolbox, { tags: { all: [''] } });
     expect(byAllTags).toHaveLength(2);
   });
 
   it('handles metadata filter edge cases', () => {
-    const armorer = createToolbox();
-    armorer.register(
+    const toolbox = createToolbox();
+    toolbox.register(
       makeTool('meta', {
         metadata: {
           flags: ['alpha', 'beta'],
@@ -192,27 +192,27 @@ describe('registry helpers', () => {
       makeTool('plain'),
     );
 
-    const byFlags = queryTools(armorer, {
+    const byFlags = queryTools(toolbox, {
       metadata: { contains: { flags: ['alpha'] } },
     });
     expect(byFlags.map((tool) => tool.name)).toEqual(['meta']);
 
-    const byBoolean = queryTools(armorer, {
+    const byBoolean = queryTools(toolbox, {
       metadata: { contains: { enabled: 'yes' } },
     });
     expect(byBoolean).toHaveLength(0);
 
-    const byStartsWith = queryTools(armorer, {
+    const byStartsWith = queryTools(toolbox, {
       metadata: { startsWith: { owner: 'team-' } },
     });
     expect(byStartsWith.map((tool) => tool.name)).toEqual(['meta']);
 
-    const byRangeMax = queryTools(armorer, {
+    const byRangeMax = queryTools(toolbox, {
       metadata: { range: { score: { max: 5 } } },
     });
     expect(byRangeMax).toHaveLength(0);
 
-    const byRangeNonNumber = queryTools(armorer, {
+    const byRangeNonNumber = queryTools(toolbox, {
       metadata: { range: { temp: { min: 1 } } },
     });
     expect(byRangeNonNumber).toHaveLength(0);
@@ -221,29 +221,29 @@ describe('registry helpers', () => {
   it('handles embedding edge cases without crashing', () => {
     const embed = (texts: string[]) =>
       texts.map((text) => (text.includes('query') ? [1, 0] : [NaN]));
-    const armorer = createToolbox([], { embed });
-    armorer.register(makeTool('invalid-embedding'));
+    const toolbox = createToolbox([], { embed });
+    toolbox.register(makeTool('invalid-embedding'));
 
-    const results = searchTools(armorer, { rank: { text: 'query' } });
+    const results = searchTools(toolbox, { rank: { text: 'query' } });
     expect(results).toHaveLength(1);
   });
 
   it('skips embedding scores when vector lengths mismatch', () => {
     const embed = (texts: string[]) =>
       texts.map((text) => (text.includes('query') ? [1, 0, 0] : [1, 0]));
-    const armorer = createToolbox([], { embed });
-    armorer.register(makeTool('length-mismatch'));
+    const toolbox = createToolbox([], { embed });
+    toolbox.register(makeTool('length-mismatch'));
 
-    const results = searchTools(armorer, { rank: { text: 'query' } });
+    const results = searchTools(toolbox, { rank: { text: 'query' } });
     expect(results).toHaveLength(1);
   });
 
   it('handles sparse embedding vectors', () => {
     const embed = (texts: string[]) => texts.map(() => Array(2) as number[]);
-    const armorer = createToolbox([], { embed });
-    armorer.register(makeTool('sparse'));
+    const toolbox = createToolbox([], { embed });
+    toolbox.register(makeTool('sparse'));
 
-    const results = searchTools(armorer, { rank: { text: 'query' } });
+    const results = searchTools(toolbox, { rank: { text: 'query' } });
     expect(results).toHaveLength(1);
   });
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createToolbox } from '../../runtime/create-armorer';
-import { createTool } from '../../runtime/create-tool';
+import { createTool } from '../../create-tool';
+import { createToolbox } from '../../create-toolbox';
 import { formatToolResults, parseToolCalls, toOpenAI } from './index';
 
 describe('toOpenAI', () => {
@@ -61,17 +61,17 @@ describe('toOpenAI', () => {
 
   describe('registry conversion', () => {
     it('returns array for registry input', () => {
-      const armorer = createToolbox();
-      armorer.register(tool);
-      const openAI = toOpenAI(armorer);
+      const toolbox = createToolbox();
+      toolbox.register(tool);
+      const openAI = toOpenAI(toolbox);
       expect(Array.isArray(openAI)).toBe(true);
       expect(openAI).toHaveLength(1);
       expect(openAI[0]?.function.name).toBe('test-tool');
     });
 
     it('returns empty array for empty registry', () => {
-      const armorer = createToolbox();
-      const openAI = toOpenAI(armorer);
+      const toolbox = createToolbox();
+      const openAI = toOpenAI(toolbox);
       expect(Array.isArray(openAI)).toBe(true);
       expect(openAI).toHaveLength(0);
     });

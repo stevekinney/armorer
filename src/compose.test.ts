@@ -2,19 +2,10 @@ import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
 import type { ComposedTool } from './compose-types';
-import { createToolbox } from './create-armorer';
 import { createTool, createToolCall } from './create-tool';
+import { createToolbox } from './create-toolbox';
 import { isTool, type MinimalAbortSignal } from './is-tool';
-import {
-  bind,
-  compose,
-  parallel,
-  pipe,
-  PipelineError,
-  retry,
-  tap,
-  when,
-} from './utilities';
+import { bind, parallel, pipe, PipelineError, retry, tap, when } from './utilities';
 
 describe('pipe()', () => {
   // Setup test tools
@@ -289,8 +280,8 @@ describe('pipe()', () => {
   describe('composability', () => {
     it('composed tools can be registered in Toolbox', () => {
       const pipeline = pipe(parseNumber, double);
-      const armorer = createToolbox().register(pipeline);
-      const found = armorer.getTool('pipe(parse-number, double)');
+      const toolbox = createToolbox().register(pipeline);
+      const found = toolbox.getTool('pipe(parse-number, double)');
       expect(found).toBeDefined();
       expect(found?.name).toBe('pipe(parse-number, double)');
     });
@@ -333,57 +324,6 @@ describe('pipe()', () => {
       expect(result.result).toEqual({ value: 42 });
       expect(result.toolName).toBe('pipe(parse-number, double)');
     });
-  });
-});
-
-describe('compose()', () => {
-  const increment = createTool({
-    name: 'increment',
-    description: 'Adds 1',
-    schema: z.object({ value: z.number() }),
-    execute: async ({ value }) => ({ value: value + 1 }),
-  });
-
-  const double = createTool({
-    name: 'double',
-    description: 'Doubles',
-    schema: z.object({ value: z.number() }),
-    execute: async ({ value }) => ({ value: value * 2 }),
-  });
-
-  const square = createTool({
-    name: 'square',
-    description: 'Squares',
-    schema: z.object({ value: z.number() }),
-    execute: async ({ value }) => ({ value: value * value }),
-  });
-
-  it('composes right-to-left', async () => {
-    // compose(double, increment) means: first increment, then double
-    // Input: 5 -> increment -> 6 -> double -> 12
-    const composed = compose(double, increment);
-    const result = await composed({ value: 5 });
-    expect(result).toEqual({ value: 12 });
-  });
-
-  it('is equivalent to pipe with reversed order', async () => {
-    const pipeResult = await pipe(increment, double, square)({ value: 5 });
-    const composeResult = await compose(square, double, increment)({ value: 5 });
-
-    expect(pipeResult).toEqual(composeResult);
-  });
-
-  it('creates tool with correct name', () => {
-    const composed = compose(double, increment);
-    // After reversing: increment, double
-    expect(composed.name).toBe('pipe(increment, double)');
-  });
-
-  it('returns a valid tool instance', () => {
-    const composed = compose(double, increment);
-    expect(isTool(composed)).toBe(true);
-    expect(composed.configuration).toBeDefined();
-    expect(typeof composed.execute).toBe('function');
   });
 });
 
@@ -480,7 +420,7 @@ describe('tap()', () => {
   it('forwards signal and timeout to the wrapped tool', async () => {
     const observed: {
       signal?: MinimalAbortSignal | undefined;
-      timeoutMs?: number | undefined;
+      timeout?: number | undefined;
     } = {};
     const tool = createTool({
       name: 'tap-context',
@@ -488,7 +428,7 @@ describe('tap()', () => {
       schema: z.object({ value: z.number() }),
       async execute(_params, context) {
         observed.signal = context.signal;
-        observed.timeoutMs = context.timeoutMs;
+        observed.timeout = context.timeout;
         return { value: 1 };
       },
     });
@@ -498,11 +438,11 @@ describe('tap()', () => {
     await (tapped as any).executeWith({
       params: { value: 1 },
       signal: controller.signal,
-      timeoutMs: 99,
+      timeout: 99,
     });
 
     expect(observed.signal).toBe(controller.signal);
-    expect(observed.timeoutMs).toBe(99);
+    expect(observed.timeout).toBe(99);
   });
 });
 
@@ -541,7 +481,7 @@ describe('when()', () => {
   it('forwards execution options to branch tools', async () => {
     const observed: {
       signal?: MinimalAbortSignal | undefined;
-      timeoutMs?: number | undefined;
+      timeout?: number | undefined;
     } = {};
     const capture = createTool({
       name: 'capture',
@@ -549,7 +489,7 @@ describe('when()', () => {
       schema: z.object({ value: z.number() }),
       async execute(_params, context) {
         observed.signal = context.signal;
-        observed.timeoutMs = context.timeoutMs;
+        observed.timeout = context.timeout;
         return { value: 1 };
       },
     });
@@ -559,11 +499,11 @@ describe('when()', () => {
     await (conditional as any).executeWith({
       params: { value: 1 },
       signal: controller.signal,
-      timeoutMs: 55,
+      timeout: 55,
     });
 
     expect(observed.signal).toBe(controller.signal);
-    expect(observed.timeoutMs).toBe(55);
+    expect(observed.timeout).toBe(55);
   });
 });
 
@@ -621,14 +561,14 @@ describe('parallel()', () => {
   it('forwards signal and timeout to each tool', async () => {
     const observed: Array<{
       signal?: MinimalAbortSignal | undefined;
-      timeoutMs?: number | undefined;
+      timeout?: number | undefined;
     }> = [];
     const capture = createTool({
       name: 'capture',
       description: 'captures context',
       schema: z.object({ value: z.number() }),
       async execute(_params, context) {
-        observed.push({ signal: context.signal, timeoutMs: context.timeoutMs });
+        observed.push({ signal: context.signal, timeout: context.timeout });
         return { value: 1 };
       },
     });
@@ -638,13 +578,13 @@ describe('parallel()', () => {
     await (combined as any).executeWith({
       params: { value: 1 },
       signal: controller.signal,
-      timeoutMs: 25,
+      timeout: 25,
     });
 
     expect(observed).toHaveLength(2);
     for (const entry of observed) {
       expect(entry.signal).toBe(controller.signal);
-      expect(entry.timeoutMs).toBe(25);
+      expect(entry.timeout).toBe(25);
     }
   });
 });

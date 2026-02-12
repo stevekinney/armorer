@@ -1,7 +1,7 @@
 {
   "name": "armorer",
   "version": "0.7.1",
-  "description": "A lightweight registry for validated AI tools. Build tools with Zod schemas and metadata, register them in an armorer, and execute/query them with event hooks.",
+  "description": "A lightweight registry for validated AI tools. Build tools with Zod schemas and metadata, register them in a toolbox, and execute/query them with event hooks.",
   "keywords": [
     "ai",
     "llm",
@@ -39,12 +39,6 @@
       "import": "./dist/core/index.js",
       "require": "./dist/core/index.cjs",
       "default": "./dist/core/index.js"
-    },
-    "./runtime": {
-      "types": "./dist/runtime/index.d.ts",
-      "import": "./dist/runtime/index.js",
-      "require": "./dist/runtime/index.cjs",
-      "default": "./dist/runtime/index.js"
     },
     "./query": {
       "types": "./dist/query/index.d.ts",
@@ -124,29 +118,17 @@
       "require": "./dist/adapters/gemini/index.cjs",
       "default": "./dist/adapters/gemini/index.js"
     },
-    "./claude-agent-sdk": {
-      "types": "./dist/integrations/claude-agent-sdk/index.d.ts",
-      "import": "./dist/integrations/claude-agent-sdk/index.js",
-      "require": "./dist/integrations/claude-agent-sdk/index.cjs",
-      "default": "./dist/integrations/claude-agent-sdk/index.js"
+    "./open-ai/agents": {
+      "types": "./dist/open-ai/agents/index.d.ts",
+      "import": "./dist/open-ai/agents/index.js",
+      "require": "./dist/open-ai/agents/index.cjs",
+      "default": "./dist/open-ai/agents/index.js"
     },
-    "./integrations/claude-agent-sdk": {
-      "types": "./dist/integrations/claude-agent-sdk/index.d.ts",
-      "import": "./dist/integrations/claude-agent-sdk/index.js",
-      "require": "./dist/integrations/claude-agent-sdk/index.cjs",
-      "default": "./dist/integrations/claude-agent-sdk/index.js"
-    },
-    "./openai-agents-sdk": {
-      "types": "./dist/integrations/openai-agents-sdk/index.d.ts",
-      "import": "./dist/integrations/openai-agents-sdk/index.js",
-      "require": "./dist/integrations/openai-agents-sdk/index.cjs",
-      "default": "./dist/integrations/openai-agents-sdk/index.js"
-    },
-    "./integrations/openai-agents-sdk": {
-      "types": "./dist/integrations/openai-agents-sdk/index.d.ts",
-      "import": "./dist/integrations/openai-agents-sdk/index.js",
-      "require": "./dist/integrations/openai-agents-sdk/index.cjs",
-      "default": "./dist/integrations/openai-agents-sdk/index.js"
+    "./adapters/open-ai/agents": {
+      "types": "./dist/adapters/open-ai/agents/index.d.ts",
+      "import": "./dist/adapters/open-ai/agents/index.js",
+      "require": "./dist/adapters/open-ai/agents/index.cjs",
+      "default": "./dist/adapters/open-ai/agents/index.js"
     },
     "./tools": {
       "types": "./dist/tools/index.d.ts",
@@ -216,57 +198,54 @@
     ]
   },
   "dependencies": {
-    "event-emission": "0.2.0"
+    "event-emission": "0.2.1"
   },
   "devDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.6",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.39",
+    "@eslint/compat": "^2.0.2",
     "@eslint/eslintrc": "^3.3.3",
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@eslint/markdown": "^7.5.1",
     "@lasercat/homogenaize": "^1.2.41",
-    "@modelcontextprotocol/sdk": "^1.25.2",
-    "@openai/agents": "^0.3.7",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@openai/agents": "^0.4.7",
     "@opentelemetry/api": "^1.9.0",
-    "@types/bun": "^1.3.5",
+    "@types/bun": "^1.3.9",
     "@types/mdast": "^4.0.4",
-    "@typescript-eslint/eslint-plugin": "^8.50.0",
-    "@typescript-eslint/parser": "^8.50.0",
+    "@typescript-eslint/eslint-plugin": "^8.55.0",
+    "@typescript-eslint/parser": "^8.55.0",
     "chalk": "^5.6.2",
-    "eslint": "^9.39.2",
+    "eslint": "^10.0.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-eslint-comments": "^3.2.0",
     "eslint-plugin-import": "^2.32.0",
-    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-promise": "^7.2.1",
-    "eslint-plugin-regexp": "^2.10.0",
+    "eslint-plugin-regexp": "^3.0.0",
     "eslint-plugin-simple-import-sort": "^12.1.1",
-    "eslint-plugin-unicorn": "^62.0.0",
-    "eslint-plugin-unused-imports": "^4.3.0",
-    "globals": "^16.5.0",
+    "eslint-plugin-unicorn": "^63.0.0",
+    "eslint-plugin-unused-imports": "^4.4.1",
+    "globals": "^17.3.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
-    "prettier": "^3.7.4",
+    "prettier": "^3.8.1",
     "remark": "^15.0.1",
     "remark-parse": "^11.0.0",
     "remark-stringify": "^11.0.0",
-    "sort-package-json": "^3.6.0",
-    "typescript-eslint": "^8.50.0",
+    "sort-package-json": "^3.6.1",
+    "typescript-eslint": "^8.55.0",
     "unified": "^11.0.5",
     "unist-util-remove": "^4.0.0",
-    "zod": "^4.2.1"
+    "zod": "^4.3.6"
   },
   "peerDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.6",
-    "@modelcontextprotocol/sdk": "^1.25.2",
-    "@openai/agents": "^0.3.7",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@openai/agents": "^0.4.7",
     "@opentelemetry/api": "^1.9.0",
-    "zod": "^4.0.0"
+    "zod": "^4.3.6"
   },
   "peerDependenciesMeta": {
-    "@anthropic-ai/claude-agent-sdk": {
-      "optional": true
-    },
     "@modelcontextprotocol/sdk": {
       "optional": true
     },

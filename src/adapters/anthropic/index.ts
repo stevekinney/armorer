@@ -24,13 +24,13 @@ export type { AnthropicInputSchema, AnthropicTool, JSONSchemaProperty } from './
  * const tools = toAnthropic([tool1, tool2]);
  *
  * // From registry
- * const tools = toAnthropic(armorer);
+ * const tools = toAnthropic(toolbox);
  *
  * // Use with Anthropic SDK
  * const response = await anthropic.messages.create({
  *   model: 'claude-sonnet-4-20250514',
  *   messages,
- *   tools: toAnthropic(armorer),
+ *   tools: toAnthropic(toolbox),
  * });
  * ```
  */

@@ -22,7 +22,7 @@ export function isToolDefinition(input: unknown): input is AnyToolDefinition {
     (typeof input === 'object' || typeof input === 'function') &&
     'id' in input &&
     'identity' in input &&
-    'schema' in input &&
+    ('schema' in input || 'parameters' in input) &&
     !('schemaVersion' in input)
   );
 }

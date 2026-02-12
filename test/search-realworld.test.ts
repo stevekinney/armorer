@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createToolbox } from '../src/create-armorer';
-import type { ToolConfig } from '../src/is-tool';
+import { createToolbox } from '../src/create-toolbox';
+import type { ToolConfiguration } from '../src/is-tool';
 import { searchTools } from '../src/registry';
 
 const makeRegistry = (embed?: (texts: string[]) => number[][]) =>
@@ -10,8 +10,8 @@ const makeRegistry = (embed?: (texts: string[]) => number[][]) =>
 
 describe('search real-world scenarios', () => {
   it('ranks refund workflows highest for refund searches', () => {
-    const armorer = makeRegistry();
-    const results = searchTools(armorer, {
+    const toolbox = makeRegistry();
+    const results = searchTools(toolbox, {
       rank: { text: 'refund order' },
       limit: 3,
     });
@@ -20,8 +20,8 @@ describe('search real-world scenarios', () => {
   });
 
   it('highlights schema key matches in explain output', () => {
-    const armorer = makeRegistry();
-    const results = searchTools(armorer, {
+    const toolbox = makeRegistry();
+    const results = searchTools(toolbox, {
       rank: { text: 'trackingId' },
       explain: true,
       limit: 2,
@@ -34,8 +34,8 @@ describe('search real-world scenarios', () => {
   });
 
   it('matches metadata keys for localization tools', () => {
-    const armorer = makeRegistry();
-    const results = searchTools(armorer, {
+    const toolbox = makeRegistry();
+    const results = searchTools(toolbox, {
       rank: { text: 'locale' },
       explain: true,
       limit: 2,
@@ -48,8 +48,8 @@ describe('search real-world scenarios', () => {
   });
 
   it('honors tag boosts for risk investigations', () => {
-    const armorer = makeRegistry();
-    const results = searchTools(armorer, {
+    const toolbox = makeRegistry();
+    const results = searchTools(toolbox, {
       rank: { tags: ['fraud', 'risk'], tagWeights: { fraud: 3 } },
       limit: 3,
     });
@@ -83,8 +83,8 @@ describe('search real-world scenarios', () => {
         return [0, 0];
       });
 
-    const armorer = makeRegistry(embed);
-    const results = searchTools(armorer, {
+    const toolbox = makeRegistry(embed);
+    const results = searchTools(toolbox, {
       rank: { text: { query: 'parcel location', mode: 'fuzzy', threshold: 0.4 } },
       explain: true,
       limit: 3,
@@ -100,7 +100,7 @@ describe('search real-world scenarios', () => {
   });
 });
 
-function realWorldTools(): ToolConfig[] {
+function realWorldTools(): ToolConfiguration[] {
   return [
     {
       name: 'issue-refund',

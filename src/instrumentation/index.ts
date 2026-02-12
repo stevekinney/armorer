@@ -7,7 +7,7 @@ import {
   type Tracer,
 } from '@opentelemetry/api';
 
-import type { Toolbox } from '../runtime/create-armorer';
+import type { Toolbox } from '../create-toolbox';
 
 export type InstrumentationOptions = {
   tracer?: Tracer;
@@ -16,21 +16,21 @@ export type InstrumentationOptions = {
 };
 
 /**
- * Instruments an Toolbox instance with OpenTelemetry tracing.
+ * Instruments a Toolbox instance with OpenTelemetry tracing.
  *
  * Automatically creates spans for tool executions and events.
  *
- * @param armorer - The Toolbox instance to instrument.
+ * @param toolbox - The Toolbox instance to instrument.
  * @param options - Configuration options.
  * @returns A function to unregister the instrumentation.
  */
 export function instrument(
-  armorer: Toolbox,
+  toolbox: Toolbox,
   options: InstrumentationOptions = {},
 ): () => void {
   const tracer =
     options.tracer ??
-    trace.getTracer(options.tracerName ?? 'armorer', options.tracerVersion ?? '0.0.0');
+    trace.getTracer(options.tracerName ?? 'toolbox', options.tracerVersion ?? '0.0.0');
 
   const activeSpans = new Map<string, Span>();
 
@@ -46,12 +46,12 @@ export function instrument(
   };
 
   subscriptions.push(
-    armorer.addEventListener('call', (event) => {
+    toolbox.addEventListener('call', (event) => {
       const { tool, call } = event.detail;
       const span = tracer.startSpan(`tool ${tool.identity.name}`, {
         kind: SpanKind.CLIENT,
         attributes: {
-          'gen_ai.system': 'armorer',
+          'gen_ai.system': 'toolbox',
           'gen_ai.tool.name': tool.identity.name,
           'gen_ai.tool.id': call.id,
           'gen_ai.tool.arguments': safeStringify(call.arguments),
@@ -62,7 +62,7 @@ export function instrument(
   );
 
   subscriptions.push(
-    armorer.addEventListener('tool.started', (event) => {
+    toolbox.addEventListener('tool.started', (event) => {
       const { toolCall, params, dryRun } = event.detail;
       const span = activeSpans.get(toolCall.id);
       if (span) {
@@ -75,7 +75,7 @@ export function instrument(
   );
 
   subscriptions.push(
-    armorer.addEventListener('tool.finished', (event) => {
+    toolbox.addEventListener('tool.finished', (event) => {
       const {
         toolCall,
         status,
@@ -145,7 +145,7 @@ export function instrument(
 
   // Fallback for 'complete' event if tool.finished didn't fire (should be redundant but safe)
   subscriptions.push(
-    armorer.addEventListener('complete', (event) => {
+    toolbox.addEventListener('complete', (event) => {
       const { result } = event.detail;
       const span = activeSpans.get(result.callId);
       if (span && result.outcome === 'success') {
@@ -157,7 +157,7 @@ export function instrument(
 
   // Fallback for 'error' event
   subscriptions.push(
-    armorer.addEventListener('error', (event) => {
+    toolbox.addEventListener('error', (event) => {
       const { result } = event.detail;
       const span = activeSpans.get(result.callId);
       if (span) {

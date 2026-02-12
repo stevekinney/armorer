@@ -9,17 +9,20 @@ import type {
   Implementation,
   ServerNotification,
   ServerRequest,
+  Tool as MCPTool,
   ToolAnnotations,
   ToolExecution,
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
 import { isZodSchema } from '../../core/schema-utilities';
-import type { Toolbox } from '../../runtime/create-armorer';
-import type { Tool, ToolExecuteWithOptions } from '../../runtime/is-tool';
-import type { ToolResult } from '../../runtime/types';
+import { createTool } from '../../create-tool';
+import { isToolbox, type Toolbox } from '../../create-toolbox';
+import type { Tool, ToolExecuteWithOptions } from '../../is-tool';
+import { isTool } from '../../is-tool';
+import type { ToolResult } from '../../types';
 
-export type MCPToolConfig = {
+export type MCPToolConfiguration = {
   title?: string;
   description?: string;
   schema?: AnySchema;
@@ -32,70 +35,70 @@ export type MCPToolConfig = {
 export type MCPResourceRegistrar = (server: McpServer) => void;
 export type MCPPromptRegistrar = (server: McpServer) => void;
 
+export type MCPToolLike = {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: AnySchema;
+  outputSchema?: AnySchema;
+  annotations?: ToolAnnotations;
+  execution?: ToolExecution;
+  _meta?: Record<string, unknown>;
+};
+
+export type MCPToolHandler = (
+  args: unknown,
+  extra?: RequestHandlerExtra<ServerRequest, ServerNotification>,
+) => Promise<CallToolResult>;
+
+export type MCPToolDefinition = MCPToolLike & {
+  inputSchema: AnySchema;
+  handler: MCPToolHandler;
+};
+
+export type MCPToolSource = MCPTool | MCPToolLike | MCPToolDefinition;
+
+export type ToMCPToolsOptions = {
+  toolConfiguration?: (tool: Tool) => MCPToolConfiguration;
+  formatResult?: (result: ToolResult) => CallToolResult;
+};
+
+export type FromMCPToolsOptions = {
+  callTool?: (request: {
+    name: string;
+    arguments?: Record<string, unknown>;
+  }) => Promise<CallToolResult>;
+  formatResult?: (result: CallToolResult, tool: MCPToolSource) => unknown;
+  toolbox?: Toolbox;
+};
+
 export type CreateMCPOptions = ServerOptions & {
   serverInfo?: Implementation;
-  toolConfig?: (tool: Tool) => MCPToolConfig;
-  formatResult?: (result: ToolResult) => CallToolResult;
+  toolConfiguration?: ToMCPToolsOptions['toolConfiguration'];
+  formatResult?: ToMCPToolsOptions['formatResult'];
   resources?: MCPResourceRegistrar | MCPResourceRegistrar[];
   prompts?: MCPPromptRegistrar | MCPPromptRegistrar[];
 };
 
 const DEFAULT_SERVER_INFO: Implementation = {
-  name: 'armorer',
+  name: 'toolbox',
   version: '0.0.0',
 };
 
-export function createMCP(armorer: Toolbox, options: CreateMCPOptions = {}): McpServer {
-  const { serverInfo, toolConfig, formatResult, resources, prompts, ...serverOptions } =
-    options;
+export function createMCP(toolbox: Toolbox, options: CreateMCPOptions = {}): McpServer {
+  const {
+    serverInfo,
+    toolConfiguration,
+    formatResult,
+    resources,
+    prompts,
+    ...serverOptions
+  } = options;
   const { McpServer: McpServerClass } = requireMcp();
   const server = new McpServerClass(serverInfo ?? DEFAULT_SERVER_INFO, serverOptions);
   const registered = new Map<string, RegisteredTool>();
 
-  const registerTool = (tool: Tool) => {
-    const metadataConfig = toolConfigFromMetadata(tool);
-    const config = { ...metadataConfig, ...(toolConfig?.(tool) ?? {}) };
-    const meta = config?.meta ?? tool.metadata;
-    const readOnlyHint = tool.metadata?.readOnly === true;
-    const annotations = readOnlyHint
-      ? {
-          ...(config?.annotations ?? {}),
-          ...(config?.annotations?.readOnlyHint === undefined
-            ? { readOnlyHint: true }
-            : {}),
-        }
-      : config?.annotations;
-    const resolvedInputSchema =
-      resolveMcpSchema(config?.schema) ?? (tool.schema as AnySchema);
-    const resolvedOutputSchema = resolveMcpSchema(config?.outputSchema);
-    const registeredConfig: {
-      title?: string;
-      description?: string;
-      inputSchema: AnySchema;
-      outputSchema?: AnySchema;
-      annotations?: ToolAnnotations;
-      execution?: ToolExecution;
-      _meta?: Record<string, unknown>;
-    } = {
-      description: config?.description ?? tool.description,
-      inputSchema: resolvedInputSchema,
-    };
-    if (config?.title !== undefined) {
-      registeredConfig.title = config.title;
-    }
-    if (annotations !== undefined) {
-      registeredConfig.annotations = annotations;
-    }
-    if (config?.execution !== undefined) {
-      registeredConfig.execution = config.execution;
-    }
-    if (resolvedOutputSchema) {
-      registeredConfig.outputSchema = resolvedOutputSchema;
-    }
-    if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
-      registeredConfig._meta = meta;
-    }
-
+  const registerTool = (tool: MCPToolDefinition) => {
     const toolName = tool.name;
     const existing = registered.get(toolName);
     if (existing) {
@@ -104,51 +107,282 @@ export function createMCP(armorer: Toolbox, options: CreateMCPOptions = {}): Mcp
 
     const registeredTool = server.registerTool(
       toolName,
-      registeredConfig,
-      async (
-        args: unknown,
-        extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
-      ) => {
-        const params = args ?? {};
-        let result: ToolResult;
-        try {
-          const runnable = tool as unknown as {
-            executeWith: (options: ToolExecuteWithOptions) => Promise<ToolResult>;
-          };
-          result = await runnable.executeWith({
-            params,
-            callId: String(extra.requestId),
-            signal: extra.signal,
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          return {
-            content: toTextContent(message),
-            isError: true,
-          };
-        }
-        return formatResult ? formatResult(result) : toCallToolResult(result);
-      },
+      toMcpRegisteredToolConfiguration(tool),
+      tool.handler,
     );
 
     registered.set(toolName, registeredTool);
   };
 
-  for (const tool of armorer.tools()) {
+  for (const tool of toMcpTools(toolbox, { toolConfiguration, formatResult })) {
     registerTool(tool);
   }
 
   applyRegistrars(server, resources);
   applyRegistrars(server, prompts);
 
-  armorer.addEventListener('registered', (event) => {
-    registerTool(event.detail);
+  toolbox.addEventListener('registered', (event) => {
+    const [nextTool] = toMcpTools(event.detail, { toolConfiguration, formatResult });
+    if (nextTool) {
+      registerTool(nextTool);
+    }
     if (server.isConnected()) {
       void server.sendToolListChanged();
     }
   });
 
   return server;
+}
+
+export function toMcpTools(
+  input: Toolbox | Tool | Tool[],
+  options: ToMCPToolsOptions = {},
+): MCPToolDefinition[] {
+  const tools = normalizeToolInput(input);
+  return tools.map((tool) => toMcpToolDefinition(tool, options));
+}
+
+export function fromMcpTools(
+  tools: readonly MCPToolSource[],
+  options: FromMCPToolsOptions = {},
+): Tool[] {
+  return tools.map((mcpTool) => {
+    const schema = resolveMcpSchema(mcpTool.inputSchema) ?? z.object({}).passthrough();
+    const metadata = metadataFromMcpTool(mcpTool);
+    const createOptions: Parameters<typeof createTool>[0] = {
+      name: mcpTool.name,
+      description: mcpTool.description ?? mcpTool.title ?? mcpTool.name,
+      schema: schema as z.ZodTypeAny,
+      async execute(params) {
+        const callResult = await executeMcpTool(mcpTool, params, options.callTool);
+        return options.formatResult
+          ? options.formatResult(callResult, mcpTool)
+          : parseMcpCallResult(callResult);
+      },
+    };
+    if (metadata) {
+      createOptions.metadata = metadata;
+    }
+    return createTool(createOptions, options.toolbox);
+  }) as Tool[];
+}
+
+function toMcpToolDefinition(tool: Tool, options: ToMCPToolsOptions): MCPToolDefinition {
+  const metadataConfiguration = toolConfigurationFromMetadata(tool);
+  const configuration = {
+    ...metadataConfiguration,
+    ...(options.toolConfiguration?.(tool) ?? {}),
+  };
+  const meta = configuration.meta ?? tool.metadata;
+  const readOnlyHint = tool.metadata?.readOnly === true;
+  const annotations = readOnlyHint
+    ? {
+        ...(configuration.annotations ?? {}),
+        ...(configuration.annotations?.readOnlyHint === undefined
+          ? { readOnlyHint: true }
+          : {}),
+      }
+    : configuration.annotations;
+  const resolvedInputSchema =
+    resolveMcpSchema(configuration.schema) ?? (tool.schema as unknown as AnySchema);
+  const resolvedOutputSchema = resolveMcpSchema(configuration.outputSchema);
+
+  const mcpTool: MCPToolDefinition = {
+    name: tool.name,
+    description: configuration.description ?? tool.description,
+    inputSchema: resolvedInputSchema,
+    handler: async (args, extra) => {
+      const params = args ?? {};
+      let result: ToolResult;
+      try {
+        const runnable = tool as unknown as {
+          executeWith: (options: ToolExecuteWithOptions) => Promise<ToolResult>;
+        };
+        const executeOptions: ToolExecuteWithOptions = { params };
+        if (extra?.requestId !== undefined) {
+          executeOptions.callId = String(extra.requestId);
+        }
+        if (extra?.signal) {
+          executeOptions.signal = extra.signal;
+        }
+        result = await runnable.executeWith(executeOptions);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: toTextContent(message),
+          isError: true,
+        };
+      }
+      return options.formatResult
+        ? options.formatResult(result)
+        : toCallToolResult(result);
+    },
+  };
+
+  if (configuration.title !== undefined) {
+    mcpTool.title = configuration.title;
+  }
+  if (annotations !== undefined) {
+    mcpTool.annotations = annotations;
+  }
+  if (configuration.execution !== undefined) {
+    mcpTool.execution = configuration.execution;
+  }
+  if (resolvedOutputSchema) {
+    mcpTool.outputSchema = resolvedOutputSchema;
+  }
+  if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+    mcpTool._meta = meta;
+  }
+
+  return mcpTool;
+}
+
+function toMcpRegisteredToolConfiguration(tool: MCPToolDefinition): {
+  title?: string;
+  description?: string;
+  inputSchema: AnySchema;
+  outputSchema?: AnySchema;
+  annotations?: ToolAnnotations;
+  execution?: ToolExecution;
+  _meta?: Record<string, unknown>;
+} {
+  const configuration: {
+    title?: string;
+    description?: string;
+    inputSchema: AnySchema;
+    outputSchema?: AnySchema;
+    annotations?: ToolAnnotations;
+    execution?: ToolExecution;
+    _meta?: Record<string, unknown>;
+  } = {
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+  };
+  if (tool.title !== undefined) {
+    configuration.title = tool.title;
+  }
+  if (tool.annotations !== undefined) {
+    configuration.annotations = tool.annotations;
+  }
+  if (tool.execution !== undefined) {
+    configuration.execution = tool.execution;
+  }
+  if (tool.outputSchema !== undefined) {
+    configuration.outputSchema = tool.outputSchema;
+  }
+  if (tool._meta !== undefined) {
+    configuration._meta = tool._meta;
+  }
+  return configuration;
+}
+
+function normalizeToolInput(input: Toolbox | Tool | Tool[]): Tool[] {
+  if (isToolbox(input)) {
+    return input.tools();
+  }
+  if (Array.isArray(input)) {
+    return input.map((tool) => {
+      if (!isTool(tool) && !isToolLike(tool)) {
+        throw new TypeError('Invalid tool input: expected Tool');
+      }
+      return tool;
+    });
+  }
+  if (isTool(input) || isToolLike(input)) {
+    return [input];
+  }
+  throw new TypeError('Invalid input: expected tool, tool array, or Toolbox');
+}
+
+function isToolLike(value: unknown): value is Tool {
+  return (
+    isRecord(value) &&
+    isString(value['name']) &&
+    isString(value['description']) &&
+    'schema' in value &&
+    typeof value['executeWith'] === 'function'
+  );
+}
+
+function hasMcpToolHandler(tool: MCPToolSource): tool is MCPToolDefinition {
+  return typeof (tool as MCPToolDefinition).handler === 'function';
+}
+
+async function executeMcpTool(
+  tool: MCPToolSource,
+  params: unknown,
+  callTool: FromMCPToolsOptions['callTool'],
+): Promise<CallToolResult> {
+  if (hasMcpToolHandler(tool)) {
+    return tool.handler(params ?? {});
+  }
+  if (!callTool) {
+    throw new Error(`fromMcpTools() requires callTool() for "${tool.name}".`);
+  }
+  return callTool({
+    name: tool.name,
+    arguments: isRecord(params) ? params : {},
+  });
+}
+
+function metadataFromMcpTool(tool: MCPToolSource): Tool['metadata'] {
+  const metadata: NonNullable<Tool['metadata']> = {};
+  if (tool.annotations?.readOnlyHint === true) {
+    metadata['readOnly'] = true;
+  }
+
+  const mcp: { title?: string; description?: string } = {};
+  if (tool.title !== undefined) mcp['title'] = tool.title;
+  if (tool.description !== undefined) mcp['description'] = tool.description;
+  if (Object.keys(mcp).length) {
+    metadata['mcp'] = mcp;
+  }
+
+  return Object.keys(metadata).length ? metadata : undefined;
+}
+
+function parseMcpCallResult(result: CallToolResult): unknown {
+  if (result.isError) {
+    throw new Error(extractMcpErrorMessage(result));
+  }
+  if (result.structuredContent !== undefined) {
+    return result.structuredContent;
+  }
+  const content = Array.isArray(result.content) ? result.content : [];
+  if (!content.length) {
+    return undefined;
+  }
+  const textBlocks = content.filter(isTextContentBlock);
+  if (textBlocks.length !== content.length) {
+    return content;
+  }
+  const [first] = textBlocks;
+  if (textBlocks.length === 1 && first) {
+    return parseTextContent(first.text);
+  }
+  return textBlocks.map((block) => parseTextContent(block.text));
+}
+
+function extractMcpErrorMessage(result: CallToolResult): string {
+  const content = Array.isArray(result.content) ? result.content : [];
+  const text = content
+    .filter(isTextContentBlock)
+    .map((block) => block.text)
+    .join('\n');
+  return text.trim().length ? text : 'MCP tool call failed.';
+}
+
+function parseTextContent(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function isTextContentBlock(value: unknown): value is { type: 'text'; text: string } {
+  return isRecord(value) && value['type'] === 'text' && isString(value['text']);
 }
 
 function toCallToolResult(result: ToolResult): CallToolResult {
@@ -200,7 +434,9 @@ function toTextContent(text: string): CallToolResult['content'] {
   return [{ type: 'text' as const, text }];
 }
 
-export function toolConfigFromMetadata(tool: Tool): MCPToolConfig | undefined {
+export function toolConfigurationFromMetadata(
+  tool: Tool,
+): MCPToolConfiguration | undefined {
   const metadata = tool.metadata;
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
     return undefined;
@@ -209,13 +445,17 @@ export function toolConfigFromMetadata(tool: Tool): MCPToolConfig | undefined {
   if (!mcp || typeof mcp !== 'object' || Array.isArray(mcp)) {
     return undefined;
   }
-  const config = mcp as Partial<MCPToolConfig>;
-  const resolved: MCPToolConfig = {};
-  if (config.title !== undefined) resolved.title = config.title;
-  if (config.description !== undefined) resolved.description = config.description;
-  if (config.schema !== undefined) resolved.schema = config.schema;
-  if (config.outputSchema !== undefined) resolved.outputSchema = config.outputSchema;
-  let annotations = config.annotations ? { ...config.annotations } : undefined;
+  const configuration = mcp as Partial<MCPToolConfiguration>;
+  const resolved: MCPToolConfiguration = {};
+  if (configuration.title !== undefined) resolved.title = configuration.title;
+  if (configuration.description !== undefined)
+    resolved.description = configuration.description;
+  if (configuration.schema !== undefined) resolved.schema = configuration.schema;
+  if (configuration.outputSchema !== undefined)
+    resolved.outputSchema = configuration.outputSchema;
+  let annotations = configuration.annotations
+    ? { ...configuration.annotations }
+    : undefined;
   if (metadata.readOnly === true) {
     if (!annotations) {
       annotations = { readOnlyHint: true };
@@ -224,8 +464,8 @@ export function toolConfigFromMetadata(tool: Tool): MCPToolConfig | undefined {
     }
   }
   if (annotations) resolved.annotations = annotations;
-  if (config.execution !== undefined) resolved.execution = config.execution;
-  if (config.meta !== undefined) resolved.meta = config.meta;
+  if (configuration.execution !== undefined) resolved.execution = configuration.execution;
+  if (configuration.meta !== undefined) resolved.meta = configuration.meta;
   return resolved;
 }
 
@@ -263,12 +503,12 @@ type JsonSchemaObject = {
 
 function resolveMcpSchema(schema: unknown): AnySchema | undefined {
   if (schema === undefined) return undefined;
-  if (isZodSchema(schema)) return schema as AnySchema;
+  if (isZodSchema(schema)) return schema as unknown as AnySchema;
   if (isZodRawShape(schema)) {
-    return z.object(schema);
+    return z.object(schema) as unknown as AnySchema;
   }
   const converted = jsonSchemaToZod(schema);
-  return converted ? (converted as AnySchema) : undefined;
+  return converted ? (converted as unknown as AnySchema) : undefined;
 }
 
 function isZodRawShape(value: unknown): value is Record<string, z.ZodTypeAny> {

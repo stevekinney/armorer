@@ -1,6 +1,6 @@
 # Toolbox
 
-A lightweight, type-safe registry for validated AI tools. Build tools with Zod schemas and metadata, register them in an armorer, execute them, and query/rank them with registry helpers and event hooks.
+A lightweight, type-safe registry for validated AI tools. Build tools with Zod schemas and metadata, register them in a toolbox, execute them, and query/rank them with registry helpers and event hooks.
 
 ## Table of Contents
 
@@ -13,7 +13,6 @@ A lightweight, type-safe registry for validated AI tools. Build tools with Zod s
 - [Creating Tools](#creating-tools)
 - [TypeScript](#typescript)
 - [Documentation](#documentation)
-- [Migration Guide](#migration-guide)
 - [License](#license)
 
 ## Overview
@@ -27,13 +26,13 @@ Toolbox turns tool calling into a structured, observable, and searchable workflo
 - Query + search helpers with scoring and metadata filters
 - Semantic search with vector embeddings (OpenAI, Pinecone, etc.)
 - Provider adapters for OpenAI, Anthropic, and Gemini
-- Tool composition utilities (pipe/compose/bind/when/parallel/retry)
+- Tool composition utilities (pipe/bind/when/parallel/retry)
 - **Dry Run Support**: Preview tool effects before execution
 - **OpenTelemetry Instrumentation**: Native tracing for agentic loops
 - **Built-in Middleware**: Caching, Rate Limiting, and Timeouts
 - **Testing Utilities**: Mock tools and test registries for easy verification
 - MCP server integration for exposing tools over MCP
-- Claude Agent SDK and OpenAI Agents SDK integrations with tool gating
+- OpenAI Agents SDK integration with tool gating and MCP support for Claude Agent SDK
 - Concurrency controls and execution tracing hooks
 - Pre-configured search tool for semantic tool discovery in agentic workflows
 
@@ -53,15 +52,15 @@ import { createToolbox, createTool, isTool } from 'armorer';
 
 **Exports:** `createToolbox`, `createTool`, `createToolCall`, `combineToolboxes`, `lazy`, `withContext`, `isTool`, `isToolbox`, `createMiddleware`, and all core types.
 
-#### `armorer/runtime`
+#### `armorer/utilities`
 
-Extended runtime with composition and utility functions:
+Composition and utility functions:
 
 ```typescript
-import { pipe, compose, parallel, retry, when } from 'armorer/runtime';
+import { pipe, parallel, retry, when } from 'armorer/utilities';
 ```
 
-**Exports:** Everything from main entry point **plus** `pipe`, `compose`, `bind`, `parallel`, `retry`, `when`, `tap`, `preprocess`, `postprocess`, `PipelineError`, `createSearchTool`, error utilities, and composition types.
+**Exports:** Everything from main entry point **plus** `pipe`, `bind`, `parallel`, `retry`, `when`, `tap`, `preprocess`, `postprocess`, `PipelineError`, error utilities, and composition types.
 
 #### `armorer/query`
 
@@ -132,7 +131,7 @@ import { createCacheMiddleware, createRateLimitMiddleware } from 'armorer/middle
 Testing utilities:
 
 ```typescript
-import { mockTool, createTestRegistry } from 'armorer/test';
+import { createMockTool, createTestRegistry } from 'armorer/test';
 ```
 
 ### Integrations
@@ -142,23 +141,15 @@ import { mockTool, createTestRegistry } from 'armorer/test';
 Model Context Protocol server integration:
 
 ```typescript
-import { createMCP } from 'armorer/mcp';
+import { createMCP, toMcpTools, fromMcpTools } from 'armorer/mcp';
 ```
 
-#### `armorer/claude-agent-sdk` (or `armorer/integrations/claude-agent-sdk`)
-
-Claude Agent SDK integration with tool gating:
-
-```typescript
-import { toClaudeAgentSdkTools, createClaudeToolGate } from 'armorer/claude-agent-sdk';
-```
-
-#### `armorer/openai-agents-sdk` (or `armorer/integrations/openai-agents-sdk`)
+#### `armorer/open-ai/agents` (or `armorer/adapters/open-ai/agents`)
 
 OpenAI Agents SDK integration with tool gating:
 
 ```typescript
-import { toOpenAIAgentTools, createOpenAIToolGate } from 'armorer/openai-agents-sdk';
+import { toOpenAIAgentTools, createOpenAIToolGate } from 'armorer/open-ai/agents';
 ```
 
 ### Other Utilities
@@ -173,10 +164,10 @@ import { createSearchTool } from 'armorer/tools';
 
 #### `armorer/utilities`
 
-Composition utilities (re-exported from `armorer/runtime`):
+Composition utilities (re-exported from `armorer/utilities`):
 
 ```typescript
-import { pipe, compose, bind, parallel } from 'armorer/utilities';
+import { pipe, bind, parallel } from 'armorer/utilities';
 ```
 
 ## Quick Start
@@ -198,10 +189,10 @@ const addNumbers = createTool({
   },
 });
 
-const armorer = createToolbox();
-armorer.register(addNumbers);
+const toolbox = createToolbox();
+toolbox.register(addNumbers);
 
-const toolCall = await armorer.execute({
+const toolCall = await toolbox.execute({
   id: 'call-123',
   name: 'add-numbers',
   arguments: { a: 5, b: 3 },
@@ -232,7 +223,7 @@ const result = await deleteFile.execute({ path: 'log.txt' }, { dryRun: true });
 Execute multiple tools in parallel or sequentially with global controls.
 
 ```ts
-const results = await armorer.execute([call1, call2, call3], {
+const results = await toolbox.execute([call1, call2, call3], {
   concurrency: 5, // Global concurrency limit
   mode: 'parallel', // 'parallel' | 'sequential'
   errorMode: 'collect', // 'collect' (default) | 'failFast'
@@ -259,7 +250,7 @@ const tool = createTool({
 Policies can pause execution for human approval or input.
 
 ```ts
-const armorer = createToolbox([], {
+const toolbox = createToolbox([], {
   policy: {
     async beforeExecute(context) {
       if (context.metadata?.sensitive) {
@@ -273,7 +264,7 @@ const armorer = createToolbox([], {
   },
 });
 
-const result = await armorer.execute(sensitiveCall);
+const result = await toolbox.execute(sensitiveCall);
 if (result.outcome === 'action_required') {
   // Present approval UI to user...
 }
@@ -287,14 +278,14 @@ Toolbox provides helpers to integrate with LLM providers like OpenAI.
 import { toOpenAI, parseToolCalls, formatToolResults } from 'armorer/adapters/openai';
 
 // 1. Export tools
-const tools = toOpenAI(armorer);
+const tools = toOpenAI(toolbox);
 
 // 2. Call model
 const completion = await openai.chat.completions.create({ tools, ... });
 
 // 3. Parse and execute
 const toolCalls = parseToolCalls(completion.choices[0].message.tool_calls);
-const results = await armorer.execute(toolCalls);
+const results = await toolbox.execute(toolCalls);
 
 // 4. Format results
 const messages = formatToolResults(results);
@@ -308,8 +299,8 @@ Native instrumentation for distributed tracing.
 import { createToolbox } from 'armorer';
 import { instrument } from 'armorer/instrumentation';
 
-const armorer = createToolbox();
-instrument(armorer); // Auto-wires all tool calls to OTel Spans
+const toolbox = createToolbox();
+instrument(toolbox); // Auto-wires all tool calls to OTel Spans
 ```
 
 ## Middleware
@@ -320,7 +311,7 @@ Batteries-included middleware for production needs.
 import { createToolbox } from 'armorer';
 import { createCacheMiddleware, createRateLimitMiddleware } from 'armorer/middleware';
 
-const armorer = createToolbox([], {
+const toolbox = createToolbox([], {
   middleware: [
     createCacheMiddleware({ ttlMs: 60000 }),
     createRateLimitMiddleware({ limit: 100, windowMs: 60000 }),
@@ -338,11 +329,11 @@ import { createMockTool, createTestRegistry } from 'armorer/test';
 const mock = createMockTool({ name: 'weather' });
 mock.mockResolve({ temp: 72 });
 
-const armorer = createTestRegistry();
-armorer.register(mock);
+const toolbox = createTestRegistry();
+toolbox.register(mock);
 
-await armorer.execute({ name: 'weather', arguments: {} });
-console.log(armorer.history[0].call.name); // 'weather'
+await toolbox.execute({ name: 'weather', arguments: {} });
+console.log(toolbox.history[0].call.name); // 'weather'
 ```
 
 ## Safety, Policy, and Metadata
@@ -354,7 +345,7 @@ You can also tag tools as mutating or read-only and enforce those tags at the re
 import { createToolbox, createTool } from 'armorer';
 import { z } from 'zod';
 
-const armorer = createToolbox([], {
+const toolbox = createToolbox([], {
   readOnly: true,
   policy: {
     beforeExecute({ toolName, metadata }) {
@@ -376,7 +367,7 @@ const writeFile = createTool({
   },
 });
 
-armorer.register(writeFile);
+toolbox.register(writeFile);
 ```
 
 Metadata keys with built-in enforcement:
@@ -435,7 +426,7 @@ const greetUser = createTool({
 
 Tools are callable. `await tool(params)` and `await tool.execute(params)` are equivalent. If you need a `ToolResult` object instead of throwing on errors, use `tool.execute(toolCall)` or `tool.executeWith(...)`.
 
-`executeWith(...)` lets you supply params plus `callId`, `timeoutMs`, and `signal` in a single call, returning a `ToolResult` instead of throwing. `rawExecute(...)` invokes the underlying implementation with a full `ToolContext` when you need precise control over dispatch/meta or to bypass the `ToolCall` wrapper.
+`executeWith(...)` lets you supply params plus `callId`, `timeout` (milliseconds), and `signal` in a single call, returning a `ToolResult` instead of throwing. `rawExecute(...)` invokes the underlying implementation with a full `ToolContext` when you need precise control over dispatch/meta or to bypass the `ToolCall` wrapper.
 
 Tool schemas must be object schemas (`z.object(...)` or a plain object shape). Tool calls always pass a JSON object for `arguments`, so wrap primitives inside an object (for example, `z.object({ value: z.number() })`).
 
@@ -453,25 +444,25 @@ if (isTool(tool)) {
 
 ### Creating and Registering in One Step
 
-You can create a tool and register it with an armorer in one step by passing the armorer as the second argument:
+You can create a tool and register it with a toolbox in one step by passing the toolbox as the second argument:
 
 ```typescript
-const armorer = createToolbox([], {
+const toolbox = createToolbox([], {
   context: { userId: 'user-123', apiKey: 'secret' },
 });
 
 const tool = createTool(
   {
     name: 'my-tool',
-    description: 'A tool with armorer context',
+    description: 'A tool with toolbox context',
     schema: z.object({ input: z.string() }),
     async execute({ input }, context) {
-      // context includes armorer.context automatically
+      // context includes toolbox.context automatically
       console.log('User:', context.userId);
       return input.toUpperCase();
     },
   },
-  armorer, // Automatically registers the tool
+  toolbox, // Automatically registers the tool
 );
 ```
 
@@ -622,10 +613,10 @@ import { createToolbox, createTool } from 'armorer';
 import { createSearchTool } from 'armorer/tools';
 import { z } from 'zod';
 
-const armorer = createToolbox();
+const toolbox = createToolbox();
 
-// Install the search tool - it auto-registers with the armorer
-createSearchTool(armorer);
+// Install the search tool - it auto-registers with the toolbox
+createSearchTool(toolbox);
 
 // Register your tools (can be done before or after the search tool)
 createTool(
@@ -638,11 +629,11 @@ createTool(
       return { sent: true };
     },
   },
-  armorer,
+  toolbox,
 );
 
-// Agents can now search for tools via armorer.execute()
-const result = await armorer.execute({
+// Agents can now search for tools via toolbox.execute()
+const result = await toolbox.execute({
   name: 'search-tools',
   arguments: { query: 'contact someone' },
 });
@@ -653,12 +644,12 @@ console.log(result.result);
 
 The search tool:
 
-- **Auto-registers** with the armorer when created
+- **Auto-registers** with the toolbox when created
 - **Discovers tools dynamically** - finds tools registered before or after it
-- **Works with provider adapters** - included in `toOpenAI(armorer)`, etc.
-- **Supports semantic search** when embeddings are configured on the armorer
+- **Works with provider adapters** - included in `toOpenAI(toolbox)`, etc.
+- **Supports semantic search** when embeddings are configured on the toolbox
 
-See [Search Tool documentation](documentation/search-tools.md) for filtering by tags, configuration options, and agentic workflow examples.
+See [Search Tool documentation](documentation/search-tool.md) for filtering by tags, configuration options, and agentic workflow examples.
 
 ## TypeScript
 
@@ -690,26 +681,27 @@ const result = await tool({ count: 5 }); // number
 
 Longer-form docs live in `documentation/`:
 
-- [Common Patterns](documentation/patterns.md) - Circuit breakers, session management, request deduplication, resource pooling, fallback tools, audit trails, cost tracking, and more
+- [Common Patterns](documentation/patterns/) - Circuit breakers, session management, request deduplication, resource pooling, fallback tools, audit trails, cost tracking, and more
 - [Toolbox Registry](documentation/registry.md) - Registration, execution, querying, searching, middleware, and serialization
-- [Tool Composition](documentation/composition.md) - `pipe`, `compose`, `bind`, `tap`, `when`, `parallel`, `retry`, `preprocess`, `postprocess`
+- [Searching Tools](documentation/searching-tools.md) - Query and rank tools with `queryTools` and `searchTools`
+- [Eventing](documentation/eventing.md) - Tool and toolbox events, streaming APIs, and progress/status patterns
+- [Context and withContext](documentation/context.md) - Shared toolbox context, tool-local context injection, and runtime execution context
+- [Tool Composition](documentation/composition.md) - `pipe`, `bind`, `tap`, `when`, `parallel`, `retry`, `preprocess`, `postprocess`
 - [Embeddings & Semantic Search](documentation/embeddings.md) - Vector embeddings with OpenAI and Pinecone
-- [LanceDB Integration](documentation/lancedb.md) - Serverless vector database for local and cloud deployments
-- [Chroma Integration](documentation/chroma.md) - Open-source embedding database with built-in embedding functions
-- [Search Tools Tool](documentation/search-tools.md) - Pre-configured tool for semantic tool discovery in agentic workflows
+- [Integrations](documentation/integrations/) - Pinecone, LanceDB, and Chroma integration guides
+- [Pinecone Integration](documentation/integrations/pinecone.md) - Managed vector database for hosted semantic retrieval
+- [LanceDB Integration](documentation/integrations/lancedb.md) - Serverless vector database for local and cloud deployments
+- [Chroma Integration](documentation/integrations/chroma.md) - Open-source embedding database with built-in embedding functions
+- [Search Tool](documentation/search-tool.md) - Pre-configured tool for semantic tool discovery in agentic workflows
 - [AbortSignal Support](documentation/about-signal.md) - Cancellation and timeout handling
+- [Testing Utilities](documentation/testing.md) - `createMockTool` and `createTestRegistry` for test workflows
 - [JSON Schema Output](documentation/json-schema.md) - Export tools as JSON Schema
 - [Provider Adapters](documentation/provider-adapters.md) - OpenAI, Anthropic, and Gemini integrations
 - [MCP Server](documentation/mcp.md) - Expose tools over Model Context Protocol
-- [Claude Agent SDK](documentation/claude-agent-sdk.md) - Integration with `@anthropic-ai/claude-agent-sdk` including tool gating
+- [Agent SDK Integrations](documentation/agent-sdk-integrations.md) - OpenAI and Anthropic Agent SDK usage via MCP
 - [OpenAI Agents SDK](documentation/openai-agents-sdk.md) - Integration with `@openai/agents` including tool gating
 - [Public API Reference](documentation/api-reference.md) - Complete API reference with all exports and types
-- [Migration Guide](documentation/migration.md) - Upgrade notes and import changes for core/runtime split
-- [Development](documentation/development.md) - Local development workflows
-
-## Migration Guide
-
-See `documentation/migration.md` for before/after import examples, error model updates, and adapter path changes.
+- [Contributing](CONTRIBUTING.md) - Local development workflows
 
 ## Roadmap
 

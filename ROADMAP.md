@@ -2,20 +2,15 @@
 
 This document outlines potential future enhancements for Armorer. These features are organized by priority and category based on community feedback and common use cases.
 
-## Status Legend
+## Next Up
 
-- 🟢 **Planned**: Scheduled for an upcoming release
-- 🟡 **Under Consideration**: Evaluating feasibility and demand
-- 🔵 **Community Request**: Requested by users, awaiting prioritization
-- ⚪ **Future**: Good idea but not currently prioritized
-
----
+- Make `Toolbox` immutable so that we can have type safety. We'll provide and/or a `combineToolbox` utility and a `.extend()` method for composing toolboxes.
+- Take a closer look at how we handle searching and querying.
+- Additional adapters: tRPC router, REST API.
 
 ## High Priority
 
-### 🟢 Streaming Response Support
-
-**Status**: Planned for 0.8.0
+### Streaming Response Support
 
 Native support for streaming responses from tools, particularly useful for:
 
@@ -35,9 +30,7 @@ Native support for streaming responses from tools, particularly useful for:
 
 ---
 
-### 🟡 Circuit Breaker Pattern (Built-in)
-
-**Status**: Under Consideration
+### Circuit Breaker Pattern (Built-in)
 
 While the patterns documentation shows how to implement circuit breakers with middleware, a built-in implementation would provide:
 
@@ -52,13 +45,11 @@ While the patterns documentation shows how to implement circuit breakers with mi
 - Current middleware approach is flexible
 - Need to validate demand from community
 
-**Related**: `documentation/patterns.md#circuit-breaker`
+**Related**: `documentation/patterns/circuit-breaker.md`
 
 ---
 
-### 🟡 Request Batching & Backpressure
-
-**Status**: Under Consideration
+### Request Batching & Backpressure
 
 Advanced execution strategies beyond current parallel/sequential modes:
 
@@ -77,9 +68,7 @@ Advanced execution strategies beyond current parallel/sequential modes:
 
 ## Medium Priority
 
-### 🔵 Built-in Metrics & Analytics
-
-**Status**: Community Request
+### Built-in Metrics & Analytics
 
 Extend OpenTelemetry instrumentation with built-in metrics:
 
@@ -100,9 +89,7 @@ Extend OpenTelemetry instrumentation with built-in metrics:
 
 ---
 
-### 🔵 Tool DAG Execution
-
-**Status**: Community Request
+### Tool DAG Execution
 
 Support for complex workflows beyond linear pipelines:
 
@@ -135,9 +122,7 @@ const workflow = createWorkflow({
 
 ---
 
-### 🟡 Resource Lifecycle Management
-
-**Status**: Under Consideration
+### Resource Lifecycle Management
 
 Standardized resource management for tools:
 
@@ -167,9 +152,7 @@ const toolbox = createToolbox([], {
 
 ---
 
-### 🟡 State Management & Persistence
-
-**Status**: Under Consideration
+### State Management & Persistence
 
 Built-in state management for multi-turn conversations:
 
@@ -186,28 +169,7 @@ Built-in state management for multi-turn conversations:
 
 **Related**: See state management pattern in documentation
 
----
-
-## Low Priority
-
-### ⚪ Sandboxing & Security
-
-Enhanced security features for tool execution:
-
-- Execution sandboxing (VM, containers)
-- Resource limits (CPU, memory, time)
-- Input sanitization helpers
-- Security audit logs
-
-**Considerations:**
-
-- Complex to implement across platforms
-- May require platform-specific solutions
-- Policy hooks provide some protection already
-
----
-
-### ⚪ Visual Tool Graph Builder
+### Visual Tool Graph Builder
 
 Developer tooling for building and debugging tool workflows:
 
@@ -224,15 +186,15 @@ Developer tooling for building and debugging tool workflows:
 
 ---
 
-### ⚪ CLI for Tool Management
+### CLI for Tool Management
 
 Command-line interface for common operations:
 
 ```bash
-armorer list                    # List registered tools
-armorer test <tool-name>        # Test a tool interactively
-armorer validate <config-file>  # Validate tool configurations
-armorer export --provider openai # Export to provider format
+toolbox list                    # List registered tools
+toolbox test <tool-name>        # Test a tool interactively
+toolbox validate <configuration-file>  # Validate tool configurations
+toolbox export --provider openai # Export to provider format
 ```
 
 **Considerations:**
@@ -243,7 +205,7 @@ armorer export --provider openai # Export to provider format
 
 ---
 
-### ⚪ Multi-tenancy Support
+### Multi-tenancy Support
 
 Built-in tenant isolation for SaaS applications:
 
@@ -262,9 +224,7 @@ Built-in tenant isolation for SaaS applications:
 
 ## Schema & Type Safety
 
-### 🟡 Schema Evolution & Migration
-
-**Status**: Under Consideration
+### Schema Evolution & Migration
 
 Tools for managing schema changes over time:
 
@@ -281,7 +241,7 @@ Tools for managing schema changes over time:
 
 ---
 
-### ⚪ Branded Types for Tool IDs
+### Branded Types for Tool IDs
 
 Stronger type safety for tool identifiers:
 
@@ -299,9 +259,7 @@ type ToolId = string & { __brand: 'ToolId' };
 
 ## Performance
 
-### 🟡 Response Compression
-
-**Status**: Under Consideration
+### Response Compression
 
 Automatic compression of large tool outputs:
 
@@ -318,9 +276,7 @@ Automatic compression of large tool outputs:
 
 ---
 
-### 🟡 Advanced Caching Strategies
-
-**Status**: Under Consideration
+### Advanced Caching Strategies
 
 Extend caching middleware with:
 
@@ -333,77 +289,17 @@ Extend caching middleware with:
 
 ---
 
-## Integration & Ecosystem
-
-### 🟢 Additional Provider Adapters
-
-**Status**: Planned
-
-Support for more LLM providers:
-
-- **Mistral AI** (🟢 Planned for 0.8.0)
-- **Cohere** (🟡 Under Consideration)
-- **AWS Bedrock** (🟡 Under Consideration)
-- **Azure OpenAI** (🔵 Community Request)
-
----
-
-### 🔵 Vector Database Integrations
-
-**Status**: Community Request
+### Vector Database Integrations
 
 Extend embedding support beyond current LanceDB and Chroma:
 
-- **Pinecone** (🔵 Requested)
-- **Qdrant** (🔵 Requested)
-- **Weaviate** (🟡 Under Consideration)
-- **Milvus** (⚪ Future)
+- **Qdrant** (Requested)
+- **Weaviate** (Under Consideration)
+- **Milvus** (Future)
 
 ---
 
-### ⚪ Observability Platform Integrations
-
-Pre-built integrations for popular observability platforms:
-
-- Datadog APM
-- New Relic
-- Honeycomb
-- Sentry error tracking
-
-**Considerations:**
-
-- OpenTelemetry already provides foundation
-- Platform-specific features may add value
-- Could be community packages
-
----
-
-## Documentation & Developer Experience
-
-### 🟢 Interactive Examples
-
-**Status**: Planned for 0.8.0
-
-- CodeSandbox/StackBlitz templates
-- Interactive playground on documentation site
-- Video tutorials for common patterns
-- Real-world example applications
-
----
-
-### 🟡 Migration Tools
-
-**Status**: Under Consideration
-
-Automated migration for major version upgrades:
-
-- Codemod scripts for breaking changes
-- CLI migration helper
-- Deprecation warnings with fix suggestions
-
----
-
-### ⚪ Performance Profiling Tools
+### Performance Profiling Tools
 
 Developer tools for performance optimization:
 
@@ -411,58 +307,3 @@ Developer tools for performance optimization:
 - Bottleneck identification
 - Memory usage tracking
 - Cost analysis reports
-
----
-
-## Community Contributions
-
-We welcome community contributions for any of these features! If you're interested in working on something:
-
-1. Check the [issues page](https://github.com/stevekinney/armorer/issues) for related discussions
-2. Create a proposal issue describing your approach
-3. Wait for maintainer feedback before investing significant effort
-4. Submit a PR with tests and documentation
-
----
-
-## Requesting Features
-
-Have an idea not listed here? We'd love to hear it!
-
-1. Check existing [issues](https://github.com/stevekinney/armorer/issues) first
-2. Create a feature request issue with:
-   - Clear use case description
-   - How it would improve your workflow
-   - Why existing features don't solve it
-   - Example API you'd like to see
-
-Features with clear use cases and community support will be prioritized.
-
----
-
-## Version Goals
-
-### 0.8.0 (Q2 2026)
-
-- Streaming response support
-- Mistral AI adapter
-- Interactive examples
-- Performance improvements
-
-### 0.9.0 (Q3 2026)
-
-- DAG execution (if validated)
-- Built-in metrics module
-- Schema evolution tools
-- Additional vector DB integrations
-
-### 1.0.0 (Q4 2026)
-
-- API stabilization
-- Comprehensive documentation
-- Production-ready guarantees
-- Long-term support plan
-
----
-
-_Last updated: 2026-02-09_

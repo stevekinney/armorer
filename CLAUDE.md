@@ -17,7 +17,7 @@ bun ./dist/index.js       # After build, run with Bun
 
 ```bash
 bun test                  # Run all tests
-bun test src/utils        # Run tests in specific directory
+bun test src/utilities    # Run tests in specific directory
 bun test logger          # Run tests matching pattern
 bun test --watch         # Watch mode
 bun test --coverage      # Generate coverage report
@@ -57,8 +57,8 @@ bun run clean            # Clean build artifacts (dist/, coverage/, caches)
 Hooks live as Bun TypeScript files under `scripts/husky/` and are invoked by tiny sh wrappers in `.husky/`:
 
 - `pre-commit`: runs lint-staged and basic dependency checks
-- `post-checkout`: installs deps when `package.json`+`bun.lock` change; surfaces config changes
-- `post-merge`: installs/cleans when dependencies or config changed; shows merge stats
+- `post-checkout`: installs deps when `package.json`+`bun.lock` change; surfaces configuration changes
+- `post-merge`: installs/cleans when dependencies or configuration changed; shows merge stats
 
 They use `chalk` for color, `change-case` for headings, and Bun’s `$` and `Bun.write` for shell/IO.
 
@@ -118,5 +118,5 @@ When a Bun equivalent doesn't exist or Node's API is more appropriate for the us
 
 - **bunfig.toml**: Build targets Bun with sourcemaps and minification.
 - **TypeScript**: Uses Bun types; Node type libs are not included by default.
-- **ESLint**: Flat config with `typescript-eslint` presets; type-aware rules only under `src/**` for speed. Unused imports are auto-fixable via `eslint-plugin-unused-imports`; import order via `eslint-plugin-simple-import-sort`; stylistic conflicts disabled by `eslint-config-prettier`. Test files have relaxed rules.
+- **ESLint**: Flat configuration with `typescript-eslint` presets; type-aware rules only under `src/**` for speed. Unused imports are auto-fixable via `eslint-plugin-unused-imports`; import order via `eslint-plugin-simple-import-sort`; stylistic conflicts disabled by `eslint-config-prettier`. Test files have relaxed rules.
 - **Testing**: You can run tests in parallel via `bun test --parallel`.

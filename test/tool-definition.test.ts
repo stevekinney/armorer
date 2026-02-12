@@ -4,6 +4,17 @@ import { z } from 'zod';
 import { defineTool } from '../src/core';
 
 describe('defineTool', () => {
+  it('accepts parameters and aliases to schema', () => {
+    const tool = defineTool({
+      name: 'parameters-shape',
+      description: 'uses parameters',
+      parameters: { foo: z.string() },
+    });
+
+    expect(tool.parameters?.parse({ foo: 'bar' })).toEqual({ foo: 'bar' });
+    expect(tool.schema.parse({ foo: 'bar' })).toEqual({ foo: 'bar' });
+  });
+
   it('defaults schema to an empty object', () => {
     const tool = defineTool({
       name: 'default-schema',

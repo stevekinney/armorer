@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createSearchTool, createTool, createToolbox } from '../src/runtime';
+import { createTool, createToolbox } from '../src';
+import { createSearchTool } from '../src/tools';
 
 describe('createSearchTool', () => {
   const makeTool = (
@@ -16,40 +17,40 @@ describe('createSearchTool', () => {
       ...overrides,
     });
 
-  it('creates a search tool registered with the armorer', () => {
-    const armorer = createToolbox();
-    const searchTool = createSearchTool(armorer);
+  it('creates a search tool registered with the toolbox', () => {
+    const toolbox = createToolbox();
+    const searchTool = createSearchTool(toolbox);
 
     expect(searchTool.name).toBe('search-tools');
-    expect(armorer.getTool('search-tools')?.name).toBe('search-tools');
+    expect(toolbox.getTool('search-tools')?.name).toBe('search-tools');
   });
 
   it('allows custom name', () => {
-    const armorer = createToolbox();
-    const searchTool = createSearchTool(armorer, { name: 'find-tools' });
+    const toolbox = createToolbox();
+    const searchTool = createSearchTool(toolbox, { name: 'find-tools' });
 
     expect(searchTool.name).toBe('find-tools');
-    expect(armorer.getTool('find-tools')?.name).toBe('find-tools');
+    expect(toolbox.getTool('find-tools')?.name).toBe('find-tools');
   });
 
   it('can skip registration', () => {
-    const armorer = createToolbox();
-    const searchTool = createSearchTool(armorer, { register: false });
+    const toolbox = createToolbox();
+    const searchTool = createSearchTool(toolbox, { register: false });
 
-    expect(armorer.getTool('search-tools')).toBeUndefined();
+    expect(toolbox.getTool('search-tools')).toBeUndefined();
     expect(searchTool.name).toBe('search-tools');
   });
 
   it('searches tools by query', async () => {
-    const armorer = createToolbox();
-    armorer.register(
+    const toolbox = createToolbox();
+    toolbox.register(
       makeTool('send-email', { description: 'Send an email message' }),
       makeTool('send-sms', { description: 'Send a text message' }),
       makeTool('get-weather', { description: 'Get weather forecast' }),
     );
-    createSearchTool(armorer);
+    createSearchTool(toolbox);
 
-    const results = await armorer.execute({
+    const results = await toolbox.execute({
       name: 'search-tools',
       arguments: { query: 'send message' },
     });
@@ -62,16 +63,16 @@ describe('createSearchTool', () => {
   });
 
   it('respects limit parameter', async () => {
-    const armorer = createToolbox();
-    armorer.register(
+    const toolbox = createToolbox();
+    toolbox.register(
       makeTool('tool-a'),
       makeTool('tool-b'),
       makeTool('tool-c'),
       makeTool('tool-d'),
     );
-    createSearchTool(armorer, { limit: 2 });
+    createSearchTool(toolbox, { limit: 2 });
 
-    const results = await armorer.execute({
+    const results = await toolbox.execute({
       name: 'search-tools',
       arguments: { query: 'tool', limit: 2 },
     });
@@ -82,15 +83,15 @@ describe('createSearchTool', () => {
   });
 
   it('filters by tags', async () => {
-    const armorer = createToolbox();
-    armorer.register(
+    const toolbox = createToolbox();
+    toolbox.register(
       makeTool('send-email', { tags: ['communication'] }),
       makeTool('send-sms', { tags: ['communication'] }),
       makeTool('get-weather', { tags: ['weather'] }),
     );
-    createSearchTool(armorer);
+    createSearchTool(toolbox);
 
-    const results = await armorer.execute({
+    const results = await toolbox.execute({
       name: 'search-tools',
       arguments: { query: 'send', tags: ['communication'] },
     });
@@ -102,11 +103,11 @@ describe('createSearchTool', () => {
   });
 
   it('includes reasons when explain is enabled', async () => {
-    const armorer = createToolbox();
-    armorer.register(makeTool('send-email', { tags: ['email'] }));
-    createSearchTool(armorer, { explain: true });
+    const toolbox = createToolbox();
+    toolbox.register(makeTool('send-email', { tags: ['email'] }));
+    createSearchTool(toolbox, { explain: true });
 
-    const results = await armorer.execute({
+    const results = await toolbox.execute({
       name: 'search-tools',
       arguments: { query: 'email' },
     });
@@ -118,16 +119,16 @@ describe('createSearchTool', () => {
   });
 
   it('returns tool descriptions and tags', async () => {
-    const armorer = createToolbox();
-    armorer.register(
+    const toolbox = createToolbox();
+    toolbox.register(
       makeTool('send-email', {
         description: 'Send an email to recipients',
         tags: ['communication', 'email'],
       }),
     );
-    createSearchTool(armorer);
+    createSearchTool(toolbox);
 
-    const results = await armorer.execute({
+    const results = await toolbox.execute({
       name: 'search-tools',
       arguments: { query: 'email' },
     });
@@ -145,9 +146,9 @@ describe('createSearchTool', () => {
   });
 
   it('can be called directly', async () => {
-    const armorer = createToolbox();
-    armorer.register(makeTool('alpha'), makeTool('beta'));
-    const searchTool = createSearchTool(armorer);
+    const toolbox = createToolbox();
+    toolbox.register(makeTool('alpha'), makeTool('beta'));
+    const searchTool = createSearchTool(toolbox);
 
     const results = await searchTool({ query: 'alpha' });
 
@@ -156,21 +157,21 @@ describe('createSearchTool', () => {
   });
 
   it('has readonly metadata', () => {
-    const armorer = createToolbox();
-    const searchTool = createSearchTool(armorer);
+    const toolbox = createToolbox();
+    const searchTool = createSearchTool(toolbox);
 
     expect(searchTool.metadata?.readOnly).toBe(true);
     expect(searchTool.tags).toContain('readonly');
   });
 
   describe('agent usability', () => {
-    it('is available to agents via armorer.execute()', async () => {
-      const armorer = createToolbox();
-      armorer.register(makeTool('example-tool'));
-      createSearchTool(armorer);
+    it('is available to agents via toolbox.execute()', async () => {
+      const toolbox = createToolbox();
+      toolbox.register(makeTool('example-tool'));
+      createSearchTool(toolbox);
 
-      // Simulate an agent calling the search tool via armorer.execute()
-      const result = await armorer.execute({
+      // Simulate an agent calling the search tool via toolbox.execute()
+      const result = await toolbox.execute({
         id: 'call-123',
         name: 'search-tools',
         arguments: { query: 'example' },
@@ -181,11 +182,11 @@ describe('createSearchTool', () => {
       expect(Array.isArray(result.result)).toBe(true);
     });
 
-    it('is listed in armorer.tools() for provider adapters', () => {
-      const armorer = createToolbox();
-      createSearchTool(armorer);
+    it('is listed in toolbox.tools() for provider adapters', () => {
+      const toolbox = createToolbox();
+      createSearchTool(toolbox);
 
-      const tools = armorer.tools();
+      const tools = toolbox.tools();
       const searchTool = tools.find((t) => t.name === 'search-tools');
 
       expect(searchTool).toBeDefined();
@@ -195,19 +196,19 @@ describe('createSearchTool', () => {
 
   describe('dynamic tool discovery', () => {
     it('finds tools registered AFTER the search tool is installed', async () => {
-      const armorer = createToolbox();
+      const toolbox = createToolbox();
 
       // Install search tool FIRST
-      createSearchTool(armorer);
+      createSearchTool(toolbox);
 
       // Register tools AFTER the search tool
-      armorer.register(
+      toolbox.register(
         makeTool('late-tool-alpha', { description: 'A tool added later' }),
         makeTool('late-tool-beta', { description: 'Another late tool' }),
       );
 
       // Search should find the late-registered tools
-      const results = await armorer.execute({
+      const results = await toolbox.execute({
         name: 'search-tools',
         arguments: { query: 'late tool' },
       });
@@ -219,19 +220,19 @@ describe('createSearchTool', () => {
     });
 
     it('finds tools registered at any point in time', async () => {
-      const armorer = createToolbox();
+      const toolbox = createToolbox();
 
       // Register some tools before
-      armorer.register(makeTool('before-tool', { description: 'Registered before' }));
+      toolbox.register(makeTool('before-tool', { description: 'Registered before' }));
 
       // Install search tool
-      createSearchTool(armorer);
+      createSearchTool(toolbox);
 
       // Register more tools after
-      armorer.register(makeTool('after-tool', { description: 'Registered after' }));
+      toolbox.register(makeTool('after-tool', { description: 'Registered after' }));
 
       // First search - should find both
-      const results1 = await armorer.execute({
+      const results1 = await toolbox.execute({
         name: 'search-tools',
         arguments: { query: 'tool' },
       });
@@ -240,12 +241,12 @@ describe('createSearchTool', () => {
       expect(tools1.map((t) => t.name)).toContain('after-tool');
 
       // Register even more tools
-      armorer.register(
+      toolbox.register(
         makeTool('much-later-tool', { description: 'Registered much later' }),
       );
 
       // Second search - should find all three
-      const results2 = await armorer.execute({
+      const results2 = await toolbox.execute({
         name: 'search-tools',
         arguments: { query: 'tool' },
       });
@@ -256,11 +257,11 @@ describe('createSearchTool', () => {
     });
 
     it('does not include itself in search results by default', async () => {
-      const armorer = createToolbox();
-      createSearchTool(armorer);
-      armorer.register(makeTool('user-tool'));
+      const toolbox = createToolbox();
+      createSearchTool(toolbox);
+      toolbox.register(makeTool('user-tool'));
 
-      const results = await armorer.execute({
+      const results = await toolbox.execute({
         name: 'search-tools',
         arguments: { query: 'tool' },
       });

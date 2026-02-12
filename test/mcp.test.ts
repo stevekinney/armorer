@@ -7,9 +7,9 @@ import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/s
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createToolbox } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
-import { createMCP } from '../src/mcp';
+import { createToolbox } from '../src/create-toolbox';
+import { createMCP, fromMcpTools, toMcpTools } from '../src/mcp';
 
 type ConnectedMcp = {
   client: Client;
@@ -75,33 +75,122 @@ class LoopbackTransport {
   }
 }
 
-const connect = async (armorer: ReturnType<typeof createToolbox>, options = {}) => {
-  const server = createMCP(armorer, options);
+const connect = async (toolbox: ReturnType<typeof createToolbox>, options = {}) => {
+  const server = createMCP(toolbox, options);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: 'armorer-test-client', version: '0.0.0' });
+  const client = new Client({ name: 'toolbox-test-client', version: '0.0.0' });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   return { client, server } satisfies ConnectedMcp;
 };
 
 describe('createMCP', () => {
-  it('registers armorer tools and exposes them via listTools', async () => {
-    const armorer = createToolbox();
+  it('converts toolbox tools into MCP tool definitions', async () => {
+    const toolbox = createToolbox();
+    createTool(
+      {
+        name: 'sum-local',
+        description: 'adds two numbers',
+        schema: z.object({ a: z.number(), b: z.number() }),
+        metadata: { readOnly: true },
+        async execute({ a, b }) {
+          return { total: a + b };
+        },
+      },
+      toolbox,
+    );
+
+    const [mcpTool] = toMcpTools(toolbox);
+
+    expect(mcpTool).toBeDefined();
+    expect(mcpTool?.name).toBe('sum-local');
+    expect(mcpTool?.annotations?.readOnlyHint).toBe(true);
+    expect(mcpTool?.description).toBe('adds two numbers');
+
+    const result = await mcpTool!.handler({ a: 2, b: 3 });
+    expect(result.structuredContent).toEqual({ total: 5 });
+    expect(result.content?.[0]?.text).toContain('"total": 5');
+  });
+
+  it('converts MCP tools with handlers into executable toolbox tools', async () => {
+    const [tool] = fromMcpTools([
+      {
+        name: 'remote-sum',
+        description: 'sum from remote mcp',
+        inputSchema: z.object({ a: z.number(), b: z.number() }),
+        handler: async (args) => {
+          const input = args as { a: number; b: number };
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ total: input.a + input.b }) }],
+            structuredContent: { total: input.a + input.b },
+          };
+        },
+      },
+    ]);
+
+    const result = await tool!.execute({ a: 4, b: 6 });
+    expect(result).toEqual({ total: 10 });
+  });
+
+  it('uses callTool for MCP tools without handlers', async () => {
+    const calls: Array<{ name: string; arguments?: Record<string, unknown> }> = [];
+    const [tool] = fromMcpTools(
+      [
+        {
+          name: 'remote-echo',
+          description: 'echoes back text',
+          inputSchema: {
+            type: 'object',
+            properties: { text: { type: 'string' } },
+            required: ['text'],
+          },
+        },
+      ],
+      {
+        async callTool(request) {
+          calls.push(request);
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ echoed: request.arguments }) }],
+            structuredContent: { echoed: request.arguments },
+          };
+        },
+      },
+    );
+
+    const result = await tool!.execute({ text: 'hello' });
+    expect(calls).toEqual([{ name: 'remote-echo', arguments: { text: 'hello' } }]);
+    expect(result).toEqual({ echoed: { text: 'hello' } });
+  });
+
+  it('throws when MCP tools cannot be executed', async () => {
+    const [tool] = fromMcpTools([
+      {
+        name: 'needs-caller',
+        description: 'requires remote invoker',
+        inputSchema: { type: 'object' },
+      },
+    ]);
+
+    await expect(tool!.execute({})).rejects.toThrow('requires callTool()');
+  });
+
+  it('registers toolbox tools and exposes them via listTools', async () => {
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'sum',
         description: 'adds two numbers',
         schema: z.object({ a: z.number(), b: z.number() }),
-        metadata: { owner: 'armorer' },
+        metadata: { owner: 'toolbox' },
         async execute({ a, b }) {
           return a + b;
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer, {
-      toolConfig: (tool) => ({
+    const { client, server } = await connect(toolbox, {
+      toolConfiguration: (tool) => ({
         title: `${tool.name}-title`,
         outputSchema: z.object({ value: z.number() }),
         meta: { ...tool.metadata, source: 'mcp' },
@@ -115,7 +204,7 @@ describe('createMCP', () => {
       expect(tool?.title).toBe('sum-title');
       expect(tool?.description).toBe('adds two numbers');
       expect(tool?.inputSchema.type).toBe('object');
-      expect(tool?._meta).toEqual({ owner: 'armorer', source: 'mcp' });
+      expect(tool?._meta).toEqual({ owner: 'toolbox', source: 'mcp' });
       expect(tool?.outputSchema?.type).toBe('object');
     } finally {
       await client.close();
@@ -123,8 +212,8 @@ describe('createMCP', () => {
     }
   });
 
-  it('applies MCP metadata config when provided', async () => {
-    const armorer = createToolbox();
+  it('applies MCP metadata configuration when provided', async () => {
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'meta-tool',
@@ -146,10 +235,10 @@ describe('createMCP', () => {
           return { ok: true };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       const tools = await client.listTools();
@@ -164,26 +253,26 @@ describe('createMCP', () => {
   });
 
   it('uses tool metadata as _meta when not overridden', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'meta-default',
         description: 'uses metadata by default',
         schema: z.object({}),
-        metadata: { owner: 'armorer', scope: 'test' },
+        metadata: { owner: 'toolbox', scope: 'test' },
         async execute() {
           return { ok: true };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       const tools = await client.listTools();
       const tool = tools.tools.find((entry) => entry.name === 'meta-default');
-      expect(tool?._meta).toEqual({ owner: 'armorer', scope: 'test' });
+      expect(tool?._meta).toEqual({ owner: 'toolbox', scope: 'test' });
     } finally {
       await client.close();
       await server.close();
@@ -191,7 +280,7 @@ describe('createMCP', () => {
   });
 
   it('adds readOnlyHint annotation for read-only tools', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'read-only-tool',
@@ -202,10 +291,10 @@ describe('createMCP', () => {
           return { ok: true };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       const tools = await client.listTools();
@@ -218,7 +307,7 @@ describe('createMCP', () => {
   });
 
   it('ignores non-object metadata for _meta', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'meta-invalid',
@@ -229,10 +318,10 @@ describe('createMCP', () => {
           return { ok: true };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       const tools = await client.listTools();
@@ -244,11 +333,11 @@ describe('createMCP', () => {
     }
   });
 
-  it('prefers toolConfig over metadata mcp settings', async () => {
-    const armorer = createToolbox();
+  it('prefers toolConfiguration over metadata mcp settings', async () => {
+    const toolbox = createToolbox();
     createTool(
       {
-        name: 'override-config',
+        name: 'override-configuration',
         description: 'should be overridden',
         schema: z.object({}),
         metadata: {
@@ -274,36 +363,36 @@ describe('createMCP', () => {
           return { ok: true };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer, {
-      toolConfig: () => ({
+    const { client, server } = await connect(toolbox, {
+      toolConfiguration: () => ({
         title: 'override-title',
         description: 'override-description',
-        schema: z.object({ fromConfig: z.string() }),
-        outputSchema: z.object({ config: z.boolean() }),
-        meta: { source: 'config' },
+        schema: z.object({ fromConfiguration: z.string() }),
+        outputSchema: z.object({ configuration: z.boolean() }),
+        meta: { source: 'configuration' },
       }),
     });
 
     try {
       const tools = await client.listTools();
-      const tool = tools.tools.find((entry) => entry.name === 'override-config');
+      const tool = tools.tools.find((entry) => entry.name === 'override-configuration');
       expect(tool?.title).toBe('override-title');
       expect(tool?.description).toBe('override-description');
-      expect(tool?._meta).toEqual({ source: 'config' });
+      expect(tool?._meta).toEqual({ source: 'configuration' });
       expect(tool?.inputSchema?.type).toBe('object');
-      expect(tool?.inputSchema?.properties).toHaveProperty('fromConfig');
-      expect(tool?.outputSchema?.properties).toHaveProperty('config');
+      expect(tool?.inputSchema?.properties).toHaveProperty('fromConfiguration');
+      expect(tool?.outputSchema?.properties).toHaveProperty('configuration');
     } finally {
       await client.close();
       await server.close();
     }
   });
 
-  it('accepts non-object input schemas via toolConfig without falling back', async () => {
-    const armorer = createToolbox();
+  it('accepts non-object input schemas via toolConfiguration without falling back', async () => {
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'string-input',
@@ -313,11 +402,11 @@ describe('createMCP', () => {
           return { ok: true };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer, {
-      toolConfig: () => ({
+    const { client, server } = await connect(toolbox, {
+      toolConfiguration: () => ({
         schema: z.string(),
       }),
     });
@@ -334,7 +423,7 @@ describe('createMCP', () => {
   });
 
   it('executes tools and returns structured content when output is an object', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'status',
@@ -344,10 +433,10 @@ describe('createMCP', () => {
           return { ok: true };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       const result = await client.callTool({ name: 'status', arguments: {} });
@@ -361,7 +450,7 @@ describe('createMCP', () => {
   });
 
   it('handles parallel tool calls', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     let calls = 0;
     createTool(
       {
@@ -374,10 +463,10 @@ describe('createMCP', () => {
           return { id };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       const [first, second] = await Promise.all([
@@ -394,9 +483,9 @@ describe('createMCP', () => {
   });
 
   it('refreshes tool definitions when a tool is re-registered', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
 
-    armorer.register({
+    toolbox.register({
       name: 'swap',
       description: 'first description',
       schema: z.object({}),
@@ -405,7 +494,7 @@ describe('createMCP', () => {
       },
     });
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       let tools = await client.listTools();
@@ -413,7 +502,7 @@ describe('createMCP', () => {
         'first description',
       );
 
-      armorer.register({
+      toolbox.register({
         name: 'swap',
         description: 'second description',
         schema: z.object({}),
@@ -433,7 +522,7 @@ describe('createMCP', () => {
   });
 
   it('supports stdio transports via a loopback pair', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'ping',
@@ -443,11 +532,11 @@ describe('createMCP', () => {
           return { ok: true };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const server = createMCP(armorer);
-    const client = new Client({ name: 'armorer-test-client', version: '0.0.0' });
+    const server = createMCP(toolbox);
+    const client = new Client({ name: 'toolbox-test-client', version: '0.0.0' });
 
     const clientToServer = new PassThrough();
     const serverToClient = new PassThrough();
@@ -467,16 +556,16 @@ describe('createMCP', () => {
   });
 
   it('registers resources and prompts through registrars', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
 
-    const { client, server } = await connect(armorer, {
+    const { client, server } = await connect(toolbox, {
       resources: (mcp) => {
         mcp.registerResource(
           'readme',
-          'armorer://readme',
+          'toolbox://readme',
           { title: 'README' },
           async () => ({
-            contents: [{ uri: 'armorer://readme', text: 'hello' }],
+            contents: [{ uri: 'toolbox://readme', text: 'hello' }],
           }),
         );
       },
@@ -505,7 +594,7 @@ describe('createMCP', () => {
   });
 
   it('marks failures as errors with a text payload', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'explode',
@@ -515,10 +604,10 @@ describe('createMCP', () => {
           throw new Error('boom');
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       const result = await client.callTool({ name: 'explode', arguments: {} });
@@ -532,7 +621,7 @@ describe('createMCP', () => {
   });
 
   it('rejects the MCP call when the client aborts', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
 
     createTool(
       {
@@ -544,10 +633,10 @@ describe('createMCP', () => {
           return { ok: true };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       const controller = new AbortController();
@@ -563,7 +652,7 @@ describe('createMCP', () => {
   });
 
   it('does not override explicit readOnlyHint annotations', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'readonly-override',
@@ -574,11 +663,11 @@ describe('createMCP', () => {
           return { ok: true };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer, {
-      toolConfig: () => ({
+    const { client, server } = await connect(toolbox, {
+      toolConfiguration: () => ({
         annotations: { readOnlyHint: false },
         execution: { taskSupport: 'optional' },
       }),
@@ -596,17 +685,17 @@ describe('createMCP', () => {
   });
 
   it('applies registrars provided as arrays', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
 
-    const { client, server } = await connect(armorer, {
+    const { client, server } = await connect(toolbox, {
       resources: [
         (mcp) => {
           mcp.registerResource(
             'array-resource',
-            'armorer://array-resource',
+            'toolbox://array-resource',
             { title: 'Array Resource' },
             async () => ({
-              contents: [{ uri: 'armorer://array-resource', text: 'hi' }],
+              contents: [{ uri: 'toolbox://array-resource', text: 'hi' }],
             }),
           );
         },
@@ -644,7 +733,7 @@ describe('createMCP', () => {
   });
 
   it('converts JSON schema variants and raw shapes for MCP tools', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
 
     const baseTool = (name: string) =>
       createTool(
@@ -656,7 +745,7 @@ describe('createMCP', () => {
             return { ok: true };
           },
         },
-        armorer,
+        toolbox,
       );
 
     baseTool('any-of');
@@ -665,8 +754,8 @@ describe('createMCP', () => {
     baseTool('raw-shape');
     baseTool('invalid-schema');
 
-    const { client, server } = await connect(armorer, {
-      toolConfig: (tool) => {
+    const { client, server } = await connect(toolbox, {
+      toolConfiguration: (tool) => {
         switch (tool.name) {
           case 'any-of':
             return {
@@ -757,7 +846,7 @@ describe('createMCP', () => {
   });
 
   it('uses formatResult when provided', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'custom-format',
@@ -767,10 +856,10 @@ describe('createMCP', () => {
           return { ok: true };
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer, {
+    const { client, server } = await connect(toolbox, {
       formatResult: () => ({
         content: [{ type: 'text', text: 'formatted' }],
       }),
@@ -786,7 +875,7 @@ describe('createMCP', () => {
   });
 
   it('returns empty content for undefined results', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'empty-result',
@@ -796,10 +885,10 @@ describe('createMCP', () => {
           return undefined;
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       const result = await client.callTool({ name: 'empty-result', arguments: {} });
@@ -811,7 +900,7 @@ describe('createMCP', () => {
   });
 
   it('stringifies unserializable results', async () => {
-    const armorer = createToolbox();
+    const toolbox = createToolbox();
     createTool(
       {
         name: 'bigint-result',
@@ -821,10 +910,10 @@ describe('createMCP', () => {
           return 1n;
         },
       },
-      armorer,
+      toolbox,
     );
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       const result = await client.callTool({ name: 'bigint-result', arguments: {} });
@@ -846,12 +935,16 @@ describe('createMCP', () => {
         throw new Error('explode');
       },
     };
-    const armorer = {
+    const toolbox = {
       tools: () => [tool],
       addEventListener: () => {},
+      register: () => toolbox,
+      getTool: () => undefined,
+      execute: async () => ({ outcome: 'success', toolCallId: 'unused' }),
+      toJSON: () => [],
     } as unknown as ReturnType<typeof createToolbox>;
 
-    const { client, server } = await connect(armorer);
+    const { client, server } = await connect(toolbox);
 
     try {
       const result = await client.callTool({ name: 'throwing-exec', arguments: {} });

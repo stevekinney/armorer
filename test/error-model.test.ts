@@ -36,7 +36,7 @@ describe('ToolError model', () => {
       },
     });
 
-    const result = await tool.executeWith({ params: {}, timeoutMs: 1 });
+    const result = await tool.executeWith({ params: {}, timeout: 1 });
     expect(result.error?.category).toBe('timeout');
     expect(result.error?.retryable).toBe(true);
   });

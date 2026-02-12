@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createToolbox } from '../src/create-armorer';
 import { createTool } from '../src/create-tool';
+import { createToolbox } from '../src/create-toolbox';
 import {
   extractMetadataFlags,
   extractSchemaSummary,
@@ -11,9 +11,9 @@ import {
   RegistryInspectionSchema,
   ToolInspectionSchema,
 } from '../src/inspect';
-import type { ToolConfig } from '../src/is-tool';
+import type { ToolConfiguration } from '../src/is-tool';
 
-const makeConfiguration = (overrides?: Partial<ToolConfig>): ToolConfig => ({
+const makeConfiguration = (overrides?: Partial<ToolConfiguration>): ToolConfiguration => ({
   name: 'sum',
   description: 'add two numbers',
   schema: z.object({ a: z.number(), b: z.number() }),
@@ -379,18 +379,18 @@ describe('inspect', () => {
     });
   });
 
-  describe('Armorer.inspect()', () => {
+  describe('Toolbox.inspect()', () => {
     it('returns inspection of empty registry', () => {
-      const armorer = createToolbox();
-      const inspection = armorer.inspect();
+      const toolbox = createToolbox();
+      const inspection = toolbox.inspect();
 
       expect(inspection.counts.total).toBe(0);
       expect(inspection.tools).toEqual([]);
     });
 
     it('returns inspection of single-tool registry', () => {
-      const armorer = createToolbox([makeConfiguration()]);
-      const inspection = armorer.inspect();
+      const toolbox = createToolbox([makeConfiguration()]);
+      const inspection = toolbox.inspect();
 
       expect(inspection.counts.total).toBe(1);
       expect(inspection.tools[0]?.name).toBe('sum');
@@ -400,12 +400,12 @@ describe('inspect', () => {
     });
 
     it('returns inspection of multi-tool registry', () => {
-      const armorer = createToolbox([
+      const toolbox = createToolbox([
         makeConfiguration({ name: 'sum', tags: ['math'] }),
         makeConfiguration({ name: 'greet', description: 'say hello', tags: ['text'] }),
         makeConfiguration({ name: 'plain', tags: undefined }),
       ]);
-      const inspection = armorer.inspect();
+      const inspection = toolbox.inspect();
 
       expect(inspection.counts.total).toBe(3);
       expect(inspection.counts.withTags).toBe(2);
@@ -417,8 +417,8 @@ describe('inspect', () => {
     });
 
     it('supports summary detail level', () => {
-      const armorer = createToolbox([makeConfiguration()]);
-      const inspection = armorer.inspect('summary');
+      const toolbox = createToolbox([makeConfiguration()]);
+      const inspection = toolbox.inspect('summary');
 
       expect(inspection.detailLevel).toBe('summary');
       // Summary level excludes schema and metadata entirely
@@ -431,8 +431,8 @@ describe('inspect', () => {
     });
 
     it('supports standard detail level (default)', () => {
-      const armorer = createToolbox([makeConfiguration()]);
-      const inspection = armorer.inspect();
+      const toolbox = createToolbox([makeConfiguration()]);
+      const inspection = toolbox.inspect();
 
       expect(inspection.detailLevel).toBe('standard');
       // Standard level includes schema.keys and metadata, but not schema.shape
@@ -443,8 +443,8 @@ describe('inspect', () => {
     });
 
     it('supports full detail level', () => {
-      const armorer = createToolbox([makeConfiguration()]);
-      const inspection = armorer.inspect('full');
+      const toolbox = createToolbox([makeConfiguration()]);
+      const inspection = toolbox.inspect('full');
 
       expect(inspection.detailLevel).toBe('full');
       expect(inspection.tools[0]?.schema?.shape).toBeDefined();
@@ -452,25 +452,25 @@ describe('inspect', () => {
     });
 
     it('is side-effect free (does not modify registry)', () => {
-      const armorer = createToolbox([makeConfiguration()]);
+      const toolbox = createToolbox([makeConfiguration()]);
 
-      const inspection1 = armorer.inspect();
-      const inspection2 = armorer.inspect();
+      const inspection1 = toolbox.inspect();
+      const inspection2 = toolbox.inspect();
 
       expect(inspection1).toEqual(inspection2);
-      expect(armorer.tools().length).toBe(1);
+      expect(toolbox.tools().length).toBe(1);
     });
 
     it('returns independent copies (mutations do not affect registry)', () => {
-      const armorer = createToolbox([makeConfiguration()]);
-      const inspection = armorer.inspect();
+      const toolbox = createToolbox([makeConfiguration()]);
+      const inspection = toolbox.inspect();
 
       // Mutate the inspection
       inspection.tools[0]!.name = 'mutated';
       inspection.tools[0]!.tags.push('extra');
 
       // Re-inspect should show original data
-      const freshInspection = armorer.inspect();
+      const freshInspection = toolbox.inspect();
       expect(freshInspection.tools[0]?.name).toBe('sum');
       expect(freshInspection.tools[0]?.tags).toEqual(['math']);
     });
@@ -493,28 +493,28 @@ describe('inspect', () => {
     });
 
     it('RegistryInspectionSchema validates registry inspection output', () => {
-      const armorer = createToolbox([
+      const toolbox = createToolbox([
         makeConfiguration({ name: 'tool1' }),
         makeConfiguration({ name: 'tool2', tags: ['tag1', 'tag2'] }),
       ]);
 
-      const inspection = armorer.inspect();
+      const inspection = toolbox.inspect();
       const result = RegistryInspectionSchema.safeParse(inspection);
 
       expect(result.success).toBe(true);
     });
 
     it('RegistryInspectionSchema validates empty registry inspection', () => {
-      const armorer = createToolbox();
-      const inspection = armorer.inspect();
+      const toolbox = createToolbox();
+      const inspection = toolbox.inspect();
       const result = RegistryInspectionSchema.safeParse(inspection);
 
       expect(result.success).toBe(true);
     });
 
     it('RegistryInspectionSchema validates full detail level inspection', () => {
-      const armorer = createToolbox([makeConfiguration()]);
-      const inspection = armorer.inspect('full');
+      const toolbox = createToolbox([makeConfiguration()]);
+      const inspection = toolbox.inspect('full');
       const result = RegistryInspectionSchema.safeParse(inspection);
 
       expect(result.success).toBe(true);

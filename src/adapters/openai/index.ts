@@ -1,6 +1,6 @@
 import type { SerializedToolDefinition } from '../../core/serialization';
 import type { AnyToolDefinition } from '../../core/tool-definition';
-import type { ToolCallInput, ToolResult } from '../../runtime/types';
+import type { ToolCallInput, ToolResult } from '../../types';
 import {
   type AdapterInput,
   isSingleInput,
@@ -61,13 +61,13 @@ export function createNameMapper(
  * const tools = toOpenAI([tool1, tool2]);
  *
  * // From registry
- * const tools = toOpenAI(armorer);
+ * const tools = toOpenAI(toolbox);
  *
  * // Use with OpenAI SDK
  * const response = await openai.chat.completions.create({
  *   model: 'gpt-4',
  *   messages,
- *   tools: toOpenAI(armorer),
+ *   tools: toOpenAI(toolbox),
  * });
  * ```
  */
@@ -104,7 +104,7 @@ export function toOpenAI(
  * ```ts
  * const completion = await openai.chat.completions.create({...});
  * const toolCalls = parseToolCalls(completion.choices[0].message.tool_calls);
- * const results = await armorer.execute(toolCalls);
+ * const results = await toolbox.execute(toolCalls);
  * ```
  */
 export function parseToolCalls(
@@ -139,7 +139,7 @@ export function parseToolCalls(
  *
  * @example
  * ```ts
- * const results = await armorer.execute(toolCalls);
+ * const results = await toolbox.execute(toolCalls);
  * const messages = formatToolResults(results);
  * // Add messages to conversation history
  * ```
@@ -149,19 +149,19 @@ export function formatToolResults(
 ): OpenAIToolMessage[] {
   const list = Array.isArray(results) ? results : [results];
   return list.map((result) => {
-    let content = '';
-    if (typeof result.content === 'string') {
-      content = result.content;
-    } else if (result.content === undefined || result.content === null) {
-      content = 'null';
-    } else {
-      try {
-        content = JSON.stringify(result.content);
-      } catch {
-        // eslint-disable-next-line @typescript-eslint/no-base-to-string
-        content = String(result.content);
-      }
-    }
+    const content =
+      typeof result.content === 'string'
+        ? result.content
+        : result.content === undefined || result.content === null
+          ? 'null'
+          : (() => {
+              try {
+                return JSON.stringify(result.content);
+              } catch {
+                // eslint-disable-next-line @typescript-eslint/no-base-to-string
+                return String(result.content);
+              }
+            })();
 
     return {
       role: 'tool',

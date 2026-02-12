@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
-import { createTool, createToolCall, isTool, lazy, withContext } from '../src/runtime';
+import { createTool, createToolCall, isTool, lazy, withContext } from '../src';
 
 describe('createTool', () => {
   it('creates a callable tool function with metadata and execute()', async () => {
@@ -114,6 +114,38 @@ describe('createTool', () => {
     });
 
     await expect(tool.execute({} as any)).rejects.toThrow();
+  });
+
+  it('accepts parameters as the input schema field', async () => {
+    const tool = createTool({
+      name: 'parameters-field',
+      description: 'uses parameters',
+      parameters: z.object({ value: z.string() }),
+      async execute({ value }) {
+        return value.toUpperCase();
+      },
+    });
+
+    const result = await tool({ value: 'ok' });
+    expect(result).toBe('OK');
+    expect(tool.parameters.safeParse({ value: 'ok' }).success).toBe(true);
+  });
+
+  it('prefers parameters when both parameters and schema are provided', async () => {
+    const tool = createTool({
+      name: 'parameters-precedence',
+      description: 'parameters take precedence',
+      parameters: z.object({ value: z.string() }),
+      schema: z.object({ legacy: z.string() }),
+      async execute(params: any) {
+        return params.value ?? params.legacy;
+      },
+    });
+
+    expect(tool.parameters.safeParse({ value: 'ok' }).success).toBe(true);
+    expect(tool.parameters.safeParse({ legacy: 'nope' }).success).toBe(false);
+    const result = await tool({ value: 'ok' });
+    expect(result).toBe('ok');
   });
 
   it('defaults schema to an empty object when omitted', async () => {
@@ -238,8 +270,8 @@ describe('createTool', () => {
 
   it('exposes configuration.execute for direct invocation', async () => {
     const tool = createTool({
-      name: 'config-exec',
-      description: 'call via config',
+      name: 'configuration-exec',
+      description: 'call via configuration',
       schema: z.object({ a: z.string() }),
       async execute({ a }) {
         return a.toUpperCase();
@@ -547,6 +579,54 @@ describe('createTool', () => {
 
     expect(tool.metadata.requires).toEqual(['account']);
     expect(tool.metadata.cost).toBe(3);
+  });
+
+  it('supports metadata as a sync factory function', async () => {
+    const tool = createTool({
+      name: 'sync-metadata-factory',
+      description: 'metadata from sync factory',
+      schema: z.object({ value: z.string() }),
+      metadata: () => ({ source: 'sync' as const }),
+      async execute({ value }) {
+        return value;
+      },
+    });
+
+    expect(tool.metadata).toEqual({ source: 'sync' });
+    const result = await tool({ value: 'ok' });
+    expect(result).toBe('ok');
+  });
+
+  it('supports metadata as a promise and returns an async tool factory', async () => {
+    const toolPromise = createTool({
+      name: 'promise-metadata',
+      description: 'metadata from promise',
+      schema: z.object({ value: z.string() }),
+      metadata: Promise.resolve({ source: 'promise' as const }),
+      async execute({ value }) {
+        return value;
+      },
+    });
+
+    expect(toolPromise).toBeInstanceOf(Promise);
+    const tool = await toolPromise;
+    expect(tool.metadata).toEqual({ source: 'promise' });
+  });
+
+  it('supports metadata as an async factory and returns an async tool factory', async () => {
+    const toolPromise = createTool({
+      name: 'async-metadata-factory',
+      description: 'metadata from async factory',
+      schema: z.object({ value: z.string() }),
+      metadata: async () => ({ source: 'async-factory' as const }),
+      async execute({ value }) {
+        return value;
+      },
+    });
+
+    expect(toolPromise).toBeInstanceOf(Promise);
+    const tool = await toolPromise;
+    expect(tool.metadata).toEqual({ source: 'async-factory' });
   });
 
   describe('schema normalization', () => {
@@ -1323,7 +1403,7 @@ describe('isTool', () => {
 
     const result = await (tool as any).executeWith({
       params: { a: 'x' },
-      timeoutMs: 100,
+      timeout: 100,
     });
     expect(result.error?.message).toContain('boom');
   });
@@ -1360,7 +1440,7 @@ describe('isTool', () => {
       },
     });
 
-    const res = await (tool as any).executeWith({ params: { a: 'x' }, timeoutMs: 1 });
+    const res = await (tool as any).executeWith({ params: { a: 'x' }, timeout: 1 });
     expect(res.error?.category).toBe('timeout');
     expect(res.error?.code).toBe('TIMEOUT');
   });
@@ -1399,7 +1479,7 @@ describe('isTool', () => {
         return a;
       },
     });
-    const res = await (tool as any).executeWith({ params: { a: 'ok' }, timeoutMs: 1000 });
+    const res = await (tool as any).executeWith({ params: { a: 'ok' }, timeout: 1000 });
     expect(res.result).toBe('ok');
   });
 
@@ -1412,7 +1492,7 @@ describe('isTool', () => {
         throw new Error('bad');
       },
     });
-    const res = await (tool as any).executeWith({ params: { a: 'x' }, timeoutMs: 1000 });
+    const res = await (tool as any).executeWith({ params: { a: 'x' }, timeout: 1000 });
     expect(res.error?.category).toBe('internal');
     expect(res.error?.code).toBe('INTERNAL_ERROR');
     expect(res.error?.message).toContain('bad');

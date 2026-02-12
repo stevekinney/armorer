@@ -36,6 +36,7 @@ export type ToolDefinition<
   metadata?: JsonObject | undefined;
   risk?: ToolRisk | undefined;
   lifecycle?: ToolLifecycle | undefined;
+  parameters?: z.ZodTypeAny;
   schema: z.ZodTypeAny;
   outputSchema?: z.ZodTypeAny | undefined;
   dryRun?: ((params: TInput, context: unknown) => Promise<unknown>) | undefined;
@@ -60,6 +61,8 @@ export type DefineToolOptions<
   metadata?: JsonObject;
   risk?: ToolRisk;
   lifecycle?: ToolLifecycle;
+  parameters?: z.ZodType<TInput> | z.ZodRawShape | z.ZodTypeAny;
+  /** @deprecated Use `parameters` instead. */
   schema?: z.ZodType<TInput> | z.ZodRawShape | z.ZodTypeAny;
   outputSchema?: z.ZodType<TOutput>;
   dryRun?: (params: TInput, context: unknown) => Promise<unknown>;
@@ -81,6 +84,7 @@ export function defineTool<
     metadata,
     risk,
     lifecycle,
+    parameters,
     schema,
     outputSchema,
     dryRun,
@@ -91,7 +95,7 @@ export function defineTool<
     ...(namespace !== undefined ? { namespace } : {}),
     ...(version !== undefined ? { version } : {}),
   });
-  const normalizedSchema = normalizeSchema(schema);
+  const normalizedSchema = normalizeSchema(parameters ?? schema);
   const resolvedTags = normalizeTags(tags, name);
   const display: ToolDisplay = {
     title: title ?? name,
@@ -111,6 +115,7 @@ export function defineTool<
     ...(metadata !== undefined ? { metadata } : {}),
     ...(risk !== undefined ? { risk } : {}),
     ...(lifecycle !== undefined ? { lifecycle } : {}),
+    parameters: normalizedSchema as z.ZodType<TInput>,
     schema: normalizedSchema as z.ZodType<TInput>,
     ...(outputSchema !== undefined ? { outputSchema } : {}),
     ...(dryRun ? { dryRun } : {}),

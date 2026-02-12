@@ -11,17 +11,12 @@ const pkg = JSON.parse(
 };
 
 describe('package dependency boundaries', () => {
-  it('keeps MCP and Claude SDKs out of dependencies', () => {
+  it('keeps MCP out of dependencies', () => {
     expect(pkg.dependencies?.['@modelcontextprotocol/sdk']).toBeUndefined();
-    expect(pkg.dependencies?.['@anthropic-ai/claude-agent-sdk']).toBeUndefined();
   });
 
-  it('declares MCP and Claude SDKs as optional peer dependencies', () => {
+  it('declares MCP as an optional peer dependency', () => {
     expect(pkg.peerDependencies?.['@modelcontextprotocol/sdk']).toBeDefined();
-    expect(pkg.peerDependencies?.['@anthropic-ai/claude-agent-sdk']).toBeDefined();
     expect(pkg.peerDependenciesMeta?.['@modelcontextprotocol/sdk']?.optional).toBe(true);
-    expect(pkg.peerDependenciesMeta?.['@anthropic-ai/claude-agent-sdk']?.optional).toBe(
-      true,
-    );
   });
 });

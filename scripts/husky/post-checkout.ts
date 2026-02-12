@@ -44,15 +44,20 @@ if (lockChanged) {
   info("You may need to run 'bun install' to update dependencies");
 }
 
-const configFiles = ['tsconfig.json', 'eslint.config.js', '.prettierrc', 'bunfig.toml'];
-let configChanged = false;
-for (const f of configFiles) {
+const configurationFiles = [
+  'tsconfig.json',
+  'eslint.config.js',
+  '.prettierrc',
+  'bunfig.toml',
+];
+let configurationChanged = false;
+for (const f of configurationFiles) {
   if (await fileChangedBetween(f, prevHead, newHead)) {
-    configChanged = true;
+    configurationChanged = true;
     info(`Configuration changed: ${f}`);
   }
 }
-if (configChanged) {
+if (configurationChanged) {
   info('Configuration files changed. You may need to:');
   info('  • Restart your development server');
   info('  • Clear caches if needed');

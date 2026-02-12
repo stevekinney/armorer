@@ -3,16 +3,21 @@ import { $ } from 'bun';
 const entrypoints = [
   './src/index.ts',
   './src/core/index.ts',
-  './src/runtime/index.ts',
+  './src/query/index.ts',
+  './src/inspect/index.ts',
   './src/lazy/index.ts',
   './src/utilities/index.ts',
   './src/registry/index.ts',
+  './src/tools/index.ts',
+  './src/instrumentation/index.ts',
+  './src/middleware/index.ts',
+  './src/test/index.ts',
   './src/integrations/mcp/index.ts',
+  './src/open-ai/agents/index.ts',
+  './src/adapters/open-ai/agents/index.ts',
   './src/adapters/openai/index.ts',
   './src/adapters/anthropic/index.ts',
   './src/adapters/gemini/index.ts',
-  './src/integrations/claude-agent-sdk/index.ts',
-  './src/tools/index.ts',
 ];
 
 const root = './src';

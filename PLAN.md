@@ -31,7 +31,7 @@ This plan splits the repository into a provider-neutral core package and separat
   /adapters-gemini
   /mcp
   /claude-agent-sdk
-  /armorer (compat umbrella)
+  /toolbox (compat umbrella)
 ```
 
 ### Entry points and boundaries
@@ -39,9 +39,9 @@ This plan splits the repository into a provider-neutral core package and separat
 - `@armorer/core`
   - Allowed imports: **none** outside core.
   - Exports: ToolDefinition, ToolRegistry, query/search, identity helpers, ToolContext types, errors, serialization.
-- `@armorer/runtime`
+- `armorer/utilities`
   - Allowed imports: `@armorer/core` only.
-  - Exports: createTool, createRunner (alias createArmorer), composition utilities, search tool, lazy loader, runner-specific types.
+  - Exports: createTool, createRunner (alias createToolbox), composition utilities, search tool, lazy loader, runner-specific types.
 - `@armorer/adapters-openai|anthropic|gemini`
   - Allowed imports: `@armorer/core` only.
   - Exports: provider-specific formatter functions consuming serialized tool definitions.
@@ -90,12 +90,12 @@ Create `@armorer/core` as a provider-neutral library that defines tool specifica
 **API changes**
 
 - New core exports: `ToolDefinition`, `ToolIdentity`, `ToolId`, `ToolRisk`, `ToolLifecycle`, `ToolContext`, `ToolRegistry`, `createRegistry`, `serializeToolDefinition`.
-- Runtime retains `createTool` and `createArmorer` (from new runtime package).
+- Runtime retains `createTool` and `createToolbox` (from new runtime package).
 
 **Compatibility/migration**
 
-- `armorer` umbrella re-exports `@armorer/runtime` symbols for one major.
-- Add deprecation JSDoc on `armorer` top-level exports, pointing to `@armorer/runtime` or `@armorer/core`.
+- `armorer` umbrella re-exports `armorer/utilities` symbols for one major.
+- Add deprecation JSDoc on `armorer` top-level exports, pointing to `armorer/utilities` or `@armorer/core`.
 
 **Tests/docs**
 
@@ -170,7 +170,7 @@ Add full registry lifecycle and version-aware resolution, including alias and de
 
 **Compatibility/migration**
 
-- Runtime `createArmorer` uses core registry internally; existing `getTool(name)` maps to `resolve({name})`.
+- Runtime `createToolbox` uses core registry internally; existing `getTool(name)` maps to `resolve({name})`.
 - Deprecate runtime `getTool(name)` in favor of `resolve` semantics (warn on ambiguous name-only lookups).
 
 **Tests/docs**
@@ -202,7 +202,7 @@ Provide standard optional fields for run/request IDs and logging/tracing, withou
 
 **Compatibility/migration**
 
-- Runtime `createTool` still passes `toolCall`, `timeoutMs`, `dispatch` via RuntimeToolContext.
+- Runtime `createTool` still passes `toolCall`, `timeout`, `dispatch` via RuntimeToolContext.
 
 **Tests/docs**
 
@@ -239,7 +239,7 @@ Add a stable, provider-neutral error shape with category, code, retryable flag, 
 **Tests/docs**
 
 - Tests for validation error shape and retryable mapping.
-- Documentation: error code conventions and reserved prefixes (`armorer.*` and `tool.<namespace>.<name>.*`).
+- Documentation: error code conventions and reserved prefixes (`toolbox.*` and `tool.<namespace>.<name>.*`).
 
 **Acceptance criteria**
 
@@ -289,21 +289,21 @@ Move execution policies out of core while preserving runtime ergonomics.
 
 - Move runtime code:
   - `src/create-tool.ts` → `packages/runtime/src/create-tool.ts`
-  - `src/create-armorer.ts` → `packages/runtime/src/runner.ts` (export `createArmorer` as alias)
+  - `src/create-toolbox.ts` → `packages/runtime/src/runner.ts` (export `createToolbox` as alias)
   - `src/compose.ts` → `packages/runtime/src/compose.ts`
   - `src/utilities/*` → `packages/runtime/src/utilities/*`
   - `src/tools/search-tools.ts` → `packages/runtime/src/tools/search-tools.ts`
   - `src/lazy/index.ts` → `packages/runtime/src/lazy/index.ts`
-  - `src/combine-armorers.ts` → split into `packages/core/src/combine-registries.ts` and `packages/runtime/src/combine-runners.ts`
+  - `src/combine-toolboxes.ts` → split into `packages/core/src/combine-registries.ts` and `packages/runtime/src/combine-runners.ts`
 
 **API changes**
 
-- Runtime exports `createRunner` (new) and `createArmorer` (alias).
+- Runtime exports `createRunner` (new) and `createToolbox` (alias).
 - Core has no execute APIs.
 
 **Compatibility/migration**
 
-- `armorer` umbrella re-exports runtime `createArmorer`/`createTool` for one major.
+- `armorer` umbrella re-exports runtime `createToolbox`/`createTool` for one major.
 
 **Tests/docs**
 
@@ -373,9 +373,9 @@ Keep docs accurate and boundaries enforceable.
 ## Migration plan
 
 - **Semver**: Next major release.
-- **Umbrella re-exports**: `armorer` re-exports core/runtime/adapters via subpaths for one major.
+- **Umbrella re-exports**: `armorer` re-exports core/utilities/adapters via subpaths for one major.
 - **Deprecated APIs**:
-  - `armorer` top-level exports (use `@armorer/runtime` or `@armorer/core`).
+  - `armorer` top-level exports (use `armorer/utilities` or `@armorer/core`).
   - `toJSONSchema` (OpenAI-shaped) moved to `@armorer/adapters-openai`.
 - **Migration guide**: `documentation/migration-v1.md` with before/after imports and examples.
 
@@ -416,7 +416,7 @@ Keep docs accurate and boundaries enforceable.
 - [ ] Add structured error model in core and map in runtime
 - [ ] Implement provider-neutral serialization with deterministic output
 - [ ] Enforce metadata JSON-serializability in serialization
-- [ ] Move execution logic to `@armorer/runtime` (createTool/createArmorer/compose/utilities)
+- [ ] Move execution logic to `armorer/utilities` (createTool/createToolbox/compose/utilities)
 - [ ] Move search tool implementation to runtime; keep registry search in core
 - [ ] Move adapters to separate packages and update imports to use core serialization
 - [ ] Move MCP and Claude SDK integrations to separate packages
