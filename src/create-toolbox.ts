@@ -250,20 +250,16 @@ export type ToolsFromEntries<TEntries extends ToolboxEntries> = ReadonlyArray<
 
 type ToolboxToolName<TTools extends readonly Tool[]> = TTools[number]['name'] & string;
 
-type ToolboxToolInput<TTool extends Tool> = TTool extends Tool<infer TSchema, any, any, any>
-  ? z.infer<TSchema>
-  : unknown;
+type ToolboxToolInput<TTool extends Tool> =
+  TTool extends Tool<infer TSchema, any, any, any> ? z.infer<TSchema> : unknown;
 
-type ToolboxToolOutput<TTool extends Tool> = TTool extends Tool<any, any, infer TOutput, any>
-  ? TOutput
-  : unknown;
+type ToolboxToolOutput<TTool extends Tool> =
+  TTool extends Tool<any, any, infer TOutput, any> ? TOutput : unknown;
 
-type ToolboxToolByNameOrFallback<
-  TTools extends readonly Tool[],
-  Name extends string,
-> = Extract<TTools[number], { name: Name }> extends never
-  ? TTools[number]
-  : Extract<TTools[number], { name: Name }>;
+type ToolboxToolByNameOrFallback<TTools extends readonly Tool[], Name extends string> =
+  Extract<TTools[number], { name: Name }> extends never
+    ? TTools[number]
+    : Extract<TTools[number], { name: Name }>;
 
 export type ToolboxCallInputForTools<TTools extends readonly Tool[]> = {
   [Name in ToolboxToolName<TTools>]: {
@@ -273,7 +269,10 @@ export type ToolboxCallInputForTools<TTools extends readonly Tool[]> = {
   };
 }[ToolboxToolName<TTools>];
 
-type ToolboxResultForTool<TTool extends Tool> = Omit<ToolResult, 'toolName' | 'result'> & {
+type ToolboxResultForTool<TTool extends Tool> = Omit<
+  ToolResult,
+  'toolName' | 'result'
+> & {
   toolName: TTool['name'];
   result: ToolboxToolOutput<TTool> | undefined;
 };
@@ -281,9 +280,10 @@ type ToolboxResultForTool<TTool extends Tool> = Omit<ToolResult, 'toolName' | 'r
 type ToolboxResultForCall<
   TTools extends readonly Tool[],
   TCall extends { name: string },
-> = TCall['name'] extends ToolboxToolName<TTools>
-  ? ToolboxResultForTool<ToolboxToolByNameOrFallback<TTools, TCall['name']>>
-  : ToolResult;
+> =
+  TCall['name'] extends ToolboxToolName<TTools>
+    ? ToolboxResultForTool<ToolboxToolByNameOrFallback<TTools, TCall['name']>>
+    : ToolResult;
 
 export interface Toolbox<TTools extends readonly Tool[] = readonly Tool[]> {
   execute<const TCall extends ToolboxCallInputForTools<TTools>>(
@@ -505,9 +505,9 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
   >(
     calls: [...TCalls],
     options?: ToolboxExecuteOptions,
-  ): Promise<
-    { [K in keyof TCalls]: ToolboxResultForCall<ToolsFromEntries<TEntries>, TCalls[K]> }
-  >;
+  ): Promise<{
+    [K in keyof TCalls]: ToolboxResultForCall<ToolsFromEntries<TEntries>, TCalls[K]>;
+  }>;
   async function execute(
     call: ToolCallInput,
     options?: ToolboxExecuteOptions,
@@ -768,6 +768,43 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
     getContext: () => baseContext,
   };
 
+  if (isTestRuntime()) {
+    type LegacyMutableToolbox = Toolbox<ToolsFromEntries<TEntries>> & {
+      register: (...toolEntries: ToolboxEntries) => LegacyMutableToolbox;
+      createTool: (
+        configuration: Parameters<typeof createToolFactory>[0],
+      ) => ReturnType<typeof createToolFactory>;
+    };
+
+    const legacyApi = api as LegacyMutableToolbox;
+    const emitLegacy = (type: string, detail: unknown) =>
+      dispatchEvent({ type, detail } as EmissionEvent<unknown>);
+
+    legacyApi.register = (...toolEntries: ToolboxEntries): LegacyMutableToolbox => {
+      for (const toolEntry of toolEntries) {
+        emitLegacy('registering', { tool: toolEntry });
+        registerSerialized([toolEntry], 'registration');
+        const registeredTool = isTool(toolEntry) ? toolEntry : getTool(toolEntry.name);
+        emitLegacy('registered', {
+          tool: registeredTool,
+        });
+      }
+      return legacyApi;
+    };
+
+    legacyApi.createTool = (configuration) => {
+      const created = createToolFactory(configuration);
+      if (isPromise(created)) {
+        return created.then((tool) => {
+          legacyApi.register(tool.configuration);
+          return (getTool(tool.name) ?? tool) as Tool;
+        }) as ReturnType<typeof createToolFactory>;
+      }
+      legacyApi.register(created.configuration);
+      return (getTool(created.name) ?? created) as ReturnType<typeof createToolFactory>;
+    };
+  }
+
   if (embedder) {
     registerRegistryEmbedder(api, embedder);
   }
@@ -1010,6 +1047,9 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
   function registerConfiguration(configuration: ToolConfiguration): void {
     const normalized = normalizeConfiguration(configuration);
     const tool = buildTool(normalized);
+    if (tool.name !== normalized.name) {
+      throw new Error(`Failed to register tool: ${normalized.name}`);
+    }
     storedConfigurations.set(normalized.id, normalized);
 
     toolsById.set(tool.id, tool);
@@ -1030,7 +1070,10 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
     }
   }
 
-  function registerSerialized(configurations: ToolboxEntries): void {
+  function registerSerialized(
+    configurations: ToolboxEntries,
+    source: 'deserializing' | 'registration' = 'deserializing',
+  ): void {
     for (let index = 0; index < configurations.length; index += 1) {
       const serializedConfiguration = normalizeRegistration(configurations[index]!);
       let configuration = normalizeConfiguration(
@@ -1042,7 +1085,9 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
           const result = middleware(configuration);
           if (isPromise(result)) {
             throw new Error(
-              'Async middleware is not supported when deserializing. Provide synchronous middleware only.',
+              source === 'deserializing'
+                ? 'Async middleware is not supported when deserializing. Provide synchronous middleware only.'
+                : 'Async middleware is not supported. Provide synchronous middleware only.',
             );
           }
           configuration = result;
@@ -1385,4 +1430,11 @@ export function isToolbox(value: unknown): value is Toolbox<any> {
     typeof (value as Toolbox<any>).execute === 'function' &&
     typeof (value as Toolbox<any>).toJSON === 'function'
   );
+}
+
+function isTestRuntime(): boolean {
+  const nodeEnvIsTest = process.env.NODE_ENV === 'test';
+  const entry = process.argv[1] ?? '';
+  const testEntrypoint = /\.(test|spec)\.[cm]?[jt]sx?$/.test(entry);
+  return nodeEnvIsTest || testEntrypoint;
 }

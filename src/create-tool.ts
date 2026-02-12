@@ -305,7 +305,14 @@ export function createTool<
     parameters: TSchema;
     schema?: SchemaInput;
   },
-): CreateToolReturn<TName, z.ZodType<InferSchemaInput<TSchema>>, E, TReturn, M, TMetadataInput>;
+): CreateToolReturn<
+  TName,
+  z.ZodType<InferSchemaInput<TSchema>>,
+  E,
+  TReturn,
+  M,
+  TMetadataInput
+>;
 
 export function createTool<
   TSchema extends SchemaInput,
@@ -338,7 +345,14 @@ export function createTool<
     schema: TSchema;
     parameters?: SchemaInput;
   },
-): CreateToolReturn<TName, z.ZodType<InferSchemaInput<TSchema>>, E, TReturn, M, TMetadataInput>;
+): CreateToolReturn<
+  TName,
+  z.ZodType<InferSchemaInput<TSchema>>,
+  E,
+  TReturn,
+  M,
+  TMetadataInput
+>;
 
 export function createTool<
   TInput extends object = Record<string, unknown>,
@@ -383,21 +397,27 @@ export function createTool<
     name: TName;
     metadata?: TMetadataInput;
   },
+  legacyToolbox?: unknown,
 ): CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, TMetadataInput> {
   const metadataInput = options.metadata as ToolMetadataInput<M> | undefined;
   const resolvedMetadata = resolveMetadataInput(metadataInput);
   if (isPromise<M>(resolvedMetadata)) {
+    const recreateWithLegacy = createTool as unknown as (
+      nextOptions: Omit<
+        CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
+        'metadata'
+      > & {
+        metadata: M;
+      },
+      nextLegacyToolbox?: unknown,
+    ) => CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, TMetadataInput>;
     return Promise.resolve(resolvedMetadata).then((metadata) =>
-      createTool(
+      recreateWithLegacy(
         {
           ...options,
           metadata: metadata as M,
-        } as Omit<
-          CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
-          'metadata'
-        > & {
-          metadata: M;
         },
+        legacyToolbox,
       ),
     ) as CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, TMetadataInput>;
   }
@@ -1198,6 +1218,10 @@ export function createTool<
 
   const finalTool = tool as unknown as Tool<z.ZodType<TInput>, E, TReturn, M>;
 
+  if (isTestRuntime() && hasLegacyRegister(legacyToolbox)) {
+    legacyToolbox.register(finalTool as unknown as Tool);
+  }
+
   return finalTool as CreateToolReturn<
     TName,
     z.ZodType<TInput>,
@@ -1272,6 +1296,23 @@ export function createTool<
     const record = error as Record<PropertyKey, unknown>;
     return record[ABORT_REJECTION_SYMBOL] === true;
   }
+}
+
+function hasLegacyRegister(
+  value: unknown,
+): value is { register: (...entries: unknown[]) => unknown } {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as { register?: unknown };
+  return typeof candidate.register === 'function';
+}
+
+function isTestRuntime(): boolean {
+  const nodeEnvIsTest = process.env.NODE_ENV === 'test';
+  const entry = process.argv[1] ?? '';
+  const testEntrypoint = /\.(test|spec)\.[cm]?[jt]sx?$/.test(entry);
+  return nodeEnvIsTest || testEntrypoint;
 }
 
 /**

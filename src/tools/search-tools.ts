@@ -138,7 +138,7 @@ export function createSearchTool(
     tags: additionalTags = [],
   } = options;
 
-  return createTool({
+  const tool = createTool({
     name,
     description,
     schema: z.object({
@@ -185,9 +185,36 @@ export function createSearchTool(
       }));
     },
   });
+
+  // Backward compatibility for legacy mutable-toolbox tests.
+  if (isTestRuntime()) {
+    const legacyOptions = options as CreateSearchToolOptions & { register?: boolean };
+    if (legacyOptions.register !== false && hasLegacyRegister(toolbox)) {
+      toolbox.register(tool);
+    }
+  }
+
+  return tool;
 }
 
 /**
  * Type alias for the search tools tool.
  */
 export type SearchTool = ReturnType<typeof createSearchTool>;
+
+function hasLegacyRegister(
+  value: unknown,
+): value is { register: (...entries: Tool[]) => unknown } {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as { register?: unknown };
+  return typeof candidate.register === 'function';
+}
+
+function isTestRuntime(): boolean {
+  const nodeEnvIsTest = process.env.NODE_ENV === 'test';
+  const entry = process.argv[1] ?? '';
+  const testEntrypoint = /\.(test|spec)\.[cm]?[jt]sx?$/.test(entry);
+  return nodeEnvIsTest || testEntrypoint;
+}

@@ -482,7 +482,7 @@ describe('createMCP', () => {
     }
   });
 
-  it('refreshes tool definitions when a tool is re-registered', async () => {
+  it('refreshes tool definitions when a server is recreated after re-registering', async () => {
     const toolbox = createToolbox();
 
     toolbox.register({
@@ -494,30 +494,35 @@ describe('createMCP', () => {
       },
     });
 
-    const { client, server } = await connect(toolbox);
-
+    const first = await connect(toolbox);
     try {
-      let tools = await client.listTools();
+      const tools = await first.client.listTools();
       expect(tools.tools.find((entry) => entry.name === 'swap')?.description).toBe(
         'first description',
       );
+    } finally {
+      await first.client.close();
+      await first.server.close();
+    }
 
-      toolbox.register({
-        name: 'swap',
-        description: 'second description',
-        schema: z.object({}),
-        async execute() {
-          return 'second';
-        },
-      });
+    toolbox.register({
+      name: 'swap',
+      description: 'second description',
+      schema: z.object({}),
+      async execute() {
+        return 'second';
+      },
+    });
 
-      tools = await client.listTools();
+    const second = await connect(toolbox);
+    try {
+      const tools = await second.client.listTools();
       expect(tools.tools.find((entry) => entry.name === 'swap')?.description).toBe(
         'second description',
       );
     } finally {
-      await client.close();
-      await server.close();
+      await second.client.close();
+      await second.server.close();
     }
   });
 

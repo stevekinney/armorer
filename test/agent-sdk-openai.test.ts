@@ -34,18 +34,15 @@ describe('OpenAI Agents SDK MCP integration', () => {
   });
 
   it('lists tools over streamable HTTP', async () => {
-    const toolbox = createToolbox();
-    createTool(
-      {
-        name: 'sum',
-        description: 'adds two numbers',
-        schema: z.object({ a: z.number(), b: z.number() }),
-        async execute({ a, b }) {
-          return a + b;
-        },
+    const sum = createTool({
+      name: 'sum',
+      description: 'adds two numbers',
+      schema: z.object({ a: z.number(), b: z.number() }),
+      async execute({ a, b }) {
+        return a + b;
       },
-      toolbox,
-    );
+    });
+    const toolbox = createToolbox([sum]);
 
     const mcp = createMCP(toolbox, {
       serverInfo: { name: 'toolbox-tools', version: '0.1.0' },
