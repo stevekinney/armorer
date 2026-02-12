@@ -139,7 +139,7 @@ Here's a complete, production-ready example:
 
 ```typescript
 import { createToolbox, createTool, type Tool } from 'armorer';
-import { queryTools } from 'armorer/registry';
+import { queryTools } from 'armorer/query';
 import * as lancedb from '@lancedb/lancedb';
 import OpenAI from 'openai';
 import { z } from 'zod';

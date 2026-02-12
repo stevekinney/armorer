@@ -118,7 +118,12 @@ type NamedTool<
   E extends ToolEventsMap,
   TReturn,
   M extends ToolMetadata | undefined,
-> = Tool<TSchema, E, TReturn, M> & { name: TName };
+  Tags extends readonly string[],
+> = Tool<TSchema, E, TReturn, M> & {
+  name: TName;
+  /** @internal Type marker used by query helpers for typed tag IntelliSense. */
+  __tags?: Tags;
+};
 
 type CreateToolReturn<
   TName extends string,
@@ -126,11 +131,12 @@ type CreateToolReturn<
   E extends ToolEventsMap,
   TReturn,
   M extends ToolMetadata | undefined,
+  Tags extends readonly string[],
   TMetadataInput extends ToolMetadataInput<M> | undefined,
 > =
   TMetadataInput extends AsyncToolMetadataInput<M>
-    ? Promise<NamedTool<TName, TSchema, E, TReturn, M>>
-    : NamedTool<TName, TSchema, E, TReturn, M>;
+    ? Promise<NamedTool<TName, TSchema, E, TReturn, M, Tags>>
+    : NamedTool<TName, TSchema, E, TReturn, M, Tags>;
 
 export type WithContext<
   T extends object = Record<string, unknown>,
@@ -311,6 +317,7 @@ export function createTool<
   E,
   TReturn,
   M,
+  Tags,
   TMetadataInput
 >;
 
@@ -351,6 +358,7 @@ export function createTool<
   E,
   TReturn,
   M,
+  Tags,
   TMetadataInput
 >;
 
@@ -375,7 +383,7 @@ export function createTool<
     name: TName;
     metadata?: TMetadataInput;
   },
-): CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, TMetadataInput>;
+): CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, Tags, TMetadataInput>;
 export function createTool<
   TInput extends object = Record<string, unknown>,
   TOutput = unknown,
@@ -398,7 +406,7 @@ export function createTool<
     metadata?: TMetadataInput;
   },
   legacyToolbox?: unknown,
-): CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, TMetadataInput> {
+): CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, Tags, TMetadataInput> {
   const metadataInput = options.metadata as ToolMetadataInput<M> | undefined;
   const resolvedMetadata = resolveMetadataInput(metadataInput);
   if (isPromise<M>(resolvedMetadata)) {
@@ -410,7 +418,7 @@ export function createTool<
         metadata: M;
       },
       nextLegacyToolbox?: unknown,
-    ) => CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, TMetadataInput>;
+    ) => CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, Tags, TMetadataInput>;
     return Promise.resolve(resolvedMetadata).then((metadata) =>
       recreateWithLegacy(
         {
@@ -419,7 +427,7 @@ export function createTool<
         },
         legacyToolbox,
       ),
-    ) as CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, TMetadataInput>;
+    ) as CreateToolReturn<TName, z.ZodType<TInput>, E, TReturn, M, Tags, TMetadataInput>;
   }
 
   const {
@@ -1228,6 +1236,7 @@ export function createTool<
     E,
     TReturn,
     M,
+    Tags,
     TMetadataInput
   >;
 

@@ -116,7 +116,7 @@ const tools = toolNames.map((name) => toolbox.getTool(name)).filter(Boolean);
 For more precise results, combine Pinecone retrieval with Toolbox filtering:
 
 ```typescript
-import { queryTools, type Tool } from 'armorer/registry';
+import { queryTools, type Tool } from 'armorer/query';
 
 async function hybridToolSearch(
   query: string,

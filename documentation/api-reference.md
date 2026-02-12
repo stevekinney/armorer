@@ -175,8 +175,6 @@ Execution and validation events include `toolCall` and `configuration` in their 
 
 See [Eventing](eventing.md) for subscription patterns and bubbled event behavior.
 
-- `registering`: tool about to be registered
-- `registered`: tool registered
 - `call`: `{ tool, call }`
 - `complete`: `{ tool, result }`
 - `error`: `{ tool?, result }`
@@ -185,22 +183,19 @@ See [Eventing](eventing.md) for subscription patterns and bubbled event behavior
 - `search`: `{ options, results }`
 - `status:update`: `ToolStatusUpdate` for UI progress
 
-`query` and `search` events are emitted by `queryTools`/`searchTools` when you pass the toolbox registry as the input.
+`query` events are emitted by `queryTools` when you pass a toolbox as input.
 
 #### Query helpers and types
 
-Registry helpers live in `armorer/registry` and accept a toolbox, tool, or iterable.
+Registry helpers live in `armorer/query` and accept a toolbox, tool, or iterable.
 See also: [Searching Tools](searching-tools.md).
 
 Functions:
 
 - `queryTools(input, criteria?)`: filter-only query
-- `searchTools(input, options?)`: ranked selection with reasons
 - `reindexSearchIndex(input)`: rebuild cached text indexes on demand
 
 `ToolQuery` fields include `tags`, `text`, `schema`, `metadata`, `predicate`, and boolean groups (`and`, `or`, `not`) plus paging/selection (`limit`, `offset`, `select`). `TagFilter` supports `any`, `all`, and `none`. `SchemaFilter` supports `keys` and `matches`. `MetadataFilter` supports `has`, `eq`, `contains`, `startsWith`, `range`, and `predicate`. `ToolPredicate` is `(tool) => boolean`.
-
-`ToolSearchOptions` includes `filter`, `rank`, `ranker`, `tieBreaker`, `limit`, `offset`, `select`, `includeSchema`, `includeToolConfiguration`, and `explain`. `ToolSearchRank` supports `tags`, `tagWeights`, `text`, and optional `weights`. `ToolMatch` includes `tool`, `score`, `reasons`, and optional `matches`.
 
 Functions:
 
@@ -242,7 +237,7 @@ Core registry types (main export):
 - `SerializedToolbox`: serialized `ToolConfiguration[]`
 - `ToolStatusUpdate`: registry status payload
 
-Registry helper types (`armorer/registry`):
+Registry helper types (`armorer/query`):
 
 - `QueryResult`: array of `Tool`
 - `QuerySelectionResult`: query result union for selections
@@ -259,15 +254,6 @@ Registry helper types (`armorer/registry`):
 - `ToolQueryOptions`: paging/selection options
 - `ToolQuerySelect`: selection mode (`tool`, `name`, `configuration`, `summary`)
 - `ToolSummary`: summarized tool shape
-- `ToolSearchOptions`: search options (filter + rank)
-- `ToolSearchRank`: ranking preferences
-- `ToolMatch`: search result with score + reasons
-- `ToolMatchDetails`: optional match metadata
-- `EmbeddingMatch`: embedding match metadata (field + score)
-- `ToolRanker`: custom rank callback
-- `ToolRankContext`: rank context for custom rankers
-- `ToolRankResult`: ranker return shape
-- `ToolTieBreaker`: tie-breaker selector
 
 Tool types:
 
@@ -352,14 +338,13 @@ MCP server integration.
 - `toolConfigurationFromMetadata(tool)`: read MCP configuration from `tool.metadata.mcp`
 - Types: `CreateMCPOptions`, `MCPToolConfiguration`, `MCPToolLike`, `MCPToolDefinition`, `MCPToolSource`, `MCPToolHandler`, `ToMCPToolsOptions`, `FromMCPToolsOptions`, `MCPResourceRegistrar`, `MCPPromptRegistrar`
 
-### Subpath export: `armorer/registry`
+### Subpath export: `armorer/query`
 
-Registry query/search helpers and types.
+Registry query helpers and types.
 
 #### Registry API
 
 - `queryTools(input, criteria?)`: filter-only query
-- `searchTools(input, options?)`: ranked selection with reasons
 - `reindexSearchIndex(input)`: rebuild cached text indexes
 
 ### Subpath export: `armorer/lazy`

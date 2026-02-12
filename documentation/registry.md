@@ -2,10 +2,10 @@
 
 ## Overview
 
-Register tools, execute tool calls, and query or search the registry.
+Register tools, execute tool calls, and query the registry.
 
 For a dedicated guide to tool and registry event streams, see [Eventing](eventing.md).
-For a dedicated guide to `queryTools`/`searchTools`, see [Searching Tools](searching-tools.md).
+For a dedicated guide to `queryTools`, see [Searching Tools](searching-tools.md).
 
 ### Registration
 
@@ -156,34 +156,10 @@ console.log(toolbox.history[0].call.name); // 'get_weather'
 console.log(weatherMock.calls.length); // 1
 ```
 
-### Selecting Tools (Search)
-
-Use `searchTools` to rank tools and optionally include match explanations:
-
-```typescript
-import { searchTools } from 'armorer/registry';
-
-const matches = searchTools(toolbox, {
-  filter: { tags: { none: ['dangerous'] } },
-  rank: {
-    tags: ['summarize', 'fast'],
-    tagWeights: { fast: 2 },
-    text: { query: 'summarize meeting notes', mode: 'fuzzy', threshold: 0.6 },
-  },
-  explain: true,
-  select: 'summary',
-  limit: 5,
-});
-
-for (const match of matches) {
-  console.log(match.tool.identity.name, match.score, match.reasons);
-}
-```
-
 ### Querying Tools
 
 ```typescript
-import { queryTools } from 'armorer/registry';
+import { queryTools } from 'armorer/query';
 
 // Query by tag (OR match)
 const mathTools = queryTools(toolbox, { tags: { any: ['math'] } });
@@ -262,88 +238,9 @@ If the registry was created with `embed`, text queries also use embeddings for s
 
 Embedding matches use cosine similarity over the returned vectors. Queries only consult embeddings when lexical matching fails, and `threshold` applies to the similarity score. You can also disable specific fields by setting their `text.weights` to `0`.
 
-### Selecting Tools (Search)
-
-Use `searchTools` to rank tools and optionally include match explanations:
-
-```typescript
-import { searchTools } from 'armorer/registry';
-
-const matches = searchTools(toolbox, {
-  filter: { tags: { none: ['dangerous'] } },
-  rank: {
-    tags: ['summarize', 'fast'],
-    tagWeights: { fast: 2 },
-    text: { query: 'summarize meeting notes', mode: 'fuzzy', threshold: 0.6 },
-  },
-  explain: true,
-  select: 'summary',
-  limit: 5,
-});
-
-for (const match of matches) {
-  console.log(match.tool.name, match.score, match.reasons);
-}
-```
-
-If you mutate tool metadata or schemas after a search has been cached, refresh the index (this also re-embeds when `embed` is configured):
-
-```typescript
-import { reindexSearchIndex } from 'armorer/registry';
-
-reindexSearchIndex(toolbox);
-```
-
-#### Search Details
-
-`searchTools(input, options?)` filters tools (via `options.filter`) and then ranks the remaining tools. It accepts the same input shapes as `queryTools`. Results are `ToolMatch` objects: `{ tool, score, reasons, matches? }`.
-
-Ranking options:
-
-- `rank.tags`: preferred tags that add weight to tools with matching tags
-- `rank.tagWeights`: per-tag weight multipliers. Higher values increase the score contribution of matching tags. For example, `{ fast: 2 }` means tools with the `fast` tag get double the base tag weight added to their score.
-- `rank.text`: text ranking query (same shape as `queryTools` text)
-- `rank.weights`: `{ tags?: number; text?: number }` (default weights are `1`)
-
-Text ranking scores accumulate across matched query tokens; use `text.weights` to emphasize name vs description vs tags.
-
-When `embed` is configured, search also adds a semantic score from the best-matching text field using cosine similarity. The best field is chosen by highest weighted similarity (`text.weights`), with ties broken by the order of `text.fields`. `matches.embedding` reports the field and raw similarity, while `reasons` include `embedding:<field>:<score>`. Embeddings are treated as a soft ranking signal; use `filter.text` with a `threshold` if you want hard gating.
-
-Explain matches:
-
-- `explain: true` includes `matches` with `fields`, `tags`, `schemaKeys`, `metadataKeys`, and optional `embedding`
-- `reasons` entries are strings like `tag:fast` or `text:schema-keys(logId)`
-
-Custom ranking and tie-breaking:
-
-- `ranker`: `(tool, context) => { score, reasons?, matches?, override?, exclude? } | number` for domain-specific scoring
-- `tieBreaker`: `'name' | 'none' | ((a, b) => number)` to control order when scores tie
-
-Selection and paging (same as query):
-
-- `select`: `'tool' | 'name' | 'configuration' | 'summary'`
-- `limit` / `offset`
-- `includeSchema` / `includeToolConfiguration`
-
-Example custom ranker:
-
-```typescript
-const matches = searchTools(toolbox, {
-  rank: { text: 'summarize' },
-  ranker: (tool, context) => {
-    if (tool.metadata?.tier === 'premium') {
-      return { score: 5, reasons: ['tier:premium'] };
-    }
-    return { score: 0 };
-  },
-  tieBreaker: 'name',
-  explain: true,
-});
-```
-
 #### Embeddings
 
-Provide an embedder to `createToolbox` to enrich text search with embeddings. The registry batches the searchable fields for each tool (name, description, tags, schema keys, metadata keys) and stores the resulting vectors on registration. Queries and searches then use embeddings alongside lexical matching when `text` is provided.
+Provide an embedder to `createToolbox` to enrich text queries with semantic matching. The registry batches searchable fields for each tool (name, description, tags, schema keys, metadata keys) and stores vectors on registration.
 
 The embedder is called with a list of texts and must return a same-length list of numeric vectors; mismatched or invalid vectors are ignored. Embeddings are cached per tool and can be recomputed with `reindexSearchIndex`.
 
@@ -351,6 +248,12 @@ The embedder is called with a list of texts and must return a same-length list o
 const toolbox = createToolbox([], {
   embed: async (texts) => embeddingsClient.embed(texts),
 });
+```
+
+```typescript
+import { reindexSearchIndex } from 'armorer/query';
+
+reindexSearchIndex(toolbox);
 ```
 
 If the embedder is asynchronous, the first query may fall back to lexical matching until vectors are available; subsequent calls will use embeddings automatically.

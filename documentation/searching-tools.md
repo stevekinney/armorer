@@ -1,166 +1,109 @@
-# Searching Tools
+# Querying Tools
 
 ## Overview
 
-Toolbox has two core APIs for tool discovery:
+Toolbox uses `queryTools(...)` for programmatic tool discovery.
 
-- `queryTools(...)`: filter tools by tags, text, schema, metadata, and custom predicates.
-- `searchTools(...)`: rank tools by relevance (tags, text, embeddings) and return scores/reasons.
+- Filter by tags, text, schema keys, metadata, and custom predicates.
+- Works with a toolbox, a single tool, or any iterable of tools.
+- Supports semantic text matching when the toolbox has an `embed` function.
 
-This page is about programmatic search in `armorer/registry`.
+Import from `armorer/query`:
 
-If you need an agent-callable tool named `search-tools`, see [Search Tool](search-tool.md).
+```typescript
+import { queryTools } from 'armorer/query';
+```
 
 ## Quick Start
 
 ```typescript
 import { createToolbox } from 'armorer';
-import { queryTools, searchTools } from 'armorer/registry';
+import { queryTools } from 'armorer/query';
 
 const toolbox = createToolbox();
-// ... register tools
 
-const filtered = queryTools(toolbox, { tags: { any: ['communication'] } });
-const ranked = searchTools(toolbox, {
-  rank: { text: { query: 'notify a user', mode: 'fuzzy' } },
-  limit: 5,
+const communicationTools = queryTools(toolbox, {
+  tags: { any: ['communication'] },
+});
+
+const nonDangerous = queryTools(toolbox, {
+  tags: { none: ['dangerous'] },
 });
 ```
 
-## `queryTools`: Filter-First Search
-
-Use `queryTools` when you want deterministic filtering.
+## Query Criteria
 
 ```typescript
-import { queryTools } from 'armorer/registry';
+import { queryTools } from 'armorer/query';
 import { z } from 'zod';
 
-// Tags
-const safeTools = queryTools(toolbox, {
-  tags: { none: ['dangerous', 'mutating'] },
-});
-
-// Text matching (name, description, tags, schema keys, metadata keys)
 const byText = queryTools(toolbox, {
-  text: { query: 'calendar event', mode: 'contains' },
+  text: { query: 'send message', mode: 'fuzzy', threshold: 0.6 },
 });
 
-// Schema matching
-const withCityParam = queryTools(toolbox, {
-  schema: { keys: ['city'] },
+const bySchemaKeys = queryTools(toolbox, {
+  schema: { keys: ['recipient', 'subject'] },
 });
+
 const bySchemaShape = queryTools(toolbox, {
-  schema: { matches: z.object({ city: z.string() }) },
+  schema: { matches: z.object({ recipient: z.string() }) },
 });
 
-// Metadata
-const premium = queryTools(toolbox, {
+const byMetadata = queryTools(toolbox, {
   metadata: { eq: { tier: 'premium' } },
 });
-```
 
-### Boolean Criteria
-
-```typescript
-const results = queryTools(toolbox, {
-  and: [{ tags: { any: ['communication'] } }, { not: { tags: { any: ['deprecated'] } } }],
+const booleanGroups = queryTools(toolbox, {
+  and: [{ tags: { any: ['communication'] } }],
   or: [{ text: 'email' }, { text: 'sms' }],
+  not: { tags: { any: ['deprecated'] } },
 });
 ```
 
-## `searchTools`: Ranked Search
+## Embeddings
 
-Use `searchTools` when you need relevance ordering and optional explainability.
-
-```typescript
-import { searchTools } from 'armorer/registry';
-
-const matches = searchTools(toolbox, {
-  filter: { tags: { none: ['deprecated'] } },
-  rank: {
-    tags: ['communication', 'fast'],
-    tagWeights: { fast: 2 },
-    text: {
-      query: 'notify team about outage',
-      mode: 'fuzzy',
-      threshold: 0.6,
-    },
-    weights: { tags: 1, text: 2 },
-  },
-  explain: true,
-  limit: 10,
-});
-
-for (const match of matches) {
-  console.log(match.tool.name, match.score, match.reasons);
-}
-```
-
-### Custom Ranking
+When `createToolbox` is configured with `embed`, `queryTools` can match semantically through `text` queries.
 
 ```typescript
-const matches = searchTools(toolbox, {
-  rank: { text: 'summarize incident' },
-  ranker: (tool) => {
-    if (tool.metadata?.tier === 'premium') {
-      return { score: 5, reasons: ['tier:premium'] };
-    }
-    return { score: 0 };
-  },
-  tieBreaker: 'name',
-  explain: true,
-});
-```
+import { createToolbox } from 'armorer';
+import { queryTools } from 'armorer/query';
 
-## Embeddings and Semantic Search
-
-If the toolbox has an `embed` function, `queryTools` and `searchTools` can include embedding-based matching alongside lexical matching.
-
-```typescript
 const toolbox = createToolbox([], {
   embed: async (texts) => embeddingClient.embed(texts),
 });
+
+const matches = queryTools(toolbox, {
+  text: { query: 'notify customer about shipment delay', mode: 'fuzzy' },
+  tags: { any: ['communication'] },
+});
 ```
 
-When tool metadata or schemas change and cached indices are stale, rebuild search state:
+## Type Safety and IntelliSense
 
-```typescript
-import { reindexSearchIndex } from 'armorer/registry';
+`queryTools` is generic over the toolbox’s concrete tool set:
 
-reindexSearchIndex(toolbox);
-```
+- `tags.any/all/none` get IntelliSense from known tool tags.
+- `schema.keys` gets IntelliSense from known input schema keys.
+- Result shapes stay typed when you use `select`.
+
+This is especially helpful when your toolbox is created from `as const` tool entries.
 
 ## Selection and Pagination
 
-Both query and search support selection and pagination.
-
 ```typescript
-const summaries = searchTools(toolbox, {
-  rank: { text: 'send message' },
+const summaries = queryTools(toolbox, {
   select: 'summary',
   includeSchema: true,
   includeToolConfiguration: false,
   offset: 10,
   limit: 10,
 });
+
+const names = queryTools(toolbox, { select: 'name' });
 ```
-
-Common `select` values:
-
-- `tool`
-- `name`
-- `configuration`
-- `summary`
 
 ## Events
 
-When `queryTools` or `searchTools` is called with a toolbox instance, toolbox emits `query` and `search` events.
+Calling `queryTools` with a toolbox emits a `query` event on that toolbox.
 
-See [Eventing](eventing.md) for event subscription patterns.
-
-## Related Documentation
-
-- [Toolbox Registry](registry.md) - Registration, execution, and registry behavior
-- [Search Tool](search-tool.md) - Agent-callable `search-tools` utility
-- [Embeddings & Semantic Search](embeddings.md) - Embedding setup and semantic matching
-- [Public API Reference](api-reference.md) - Full query/search type reference
+See [Eventing](eventing.md) for subscription patterns.

@@ -382,7 +382,7 @@ runAgent('I need to notify John about the meeting tomorrow');
 
 ## Related Documentation
 
-- [Searching Tools](searching-tools.md) - Programmatic `queryTools` and `searchTools` guide
+- [Searching Tools](searching-tools.md) - Programmatic `queryTools` guide
 - [Embeddings & Semantic Search](embeddings.md) - Configure embeddings for semantic search
-- [Toolbox Registry](registry.md) - Learn about `searchTools` and `queryTools`
+- [Toolbox Registry](registry.md) - Learn about `queryTools`
 - [Provider Adapters](provider-adapters.md) - Use tools with OpenAI, Anthropic, and Gemini

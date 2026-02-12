@@ -25,7 +25,7 @@ The most common approach is to use OpenAI's embedding API:
 
 ```typescript
 import { createToolbox, createTool } from 'armorer';
-import { searchTools } from 'armorer/registry';
+import { queryTools } from 'armorer/query';
 import OpenAI from 'openai';
 import { z } from 'zod';
 
@@ -76,16 +76,13 @@ createTool(
   toolbox,
 );
 
-// Semantic search - finds "send-email" even though "notify" isn't in the name
-const results = searchTools(toolbox, {
-  rank: {
-    text: { query: 'notify someone about something', mode: 'fuzzy' },
-  },
-  explain: true,
+// Semantic query - can still find "send-email" even though "notify" is not in the name
+const results = queryTools(toolbox, {
+  text: { query: 'notify someone about something', mode: 'fuzzy' },
+  tags: { any: ['communication'] },
 });
 
-console.log(results[0].tool.name); // 'send-email'
-console.log(results[0].reasons); // Includes embedding match scores
+console.log(results[0]?.name); // 'send-email'
 ```
 
 ## Pinecone Integration
@@ -112,14 +109,7 @@ bun add @pinecone-database/pinecone openai
 
 4. **Use hybrid search**: Combine semantic search with Toolbox's tag and metadata filters for precise results.
 
-5. **Index management**: Periodically reindex tools if their descriptions or metadata change using `reindexSearchIndex()`.
-
-```typescript
-import { reindexSearchIndex } from 'armorer/registry';
-
-// Rebuild embeddings after updating tool metadata
-reindexSearchIndex(toolbox);
-```
+5. **Index management**: If tool metadata changes at runtime, rebuild cached indexes with `reindexSearchIndex()`.
 
 ## Alternative Vector Databases
 
@@ -155,5 +145,5 @@ For an open-source embedding database with built-in embedding functions, see the
 - [Pinecone Integration](integrations/pinecone.md) - Managed vector database guide
 - [LanceDB Integration](integrations/lancedb.md) - Serverless vector database guide
 - [Chroma Integration](integrations/chroma.md) - Open-source embedding database guide
-- [Toolbox Registry](registry.md) - Querying and searching tools
+- [Toolbox Registry](registry.md) - Querying and execution patterns
 - [API Reference](api-reference.md) - Complete type definitions for embeddings

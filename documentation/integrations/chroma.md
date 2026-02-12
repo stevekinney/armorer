@@ -168,7 +168,7 @@ Here's a complete, production-ready example:
 
 ```typescript
 import { createToolbox, createTool, type Tool } from 'armorer';
-import { queryTools } from 'armorer/registry';
+import { queryTools } from 'armorer/query';
 import { ChromaClient, type Collection } from 'chromadb';
 import OpenAI from 'openai';
 import { z } from 'zod';

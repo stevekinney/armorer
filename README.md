@@ -1,6 +1,6 @@
 # Toolbox
 
-A lightweight, type-safe registry for validated AI tools. Build tools with Zod schemas and metadata, register them in a toolbox, execute them, and query/rank them with registry helpers and event hooks.
+A lightweight, type-safe registry for validated AI tools. Build tools with Zod schemas and metadata, register them in a toolbox, execute them, and query them with registry helpers and event hooks.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ Toolbox turns tool calling into a structured, observable, and searchable workflo
 
 - Zod-powered schema validation with TypeScript inference
 - Central tool registry with execution, policy, and event hooks
-- Query + search helpers with scoring and metadata filters
+- Query helpers with text, tag, schema, and metadata filters
 - Semantic search with vector embeddings (OpenAI, Pinecone, etc.)
 - Provider adapters for OpenAI, Anthropic, and Gemini
 - Tool composition utilities (pipe/bind/when/parallel/retry)
@@ -64,13 +64,13 @@ import { pipe, parallel, retry, when } from 'armorer/utilities';
 
 #### `armorer/query`
 
-Query predicates for searching and filtering tools:
+Query helpers and predicates for filtering tools:
 
 ```typescript
-import { textMatches, tagsMatchAll, schemaMatches } from 'armorer/query';
+import { queryTools, textMatches, tagsMatchAll, schemaMatches } from 'armorer/query';
 ```
 
-**Exports:** `textMatches`, `tagsMatchAll`, `tagsMatchAny`, `tagsMatchNone`, `schemaMatches`, `schemaHasKeys`, and related types.
+**Exports:** `queryTools`, `reindexSearchIndex`, `textMatches`, `tagsMatchAll`, `tagsMatchAny`, `tagsMatchNone`, `schemaMatches`, `schemaHasKeys`, and related types.
 
 #### `armorer/inspect`
 
@@ -683,7 +683,7 @@ Longer-form docs live in `documentation/`:
 
 - [Common Patterns](documentation/patterns/) - Circuit breakers, session management, request deduplication, resource pooling, fallback tools, audit trails, cost tracking, and more
 - [Toolbox Registry](documentation/registry.md) - Registration, execution, querying, searching, middleware, and serialization
-- [Searching Tools](documentation/searching-tools.md) - Query and rank tools with `queryTools` and `searchTools`
+- [Searching Tools](documentation/searching-tools.md) - Discover tools with `queryTools`
 - [Eventing](documentation/eventing.md) - Tool and toolbox events, streaming APIs, and progress/status patterns
 - [Context and withContext](documentation/context.md) - Shared toolbox context, tool-local context injection, and runtime execution context
 - [Tool Composition](documentation/composition.md) - `pipe`, `bind`, `tap`, `when`, `parallel`, `retry`, `preprocess`, `postprocess`

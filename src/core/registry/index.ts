@@ -1,4 +1,5 @@
 import type { EmissionEvent } from 'event-emission';
+import type { z } from 'zod';
 
 import type { ToolIdentity } from '../identity';
 import {
@@ -31,7 +32,6 @@ import {
   getToolEmbeddings,
   warmToolEmbeddings,
 } from './embeddings';
-import type { ToolRegistry } from './registry';
 
 export type {
   RegisterOptions,
@@ -45,18 +45,18 @@ export { createRegistry } from './registry';
 /**
  * Tag filtering for tool queries.
  */
-export type TagFilter = {
+export type TagFilter<TTag extends string = string> = {
   /** Match any of these tags (OR). */
-  any?: readonly string[];
+  any?: readonly TTag[];
   /** Require all of these tags (AND). */
-  all?: readonly string[];
+  all?: readonly TTag[];
   /** Exclude tools with any of these tags. */
-  none?: readonly string[];
+  none?: readonly TTag[];
 };
 
-export type SchemaFilter = {
+export type SchemaFilter<TSchemaKey extends string = string> = {
   /** Require schema to contain these keys. */
-  keys?: readonly string[];
+  keys?: readonly TSchemaKey[];
   /** Loosely match a schema shape. */
   matches?: ToolSchema;
 };
@@ -68,17 +68,19 @@ export type MetadataRange = {
   max?: number;
 };
 
-export type MetadataFilter = {
+export type MetadataFilter<TMetadataKey extends string = string> = {
   /** Require metadata to include these keys. */
-  has?: readonly string[];
+  has?: readonly TMetadataKey[];
   /** Require metadata values to equal these fields. */
-  eq?: Record<string, unknown>;
+  eq?: Partial<Record<TMetadataKey, unknown>>;
   /** Require metadata values to contain these substrings or values. */
-  contains?: Record<string, MetadataPrimitive | readonly MetadataPrimitive[]>;
+  contains?: Partial<
+    Record<TMetadataKey, MetadataPrimitive | readonly MetadataPrimitive[]>
+  >;
   /** Require metadata values to start with these strings. */
-  startsWith?: Record<string, string>;
+  startsWith?: Partial<Record<TMetadataKey, string>>;
   /** Require metadata numeric values to fall within ranges. */
-  range?: Record<string, MetadataRange>;
+  range?: Partial<Record<TMetadataKey, MetadataRange>>;
   /** Custom metadata predicate. */
   predicate?: (metadata: JsonObject | undefined) => boolean;
 };
@@ -107,6 +109,37 @@ export type ToolSummary<TTool extends ToolDefinition = ToolDefinition> = {
   configuration?: TTool;
 };
 
+type ToolTagFromMarker<TTool extends ToolDefinition> = TTool extends {
+  __tags?: readonly (infer TTag)[];
+}
+  ? Extract<TTag, string>
+  : never;
+
+type ToolTagFromDefinition<TTool extends ToolDefinition> =
+  TTool['tags'] extends readonly (infer TTag)[] ? Extract<TTag, string> : never;
+
+type ToolQueryTag<TTool extends ToolDefinition> = [
+  ToolTagFromMarker<TTool> | ToolTagFromDefinition<TTool>,
+] extends [never]
+  ? string
+  : ToolTagFromMarker<TTool> | ToolTagFromDefinition<TTool>;
+
+type ToolQuerySchemaKey<TTool extends ToolDefinition> = TTool extends {
+  __schema?: infer TSchema;
+}
+  ? TSchema extends z.ZodTypeAny
+    ? Extract<keyof z.infer<TSchema>, string>
+    : string
+  : string;
+
+type ToolQueryMetadataKey<TTool extends ToolDefinition> = TTool extends {
+  metadata: infer TMetadata;
+}
+  ? Extract<keyof NonNullable<TMetadata>, string>
+  : TTool extends { metadata?: infer TMetadata }
+    ? Extract<keyof NonNullable<TMetadata>, string>
+    : string;
+
 /**
  * Criteria for querying tools.
  *
@@ -122,13 +155,13 @@ export type ToolQueryCriteria<TTool extends ToolDefinition = ToolDefinition> = {
   /** Match deprecated or non-deprecated tools. */
   deprecated?: boolean;
   /** Tag-based filtering. */
-  tags?: TagFilter;
+  tags?: TagFilter<ToolQueryTag<TTool>>;
   /** Fuzzy text search across name, description, tags, schema keys, and metadata keys. */
   text?: TextQuery;
   /** Schema filtering by keys or shape. */
-  schema?: SchemaFilter;
+  schema?: SchemaFilter<ToolQuerySchemaKey<TTool>>;
   /** Metadata filtering. */
-  metadata?: MetadataFilter;
+  metadata?: MetadataFilter<ToolQueryMetadataKey<TTool>>;
   /** Custom predicate over the full tool. */
   predicate?: ToolPredicate<TTool>;
   /** Require all nested criteria to match. */
@@ -258,7 +291,6 @@ export type ToolRegistryLike<TTool extends ToolDefinition = ToolDefinition> = {
 };
 
 export type ToolQueryInput<TTool extends ToolDefinition = ToolDefinition> =
-  | ToolRegistry
   | TTool
   | ToolRegistryLike<TTool>
   | Iterable<TTool>
@@ -395,6 +427,9 @@ export function queryTools(
   return results;
 }
 
+/**
+ * @deprecated Use `queryTools` for tool discovery.
+ */
 export function searchTools<TTool extends ToolDefinition>(
   input: ToolQueryInput<TTool>,
 ): ToolMatch<TTool>[];
@@ -2369,10 +2404,13 @@ function metadataEquals(
 
 function metadataContains(
   metadata: JsonObject | undefined,
-  contains: Record<string, MetadataPrimitive | readonly MetadataPrimitive[]>,
+  contains: Partial<Record<string, MetadataPrimitive | readonly MetadataPrimitive[]>>,
 ): boolean {
   if (!metadata) return false;
   for (const [key, needle] of Object.entries(contains)) {
+    if (needle === undefined) {
+      continue;
+    }
     const value = metadata[key];
     if (typeof value === 'string' && typeof needle === 'string') {
       if (!value.includes(needle)) return false;
@@ -2394,10 +2432,13 @@ function metadataContains(
 
 function metadataStartsWith(
   metadata: JsonObject | undefined,
-  startsWith: Record<string, string>,
+  startsWith: Partial<Record<string, string>>,
 ): boolean {
   if (!metadata) return false;
   for (const [key, prefix] of Object.entries(startsWith)) {
+    if (prefix === undefined) {
+      continue;
+    }
     const value = metadata[key];
     if (typeof value !== 'string') return false;
     if (!value.startsWith(prefix)) return false;
@@ -2407,10 +2448,13 @@ function metadataStartsWith(
 
 function metadataInRange(
   metadata: JsonObject | undefined,
-  ranges: Record<string, MetadataRange>,
+  ranges: Partial<Record<string, MetadataRange>>,
 ): boolean {
   if (!metadata) return false;
   for (const [key, range] of Object.entries(ranges)) {
+    if (!range) {
+      continue;
+    }
     const value = metadata[key];
     if (typeof value !== 'number') return false;
     if (range.min !== undefined && value < range.min) return false;

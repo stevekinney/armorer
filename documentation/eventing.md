@@ -149,6 +149,6 @@ subscription.unsubscribe();
 
 ## Notes
 
-- `query` and `search` events are emitted when `queryTools` or `searchTools` receives a toolbox as input.
+- `query` events are emitted when `queryTools` receives a toolbox as input.
 - Listen on the tool instance when you need per-tool event handling outside `toolbox.execute(...)`.
 - Listen on the toolbox when you want a centralized stream across all tools.

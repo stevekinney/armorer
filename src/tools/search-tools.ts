@@ -1,10 +1,6 @@
 import { z } from 'zod';
 
-import {
-  searchTools,
-  type ToolQueryInput,
-  type ToolSearchOptions,
-} from '../core/registry';
+import { queryTools, type ToolQuery, type ToolQueryInput } from '../core/registry';
 import { createTool } from '../create-tool';
 import type { Tool } from '../is-tool';
 
@@ -95,7 +91,7 @@ export interface SearchToolsInput {
  *
  * // Now the LLM can search for tools
  * const results = await searchTool({ query: 'send message to someone' });
- * // Returns: [{ name: 'send-email', description: '...', score: 0.85 }, ...]
+ * // Returns: [{ name: 'send-email', description: '...', score: 1 }, ...]
  * ```
  *
  * @example With embeddings for semantic search
@@ -116,7 +112,7 @@ export interface SearchToolsInput {
  *   },
  * });
  *
- * // With embeddings, searches are semantic
+ * // With embeddings, queryTools can match semantically via toolbox.embed
  * const searchTool = createSearchTool(toolbox);
  * const results = await searchTool({ query: 'notify user' });
  * // Finds 'send-email' even though 'notify' isn't in the name/description
@@ -157,31 +153,29 @@ export function createSearchTool(
     tags: ['utility', 'search', 'readonly', ...additionalTags],
     metadata: { readOnly: true },
     async execute({ query, limit: queryLimit, tags }): Promise<SearchToolsResult[]> {
-      const searchOptions: ToolSearchOptions & { select?: 'tool' } = {
-        rank: {
-          text: { query, mode: 'fuzzy' },
-          ...(tags?.length ? { tags } : {}),
-        },
+      const criteria: ToolQuery & { select?: 'tool' } = {
+        text: { query, mode: 'fuzzy' },
         limit: queryLimit ?? defaultLimit,
-        explain,
+        ...(tags?.length ? { tags: { any: tags } } : {}),
       };
 
-      if (tags?.length) {
-        searchOptions.filter = {
-          tags: { any: tags },
-        };
-      }
-
       const results = await Promise.resolve(
-        searchTools(toolbox as unknown as ToolQueryInput, searchOptions),
+        queryTools(toolbox as unknown as ToolQueryInput, criteria),
       );
 
-      return results.map((match) => ({
-        name: match.tool.identity.name,
-        description: match.tool.display.description,
-        ...(match.tool.tags?.length ? { tags: match.tool.tags } : {}),
-        score: match.score,
-        ...(explain && match.reasons.length ? { reasons: match.reasons } : {}),
+      return results.map((tool, index) => ({
+        name: tool.identity.name,
+        description: tool.display.description,
+        ...(tool.tags?.length ? { tags: tool.tags } : {}),
+        score: Math.max(0, 1 - index * 0.1),
+        ...(explain
+          ? {
+              reasons: [
+                ...(query.trim().length ? [`text:${query.trim()}`] : []),
+                ...(tags?.length ? tags.map((tag) => `tag:${tag}`) : []),
+              ],
+            }
+          : {}),
       }));
     },
   });
