@@ -418,7 +418,7 @@ async function main() {
     {
       name: 'send-email',
       description: 'Send an email message to one or more recipients',
-      schema: z.object({
+      input: z.object({
         to: z.array(z.string().email()),
         subject: z.string(),
         body: z.string(),
@@ -437,7 +437,7 @@ async function main() {
     {
       name: 'send-sms',
       description: 'Send a text message to a phone number',
-      schema: z.object({
+      input: z.object({
         phoneNumber: z.string(),
         message: z.string().max(160),
       }),
@@ -455,7 +455,7 @@ async function main() {
     {
       name: 'schedule-meeting',
       description: 'Create a calendar event and invite attendees',
-      schema: z.object({
+      input: z.object({
         title: z.string(),
         startTime: z.string().datetime(),
         duration: z.number().describe('Duration in minutes'),

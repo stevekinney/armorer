@@ -20,7 +20,7 @@ describe('Anthropic Agent SDK MCP integration', () => {
       {
         name: 'sum',
         description: 'adds two numbers',
-        schema: z.object({ a: z.number(), b: z.number() }),
+        input: z.object({ a: z.number(), b: z.number() }),
         async execute({ a, b }) {
           return a + b;
         },
@@ -64,7 +64,7 @@ describe('Anthropic Agent SDK MCP integration', () => {
       {
         name: 'nonce',
         description: 'returns a nonce token',
-        schema: z.object({}),
+        input: z.object({}),
         async execute() {
           return token;
         },

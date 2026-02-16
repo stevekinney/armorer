@@ -482,7 +482,7 @@ async function main() {
     {
       name: 'send-email',
       description: 'Send an email message to one or more recipients',
-      schema: z.object({
+      input: z.object({
         to: z.array(z.string().email()),
         subject: z.string(),
         body: z.string(),
@@ -501,7 +501,7 @@ async function main() {
     {
       name: 'send-slack-message',
       description: 'Post a message to a Slack channel or user',
-      schema: z.object({
+      input: z.object({
         channel: z.string(),
         message: z.string(),
         threadTs: z.string().optional(),
@@ -520,7 +520,7 @@ async function main() {
     {
       name: 'create-jira-ticket',
       description: 'Create a new issue or ticket in Jira',
-      schema: z.object({
+      input: z.object({
         project: z.string(),
         summary: z.string(),
         description: z.string(),
@@ -540,7 +540,7 @@ async function main() {
     {
       name: 'schedule-meeting',
       description: 'Create a calendar event and send invites to attendees',
-      schema: z.object({
+      input: z.object({
         title: z.string(),
         startTime: z.string().datetime(),
         duration: z.number(),

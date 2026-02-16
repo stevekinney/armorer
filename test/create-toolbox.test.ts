@@ -16,7 +16,7 @@ const makeConfiguration = (
 ): ToolConfiguration => ({
   name: 'sum',
   description: 'add two numbers',
-  schema: z.object({ a: z.number(), b: z.number() }),
+  input: z.object({ a: z.number(), b: z.number() }),
   tags: ['math'],
   async execute({ a, b }) {
     return a + b;
@@ -144,7 +144,7 @@ describe('createToolbox', () => {
       makeConfiguration({
         name: 'diagnostic-tool',
         description: 'diagnostics',
-        schema: z.object({ value: z.string() }),
+        input: z.object({ value: z.string() }),
         async execute({ value }) {
           return value;
         },
@@ -194,7 +194,7 @@ describe('createToolbox', () => {
     const base = createToolbox([
       makeConfiguration({
         name: 'base-tool',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => 'base',
       }),
     ]);
@@ -202,7 +202,7 @@ describe('createToolbox', () => {
     const extended = base.extend({
       name: 'extended-tool',
       description: 'extended',
-      schema: z.object({}),
+      input: z.object({}),
       execute: async () => 'extended',
     });
 
@@ -233,7 +233,7 @@ describe('createToolbox', () => {
         {
           name: 'ctx-read',
           description: 'reads context',
-          schema: z.object({}),
+          input: z.object({}),
           execute: async (_params, context) => {
             const ctx = context as Record<string, unknown>;
             return {
@@ -264,13 +264,13 @@ describe('createToolbox', () => {
     const alpha = createTool({
       name: 'alpha',
       description: 'alpha',
-      schema: z.object({}),
+      input: z.object({}),
       execute: async () => 'alpha',
     });
     const beta = createTool({
       name: 'beta',
       description: 'beta',
-      schema: z.object({}),
+      input: z.object({}),
       execute: async () => 'beta',
     });
 
@@ -295,7 +295,7 @@ describe('createToolbox', () => {
     expect(serialized).toHaveLength(1);
     expect(serialized[0]?.schemaVersion).toBe('2020-12');
     expect(serialized[0]?.name).toBe('sum-json-schema');
-    expect(serialized[0]?.schema).toMatchObject({
+    expect(serialized[0]?.input).toMatchObject({
       type: 'object',
       properties: {
         a: { type: 'number' },
@@ -303,7 +303,7 @@ describe('createToolbox', () => {
       },
       required: ['a', 'b'],
     });
-    expect((serialized[0]?.schema as Record<string, unknown>)['$schema']).toBe(
+    expect((serialized[0]?.input as Record<string, unknown>)['$schema']).toBe(
       'https://json-schema.org/draft/2020-12/schema',
     );
     expect(() => JSON.stringify(serialized)).not.toThrow();
@@ -329,7 +329,7 @@ describe('createToolbox', () => {
     const built = createTool({
       name: 'echo',
       description: 'returns the provided value',
-      schema: z.object({ text: z.string() }),
+      input: z.object({ text: z.string() }),
       async execute({ text }) {
         return text;
       },
@@ -350,7 +350,7 @@ describe('createToolbox', () => {
     const tool = toolbox.createTool({
       name: 'from-toolbox',
       description: 'created via toolbox',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       async execute({ value }) {
         return value.toUpperCase();
       },
@@ -366,22 +366,22 @@ describe('createToolbox', () => {
     expect(result.result).toBe('HI');
   });
 
-  it('creates and registers tools via createTool() using parameters', async () => {
+  it('creates and registers tools via createTool() using input', async () => {
     const toolbox = createToolbox();
     const tool = toolbox.createTool({
-      name: 'from-toolbox-parameters',
-      description: 'created via toolbox with parameters',
-      parameters: z.object({ value: z.string() }),
+      name: 'from-toolbox-input',
+      description: 'created via toolbox with input',
+      input: z.object({ value: z.string() }),
       async execute({ value }) {
         return value.toUpperCase();
       },
     });
 
-    expect(toolbox.getTool('from-toolbox-parameters')).toBe(tool);
+    expect(toolbox.getTool('from-toolbox-input')).toBe(tool);
 
     const result = await toolbox.execute({
-      id: 'from-toolbox-parameters-1',
-      name: 'from-toolbox-parameters',
+      id: 'from-toolbox-input-1',
+      name: 'from-toolbox-input',
       arguments: { value: 'hi' },
     });
     expect(result.result).toBe('HI');
@@ -392,7 +392,7 @@ describe('createToolbox', () => {
     const tool = toolbox.createTool({
       name: 'tagged',
       description: 'tagged tool',
-      schema: z.object({}),
+      input: z.object({}),
       tags: ['alpha', 'beta'],
       metadata: { tier: 'gold' },
       execute: async () => 'ok',
@@ -407,7 +407,7 @@ describe('createToolbox', () => {
     const tool = toolbox.createTool({
       name: 'sync-factory-metadata',
       description: 'metadata from sync factory',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       metadata: () => ({ source: 'sync' as const }),
       async execute({ value }) {
         return value;
@@ -428,7 +428,7 @@ describe('createToolbox', () => {
     const toolPromise = toolbox.createTool({
       name: 'promise-metadata-toolbox',
       description: 'metadata from promise',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       metadata: Promise.resolve({ source: 'promise' as const }),
       async execute({ value }) {
         return value;
@@ -446,7 +446,7 @@ describe('createToolbox', () => {
     const toolPromise = toolbox.createTool({
       name: 'async-factory-metadata-toolbox',
       description: 'metadata from async factory',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       metadata: async () => ({ source: 'async-factory' as const }),
       async execute({ value }) {
         return value;
@@ -464,7 +464,7 @@ describe('createToolbox', () => {
     toolbox.register({
       name: 'mutating',
       description: 'mutates',
-      schema: z.object({}),
+      input: z.object({}),
       metadata: { mutates: true },
       execute: async () => 'ok',
     });
@@ -483,7 +483,7 @@ describe('createToolbox', () => {
     toolbox.register({
       name: 'dangerous',
       description: 'dangerous tool',
-      schema: z.object({}),
+      input: z.object({}),
       metadata: { dangerous: true },
       execute: async () => 'ok',
     });
@@ -502,7 +502,7 @@ describe('createToolbox', () => {
     toolbox.register({
       name: 'one',
       description: 'budgeted',
-      schema: z.object({}),
+      input: z.object({}),
       execute: async () => 'ok',
     });
 
@@ -527,7 +527,7 @@ describe('createToolbox', () => {
     toolbox.register({
       name: 'time',
       description: 'budgeted',
-      schema: z.object({}),
+      input: z.object({}),
       execute: async () => 'ok',
     });
 
@@ -546,26 +546,26 @@ describe('createToolbox', () => {
     const tool = toolbox.createTool({
       name: 'object-schema',
       description: 'object schema',
-      schema: { value: z.string() },
+      input: { value: z.string() },
       execute: async ({ value }) => value,
     });
 
-    expect(tool.schema.safeParse({ value: 'ok' }).success).toBe(true);
+    expect(tool.input.safeParse({ value: 'ok' }).success).toBe(true);
   });
 
-  it('createTool accepts parameters aliases in configuration normalization', async () => {
+  it('createTool accepts input in configuration normalization', async () => {
     const toolbox = createToolbox();
     toolbox.register({
-      name: 'parameters-configuration',
-      description: 'registered with parameters',
-      parameters: z.object({ value: z.string() }),
+      name: 'input-configuration',
+      description: 'registered with input',
+      input: z.object({ value: z.string() }),
       async execute({ value }) {
         return value;
       },
     } as any);
 
     const result = await toolbox.execute({
-      name: 'parameters-configuration',
+      name: 'input-configuration',
       arguments: { value: 'ok' },
     });
 
@@ -578,7 +578,7 @@ describe('createToolbox', () => {
       toolbox.createTool({
         name: 'bad-execute',
         description: 'invalid execute type',
-        schema: z.object({}),
+        input: z.object({}),
         execute: 42 as any,
       }),
     ).toThrow('execute must be a function or a promise that resolves to a function');
@@ -590,10 +590,10 @@ describe('createToolbox', () => {
       toolbox.createTool({
         name: 'bad-schema',
         description: 'invalid schema type',
-        schema: 123 as any,
+        input: 123 as any,
         execute: async () => null,
       }),
-    ).toThrow('Tool schema must be a Zod object schema or an object of Zod schemas');
+    ).toThrow('Tool input must be a Zod object schema or an object of Zod schemas');
   });
 
   it('createTool rejects non-object Zod schemas', () => {
@@ -602,10 +602,10 @@ describe('createToolbox', () => {
       toolbox.createTool({
         name: 'bad-zod-schema',
         description: 'invalid zod schema',
-        schema: z.number(),
+        input: z.number(),
         execute: async () => null,
       }),
-    ).toThrow('Tool schema must be a Zod object schema');
+    ).toThrow('Tool input must be a Zod object schema');
   });
 
   it('createTool throws when toolFactory returns mismatched name', () => {
@@ -614,7 +614,7 @@ describe('createToolbox', () => {
         createTool({
           name: `other-${configuration.name}`,
           description: configuration.description,
-          schema: configuration.schema,
+          input: configuration.input,
           execute: async () => null,
         }),
     });
@@ -623,13 +623,13 @@ describe('createToolbox', () => {
       toolbox.createTool({
         name: 'mismatch',
         description: 'should fail',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => null,
       }),
     ).toThrow('Failed to register tool: mismatch');
   });
 
-  it('defaults schema when using toolbox.createTool', async () => {
+  it('defaults input when using toolbox.createTool', async () => {
     const toolbox = createToolbox();
     const tool = toolbox.createTool({
       name: 'from-toolbox-default',
@@ -637,7 +637,7 @@ describe('createToolbox', () => {
       execute: async () => 'ok',
     });
 
-    expect(tool.schema.safeParse({}).success).toBe(true);
+    expect(tool.input.safeParse({}).success).toBe(true);
 
     const result = await toolbox.execute({
       id: 'from-toolbox-default-1',
@@ -647,7 +647,7 @@ describe('createToolbox', () => {
     expect(result.result).toBe('ok');
   });
 
-  it('defaults schema when registering a raw tool configuration with no schema', async () => {
+  it('defaults input when registering a raw tool configuration with no input', async () => {
     const toolbox = createToolbox();
     toolbox.register({
       name: 'configuration-default-schema',
@@ -658,7 +658,7 @@ describe('createToolbox', () => {
     });
 
     const tool = toolbox.getTool('configuration-default-schema');
-    expect(tool?.schema.safeParse({}).success).toBe(true);
+    expect(tool?.input.safeParse({}).success).toBe(true);
 
     const result = await toolbox.execute({
       id: 'configuration-default-schema-1',
@@ -704,7 +704,7 @@ describe('createToolbox', () => {
         async execute({ a }) {
           return a + 1;
         },
-        schema: z.object({ a: z.number() }),
+        input: z.object({ a: z.number() }),
       }),
       makeConfiguration({
         name: 'double',
@@ -713,13 +713,13 @@ describe('createToolbox', () => {
         async execute({ a }) {
           return a * 2;
         },
-        schema: z.object({ a: z.number() }),
+        input: z.object({ a: z.number() }),
       }),
       makeConfiguration({
         name: 'describe',
         description: 'describe value',
         tags: ['text'],
-        schema: z.object({ value: z.string() }),
+        input: z.object({ value: z.string() }),
         async execute({ value }) {
           return value.toUpperCase();
         },
@@ -758,17 +758,17 @@ describe('createToolbox', () => {
       makeConfiguration({
         name: 'alpha',
         tags: ['math'],
-        schema: z.object({ a: z.number() }),
+        input: z.object({ a: z.number() }),
       }),
       makeConfiguration({
         name: 'beta',
         tags: ['text'],
-        schema: z.object({ value: z.string() }),
+        input: z.object({ value: z.string() }),
       }),
       makeConfiguration({
         name: 'gamma',
         tags: ['math', 'fast'],
-        schema: z.object({ a: z.number(), fast: z.boolean() }),
+        input: z.object({ a: z.number(), fast: z.boolean() }),
       }),
     );
 
@@ -828,12 +828,12 @@ describe('createToolbox', () => {
     toolbox.register(
       makeConfiguration({
         name: 'writer',
-        schema,
+        input: schema,
         async execute({ text }) {
           return text;
         },
       }),
-      makeConfiguration({ name: 'mathy', schema: z.object({ a: z.number() }) }),
+      makeConfiguration({ name: 'mathy', input: z.object({ a: z.number() }) }),
     );
 
     const matches = queryTools(toolbox, { schema: { matches: schema } });
@@ -871,7 +871,7 @@ describe('createToolbox', () => {
       toolbox.register({
         name: '',
         description: 'ok',
-        schema: makeConfiguration().schema,
+        input: makeConfiguration().input,
         execute: async () => {},
       } as any);
     }).toThrow(/ToolConfiguration/);
@@ -879,7 +879,7 @@ describe('createToolbox', () => {
       toolbox.register({
         name: 'x',
         description: 42 as any,
-        schema: makeConfiguration().schema,
+        input: makeConfiguration().input,
         execute: async () => {},
       } as any);
     }).toThrow(/ToolConfiguration/);
@@ -887,7 +887,7 @@ describe('createToolbox', () => {
       toolbox.register({
         name: 'x',
         description: 'ok',
-        schema: undefined as any,
+        input: undefined as any,
         execute: async () => {},
       } as any);
     }).not.toThrow();
@@ -895,7 +895,7 @@ describe('createToolbox', () => {
       toolbox.register({
         name: 'x',
         description: 'ok',
-        schema: makeConfiguration().schema,
+        input: makeConfiguration().input,
         execute: null as any,
       });
     }).toThrow(/missing execute/i);
@@ -946,7 +946,7 @@ describe('createToolbox', () => {
     toolbox.register({
       name: 'ctx',
       description: 'ctx aware',
-      schema: z.object({}),
+      input: z.object({}),
       async execute(_params, context) {
         contexts.push(context);
         expect(context.workspaceId).toBe('ws-123');
@@ -1008,7 +1008,7 @@ describe('createToolbox', () => {
     toolbox.register({
       name: 'long-task',
       description: 'a task that reports progress',
-      schema: z.object({ steps: z.number() }),
+      input: z.object({ steps: z.number() }),
       async execute({ steps }, context) {
         for (let i = 1; i <= steps; i++) {
           context.dispatchEvent({
@@ -1064,7 +1064,7 @@ describe('createToolbox', () => {
     toolbox.register({
       name: 'streaming-task',
       description: 'streams chunks',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         return {
           async *[Symbol.asyncIterator]() {
@@ -1144,7 +1144,7 @@ describe('createToolbox', () => {
     toolbox.register({
       name: 'result-only-stream',
       description: 'streams chunks via result only',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         return {
           async *[Symbol.asyncIterator]() {
@@ -1206,7 +1206,7 @@ describe('createToolbox', () => {
     toolbox.register({
       name: 'fail-fast-tool-error',
       description: 'returns a ToolResult error',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         throw new Error('tool failed');
       },
@@ -1548,13 +1548,13 @@ describe('createToolbox', () => {
           name: 'b-tagged',
           description: 'slow path',
           tags: ['priority'],
-          schema: z.object({ value: z.string() }),
+          input: z.object({ value: z.string() }),
         }),
         makeConfiguration({
           name: 'a-text',
           description: 'double output',
           tags: ['other'],
-          schema: z.object({ value: z.string() }),
+          input: z.object({ value: z.string() }),
         }),
       );
 
@@ -1649,14 +1649,14 @@ describe('createToolbox', () => {
           name: 'audit-tool',
           description: 'writes events',
           tags: ['audit-log'],
-          schema: z.object({ logId: z.string() }),
+          input: z.object({ logId: z.string() }),
           metadata: { logId: 'audit' },
         }),
         makeConfiguration({
           name: 'other-tool',
           description: 'unrelated',
           tags: ['misc'],
-          schema: z.object({ value: z.string() }),
+          input: z.object({ value: z.string() }),
         }),
       );
 
@@ -1680,7 +1680,7 @@ describe('createToolbox', () => {
           name: 'audit-tool',
           description: 'writes events',
           tags: ['audit'],
-          schema: z.object({ eventId: z.string() }),
+          input: z.object({ eventId: z.string() }),
           metadata: { owner: 'team-a' },
         }),
       );
@@ -1864,19 +1864,19 @@ describe('createToolbox', () => {
           name: 'increment',
           description: 'increase by one',
           tags: ['math'],
-          schema: z.object({ a: z.number() }),
+          input: z.object({ a: z.number() }),
         }),
         makeConfiguration({
           name: 'double',
           description: 'double it',
           tags: ['math', 'fast'],
-          schema: z.object({ a: z.number() }),
+          input: z.object({ a: z.number() }),
         }),
         makeConfiguration({
           name: 'describe',
           description: 'describe value',
           tags: ['text'],
-          schema: z.object({ value: z.string() }),
+          input: z.object({ value: z.string() }),
         }),
       );
 
@@ -1941,21 +1941,17 @@ describe('createToolbox', () => {
       const tool = toolbox.createTool({
         name: 'configured',
         description: 'configured tool',
-        schema: z.object({}),
-        outputSchema: z.object({ ok: z.boolean() }),
+        input: z.object({}),
         policy: { beforeExecute: () => ({ allow: true }) },
         policyContext: () => ({ source: 'tool' }),
         digests: { input: false, output: true },
-        outputValidationMode: 'throw',
         concurrency: 2,
         execute: async () => ({ ok: true }),
       });
 
-      expect(tool.configuration.outputSchema).toBeDefined();
       expect(tool.configuration.policy).toBeDefined();
       expect(tool.configuration.policyContext).toBeDefined();
       expect(tool.configuration.digests).toEqual({ input: false, output: true });
-      expect(tool.configuration.outputValidationMode).toBe('throw');
       expect(tool.configuration.concurrency).toBe(2);
     });
 
@@ -1965,7 +1961,7 @@ describe('createToolbox', () => {
       toolbox.register({
         name: 'capture',
         description: 'captures context',
-        schema: z.object({}),
+        input: z.object({}),
         async execute(_params, context) {
           observed.signal = context?.signal;
           observed.timeout = context?.timeout;
@@ -1988,7 +1984,7 @@ describe('createToolbox', () => {
       toolbox.register({
         name: 'meta-concurrency',
         description: 'metadata concurrency',
-        schema: z.object({}),
+        input: z.object({}),
         metadata: { concurrency: 3 },
         execute: async () => 'ok',
       });
@@ -2002,7 +1998,7 @@ describe('createToolbox', () => {
       toolbox.register({
         name: 'no-concurrency',
         description: 'invalid concurrency',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => 'ok',
       });
 
@@ -2019,7 +2015,7 @@ describe('createToolbox', () => {
       toolbox.register({
         name: 'policy-bool',
         description: 'boolean policy',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => 'ok',
       });
 
@@ -2037,7 +2033,7 @@ describe('createToolbox', () => {
       toolbox.register({
         name: 'policy-merge',
         description: 'policy merge',
-        schema: z.object({}),
+        input: z.object({}),
         policyContext: async () => ({ fromTool: true }),
         policy: {
           beforeExecute({ policyContext }) {
@@ -2061,7 +2057,7 @@ describe('createToolbox', () => {
         name: 'tag-mutating',
         description: 'tag mutating',
         tags: ['mutating'],
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => 'ok',
       });
 
@@ -2078,7 +2074,7 @@ describe('createToolbox', () => {
         name: 'tag-dangerous',
         description: 'tag dangerous',
         tags: ['dangerous'],
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => 'ok',
       });
 
@@ -2142,7 +2138,7 @@ describe('createToolbox', () => {
           {
             name: 'async-resolved-tool',
             description: 'resolved via async getTool',
-            schema: z.object({ value: z.string() }),
+            input: z.object({ value: z.string() }),
           } as any,
         ],
         {
@@ -2167,7 +2163,7 @@ describe('createToolbox', () => {
           {
             name: 'broken-tool',
             description: 'broken resolver',
-            schema: z.object({}),
+            input: z.object({}),
           } as any,
         ],
         {

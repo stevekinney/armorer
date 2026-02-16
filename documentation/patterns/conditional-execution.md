@@ -11,7 +11,7 @@ import { z } from 'zod';
 const checkCache = createTool({
   name: 'check-cache',
   description: 'Check if data is cached',
-  schema: z.object({ key: z.string() }),
+  input: z.object({ key: z.string() }),
   async execute({ key }) {
     const cache = new Map();
     return cache.get(key);
@@ -21,7 +21,7 @@ const checkCache = createTool({
 const fetchFromApi = createTool({
   name: 'fetch-from-api',
   description: 'Fetch from API',
-  schema: z.object({ key: z.string() }),
+  input: z.object({ key: z.string() }),
   async execute({ key }) {
     return { data: 'fresh-data' };
   },

@@ -8,7 +8,7 @@ describe('ToolError model', () => {
     const tool = createTool({
       name: 'validate-me',
       description: 'validate input',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       async execute({ value }) {
         return value.toUpperCase();
       },
@@ -29,7 +29,7 @@ describe('ToolError model', () => {
     const tool = createTool({
       name: 'timeout-tool',
       description: 'times out',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         await new Promise((resolve) => setTimeout(resolve, 25));
         return 'ok';

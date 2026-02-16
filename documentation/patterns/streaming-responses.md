@@ -18,7 +18,7 @@ import { z } from 'zod';
 const tokenTool = createTool({
   name: 'token-tool',
   description: 'Emit tokens',
-  schema: z.object({ prompt: z.string() }),
+  input: z.object({ prompt: z.string() }),
   async execute({ prompt }) {
     return {
       async *[Symbol.asyncIterator]() {
@@ -76,14 +76,11 @@ tokenTool.addEventListener('stream-chunk', (event) => {
 });
 ```
 
-## Incremental Validation and Digests
+## Incremental Digests
 
 For async-iterable outputs:
 
-- `outputSchema` is applied per chunk (incrementally).
 - output digests are computed per chunk (incrementally).
-
-With `outputValidationMode: 'throw'`, the stream fails on the first invalid chunk.
 
 ## OpenAI Adapter Note
 

@@ -8,52 +8,33 @@ import { createToolbox } from '../src/create-toolbox';
 import { type ToolResult } from '../src/is-tool';
 
 describe('Core Runtime Completeness', () => {
-  describe('Dry-Run in Composition', () => {
+  describe('Composition Execution', () => {
     const logStep = createTool({
       name: 'log-step',
       description: 'Logs a step',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       execute: async ({ value }) => ({ value: `${value}-executed` }),
-      dryRun: async ({ value }) => ({ value: `${value}-dryrun` }),
     });
 
     const noDryRunTool = createTool({
       name: 'no-dry-run',
       description: 'No dry run support',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       execute: async ({ value }) => ({ value: `${value}-executed` }),
     });
 
-    it('pipe executes dryRun handler', async () => {
+    it('pipe executes composed tools in order', async () => {
       const pipeline = pipe(logStep, logStep);
 
-      // Execute normally
       const result = await pipeline.execute({ value: 'start' });
       expect(result).toEqual({ value: 'start-executed-executed' });
-
-      // Execute dry run
-      const dryResult = await pipeline.execute({ value: 'start' }, { dryRun: true });
-      expect(dryResult).toEqual({ value: 'start-dryrun-dryrun' });
     });
 
-    it('pipe fails in dryRun if tool lacks support', async () => {
+    it('pipe works when steps have mixed implementations', async () => {
       const pipeline = pipe(logStep, noDryRunTool);
 
-      // Execute normally works
       const result = await pipeline.execute({ value: 'start' });
       expect(result).toEqual({ value: 'start-executed-executed' });
-
-      // Execute dry run fails
-      // Note: we can't use .rejects.toThrow because Bun test runner might behave differently with async throws in proxies?
-      // But standard expectation:
-      let error: Error | undefined;
-      try {
-        await pipeline.execute({ value: 'start' }, { dryRun: true });
-      } catch (e: any) {
-        error = e;
-      }
-      expect(error).toBeDefined();
-      expect(error?.message).toContain('Pipeline failed at step 1');
     });
   });
 
@@ -62,7 +43,7 @@ describe('Core Runtime Completeness', () => {
       const tool = createTool({
         name: 'sensitive-tool',
         description: 'Requires approval',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => 'done',
         policy: {
           beforeExecute: async () =>
@@ -112,7 +93,7 @@ describe('Core Runtime Completeness', () => {
         namespace: 'ns1',
         version: '1.0.0',
         description: 'Tool 1',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => '1',
       });
 
@@ -121,7 +102,7 @@ describe('Core Runtime Completeness', () => {
         namespace: 'ns2',
         version: '1.0.0',
         description: 'Tool 2',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => '2',
       });
 
@@ -146,14 +127,14 @@ describe('Core Runtime Completeness', () => {
         name: 'my-tool',
         namespace: 'ns1',
         description: 'Tool 1',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => '1',
       });
       const tool2 = createTool({
         name: 'my-tool',
         namespace: 'ns2',
         description: 'Tool 2',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => '2',
       });
 
@@ -172,7 +153,7 @@ describe('Core Runtime Completeness', () => {
         name: 'my-tool',
         namespace: 'ns1',
         description: 'Tool 1',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => '1',
       });
 
@@ -187,7 +168,7 @@ describe('Core Runtime Completeness', () => {
         name: 'my-tool',
         namespace: 'ns1',
         description: 'Tool 1',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => '1',
       });
 

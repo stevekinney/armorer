@@ -13,7 +13,7 @@ const makeTool = (
   createTool({
     name,
     description: `${name} tool`,
-    schema: z.object({ value: z.number() }),
+    input: z.object({ value: z.number() }),
     execute: async ({ value }) => ({ value }),
     ...overrides,
   });
@@ -91,7 +91,7 @@ describe('registry helpers', () => {
       includeToolConfiguration: true,
     });
     expect(summaries[0]?.metadata).toEqual({ tier: 'pro' });
-    expect(summaries[0]?.schema).toBe(tool.schema);
+    expect(summaries[0]?.schema).toBe(tool.input);
     expect(summaries[0]?.configuration?.name).toBe('meta');
   });
 
@@ -253,7 +253,7 @@ describe('registry helpers', () => {
         name,
         version,
         description: `${name} tool`,
-        schema: z.object({ value: z.string() }),
+        input: z.object({ value: z.string() }),
         lifecycle: deprecated ? { deprecated: true } : undefined,
       });
 

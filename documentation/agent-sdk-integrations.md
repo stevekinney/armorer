@@ -36,7 +36,7 @@ createTool(
   {
     name: 'sum',
     description: 'adds two numbers',
-    schema: z.object({ a: z.number(), b: z.number() }),
+    input: z.object({ a: z.number(), b: z.number() }),
     async execute({ a, b }) {
       return a + b;
     },
@@ -111,7 +111,7 @@ createTool(
   {
     name: 'sum',
     description: 'adds two numbers',
-    schema: z.object({ a: z.number(), b: z.number() }),
+    input: z.object({ a: z.number(), b: z.number() }),
     async execute({ a, b }) {
       return a + b;
     },

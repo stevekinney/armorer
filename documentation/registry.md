@@ -26,7 +26,7 @@ const toolbox = createToolbox([tool1.configuration, tool2.configuration]);
 const registered = toolbox.createTool({
   name: 'quick-tool',
   description: 'Registered on creation',
-  schema: z.object({ value: z.string() }),
+  input: z.object({ value: z.string() }),
   async execute({ value }) {
     return value.toUpperCase();
   },
@@ -41,12 +41,12 @@ import { lazy } from 'armorer/lazy';
 toolbox.register({
   name: 'lazy-configuration',
   description: 'Loads on first use',
-  schema: z.object({ id: z.string() }),
+  input: z.object({ id: z.string() }),
   execute: lazy(() => import('./tools/lazy-configuration').then((mod) => mod.execute)),
 });
 ```
 
-Tool configurations and `createTool()` are consistent: if `schema`/`parameters` is omitted, Toolbox defaults it to `z.object({})` for no-params tools.
+Tool configurations and `createTool()` are consistent: if `input` is omitted, Toolbox defaults it to `z.object({})` for no-params tools.
 
 ### Execution
 
@@ -68,14 +68,6 @@ const results = await toolbox.execute([
 // Execute with AbortSignal support
 const controller = new AbortController();
 const results = await toolbox.execute(calls, { signal: controller.signal });
-
-// Dry Run: Preview effects without executing the main logic
-const preview = await toolbox.execute(
-  { name: 'fs.delete', arguments: { path: 'file.txt' } },
-  { dryRun: true },
-);
-console.log(preview.dryRun); // true
-console.log(preview.content); // "Would delete file.txt" (returned by tool's dryRun handler)
 
 // Streaming mode: preserve async-iterable tool output
 const streamed = await toolbox.execute(
@@ -348,7 +340,7 @@ You can also store pre-computed embeddings directly on tool metadata to skip emb
 const tool = createTool({
   name: 'pre-embedded-tool',
   description: 'A tool with pre-computed embeddings',
-  schema: z.object({ input: z.string() }),
+  input: z.object({ input: z.string() }),
   metadata: {
     // Store embeddings as an array of EmbeddingEntry objects
     embeddings: [
@@ -425,7 +417,7 @@ const toolbox = createToolbox([], {
 toolbox.register({
   name: 'context-aware',
   description: 'A tool that uses context',
-  schema: z.object({}),
+  input: z.object({}),
   async execute(_params, context) {
     // Access context.userId and context.sessionId
     console.log('User:', context.userId);
@@ -473,7 +465,7 @@ const serialized = toolbox.toJSON();
 const restored = createToolbox(serialized);
 ```
 
-`SerializedToolbox` is a `ToolConfiguration[]` that includes execute functions, so it is meant for in-process cloning. Functions are not JSON-serializable, so `JSON.stringify(toolbox.toJSON())` will drop them. If you need cross-process persistence, store your own manifest (name, schema, metadata, module path) and rebuild configurations at startup, typically using `lazy(() => import(...))` for the execute function.
+`SerializedToolbox` is a `ToolConfiguration[]` that includes execute functions, so it is meant for in-process cloning. Functions are not JSON-serializable, so `JSON.stringify(toolbox.toJSON())` will drop them. If you need cross-process persistence, store your own manifest (name, input schema, metadata, module path) and rebuild configurations at startup, typically using `lazy(() => import(...))` for the execute function.
 
 ### Combining Toolboxes
 

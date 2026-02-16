@@ -14,7 +14,7 @@ describe('toGemini', () => {
   const tool = defineTool({
     name: 'search',
     description: 'Search for items',
-    schema: schema,
+    input: schema,
   }) as AnyToolDefinition;
 
   const serializedTool = serializeToolDefinition(tool);
@@ -38,6 +38,7 @@ describe('toGemini', () => {
 
     it('includes required fields', () => {
       const result = toGemini(serializedTool);
+      expect(result.parameters).toHaveProperty('required');
       expect(result.parameters.required).toContain('query');
     });
 

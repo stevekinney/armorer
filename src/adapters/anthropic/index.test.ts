@@ -14,7 +14,7 @@ describe('toAnthropic', () => {
   const tool = defineTool({
     name: 'search',
     description: 'Search for items',
-    schema: schema,
+    input: schema,
   }) as AnyToolDefinition;
 
   const serializedTool = serializeToolDefinition(tool);
@@ -43,6 +43,7 @@ describe('toAnthropic', () => {
 
     it('includes required fields', () => {
       const result = toAnthropic(serializedTool);
+      expect(result.input_schema).toHaveProperty('required');
       expect(result.input_schema.required).toContain('query');
     });
   });

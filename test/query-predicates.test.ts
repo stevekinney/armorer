@@ -14,7 +14,7 @@ import {
 const baseTool = {
   name: 'alpha-sum',
   description: 'Handles alpha computations',
-  schema: z.object({
+  input: z.object({
     fooId: z.string(),
     barValue: z.number().optional(),
   }),

@@ -89,7 +89,7 @@ const getUserPreferences = createTool(
   {
     name: 'get-user-preferences',
     description: 'Get user preferences from session',
-    schema: z.object({ sessionId: z.string() }),
+    input: z.object({ sessionId: z.string() }),
     async execute({ sessionId }, context) {
       const { sessionManager } = context as { sessionManager: SessionManager };
       const session = sessionManager.getSession(sessionId);
@@ -156,7 +156,7 @@ const tool = createTool(
   {
     name: 'session-aware-tool',
     description: 'Access session automatically',
-    schema: z.object({
+    input: z.object({
       sessionId: z.string(),
       action: z.string(),
     }),

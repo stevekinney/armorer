@@ -7,7 +7,7 @@ Armorer has two primary ways to provide runtime context to tools:
 - `createToolbox({ context })`: injects shared values for all tools executed through that toolbox.
 - `withContext(context, options?)`: injects values for a single tool or a reusable tool factory.
 
-You can also pass per-call execution controls (`signal`, `timeout`, `dryRun`) when executing a tool.
+You can also pass per-call execution controls (`signal`, `timeout`) when executing a tool.
 
 ## ToolContext
 
@@ -19,7 +19,6 @@ Every tool execute function receives a `ToolContext`, including:
 - `configuration`: the resolved tool configuration.
 - `signal`: optional `AbortSignal`.
 - `timeout`: optional timeout in milliseconds.
-- `dryRun`: boolean indicating dry-run execution.
 
 Example:
 
@@ -30,7 +29,7 @@ import { z } from 'zod';
 const echo = createTool({
   name: 'echo',
   description: 'Echo text',
-  parameters: z.object({ text: z.string() }),
+  input: z.object({ text: z.string() }),
   async execute({ text }, context) {
     context.dispatch({
       type: 'progress',
@@ -40,7 +39,6 @@ const echo = createTool({
     return {
       callId: context.toolCall.id,
       text,
-      dryRun: context.dryRun,
     };
   },
 });
@@ -65,7 +63,7 @@ toolbox.register(
   createTool({
     name: 'whoami',
     description: 'Return user/session identity',
-    parameters: z.object({}),
+    input: z.object({}),
     async execute(_params, context) {
       return {
         userId: context.userId,
@@ -92,7 +90,7 @@ const createAuthedTool = withContext({
 const listProjects = createAuthedTool({
   name: 'list-projects',
   description: 'List projects for current account',
-  parameters: z.object({ accountId: z.string() }),
+  input: z.object({ accountId: z.string() }),
   async execute({ accountId }, context) {
     return fetchProjects({
       accountId,

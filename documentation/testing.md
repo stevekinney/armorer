@@ -20,8 +20,7 @@ Creates a mock `Tool` with built-in call tracking and behavior controls.
 Options (`MockToolOptions`):
 
 - `name?`: mock tool name (default: `'mock-tool'`)
-- `parameters?`: Zod schema for input validation
-- `schema?`: deprecated alias for `parameters`
+- `input?`: Zod schema for input validation
 - `impl?`: sync or async implementation for custom behavior
 
 Returned value:
@@ -38,7 +37,7 @@ import { z } from 'zod';
 
 const weather = createMockTool({
   name: 'weather',
-  parameters: z.object({ city: z.string() }),
+  input: z.object({ city: z.string() }),
 });
 
 weather.mockResolve({ temp: 72, conditions: 'sunny' });

@@ -12,7 +12,7 @@ describe('createSearchTool', () => {
     createTool({
       name,
       description: `${name} tool`,
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async ({ value }) => ({ value }),
       ...overrides,
     });

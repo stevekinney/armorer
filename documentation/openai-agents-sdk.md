@@ -29,7 +29,7 @@ createTool(
   {
     name: 'sum',
     description: 'adds two numbers',
-    schema: z.object({ a: z.number(), b: z.number() }),
+    input: z.object({ a: z.number(), b: z.number() }),
     async execute({ a, b }) {
       return a + b;
     },
@@ -101,7 +101,7 @@ createTool(
   {
     name: 'read-file',
     description: 'reads a file',
-    schema: z.object({ path: z.string() }),
+    input: z.object({ path: z.string() }),
     metadata: { readOnly: true },
     async execute({ path }) {
       return { content: '...' };
@@ -114,7 +114,7 @@ createTool(
   {
     name: 'write-file',
     description: 'writes a file',
-    schema: z.object({ path: z.string(), content: z.string() }),
+    input: z.object({ path: z.string(), content: z.string() }),
     metadata: { mutates: true },
     async execute({ path, content }) {
       return { success: true };
@@ -127,7 +127,7 @@ createTool(
   {
     name: 'delete-file',
     description: 'deletes a file',
-    schema: z.object({ path: z.string() }),
+    input: z.object({ path: z.string() }),
     metadata: { mutates: true, dangerous: true },
     async execute({ path }) {
       return { success: true };

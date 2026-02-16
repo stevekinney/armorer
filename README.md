@@ -27,7 +27,6 @@ Toolbox turns tool calling into a structured, observable, and searchable workflo
 - Semantic search with vector embeddings (OpenAI, Pinecone, etc.)
 - Provider adapters for OpenAI, Anthropic, and Gemini
 - Tool composition utilities (pipe/bind/when/parallel/retry)
-- **Dry Run Support**: Preview tool effects before execution
 - **OpenTelemetry Instrumentation**: Native tracing for agentic loops
 - **Built-in Middleware**: Caching, Rate Limiting, and Timeouts
 - **Testing Utilities**: Mock tools and test registries for easy verification
@@ -179,7 +178,7 @@ import { z } from 'zod';
 const addNumbers = createTool({
   name: 'add-numbers',
   description: 'Add two numbers together',
-  schema: z.object({
+  input: z.object({
     a: z.number(),
     b: z.number(),
   }),
@@ -226,22 +225,9 @@ const combined = combineToolboxes(base, adminTools);
 // Same merge rules, useful when combining many toolboxes at once.
 ```
 
-## Safety and Dry Run
+## Safety and Policy
 
-Toolbox supports `dryRun` to preview the effects of a tool without executing it.
-
-```ts
-// Create tool with dry run handler
-const deleteFile = createTool({
-  // ...
-  async dryRun({ path }) {
-    return { effect: `Would delete file at ${path}` };
-  },
-});
-
-// Execute in dry run mode
-const result = await deleteFile.execute({ path: 'log.txt' }, { dryRun: true });
-```
+Use policy hooks to block or gate risky actions before execution.
 
 ## Batch Execution
 
@@ -252,21 +238,6 @@ const results = await toolbox.execute([call1, call2, call3], {
   concurrency: 5, // Global concurrency limit
   mode: 'parallel', // 'parallel' | 'sequential'
   errorMode: 'collect', // 'collect' (default) | 'failFast'
-});
-```
-
-## Output Shaping
-
-Control output size and serialization to keep LLM contexts safe.
-
-```ts
-const tool = createTool({
-  // ...
-  outputShaping: {
-    maxBytes: 1024 * 10, // 10KB limit
-    truncate: { suffix: '... (truncated)' },
-    serialization: 'string', // Ensure output is stringified
-  },
 });
 ```
 
@@ -393,7 +364,7 @@ const toolbox = createToolbox([], {
 const writeFile = createTool({
   name: 'fs.write',
   description: 'Write a file',
-  schema: z.object({ path: z.string(), content: z.string() }),
+  input: z.object({ path: z.string(), content: z.string() }),
   metadata: { mutates: true },
   async execute() {
     return { ok: true };
@@ -428,7 +399,7 @@ createTool({
   name: 'git.status',
   description: 'status',
   metadata: { concurrency: 1 },
-  schema: z.object({}),
+  input: z.object({}),
   async execute() {
     return { ok: true };
   },
@@ -447,7 +418,7 @@ Define tools with Zod schemas, validation, and typed execution contexts. For adv
 const greetUser = createTool({
   name: 'greet-user',
   description: 'Greet a user by name',
-  schema: z.object({
+  input: z.object({
     name: z.string(),
     formal: z.boolean().optional(),
   }),
@@ -488,7 +459,7 @@ const tool = createTool(
   {
     name: 'my-tool',
     description: 'A tool with toolbox context',
-    schema: z.object({ input: z.string() }),
+    input: z.object({ input: z.string() }),
     async execute({ input }, context) {
       // context includes toolbox.context automatically
       console.log('User:', context.userId);
@@ -501,7 +472,7 @@ const tool = createTool(
 
 ### Tool Without Inputs
 
-If your tool accepts no parameters, omit `schema` (it defaults to `z.object({})`):
+If your tool accepts no input arguments, omit `input` (it defaults to `z.object({})`):
 
 ```typescript
 const healthCheck = createTool({
@@ -521,7 +492,7 @@ Metadata is a lightweight, out-of-band descriptor for things that should not be 
 const fetchWeather = createTool({
   name: 'fetch-weather',
   description: 'Get current weather for a location',
-  schema: z.object({
+  input: z.object({
     city: z.string(),
     units: z.enum(['celsius', 'fahrenheit']).optional(),
   }),
@@ -548,7 +519,7 @@ const createToolWithContext = withContext({ userId: 'user-123', apiKey: 'secret'
 const userTool = createToolWithContext({
   name: 'get-user-data',
   description: 'Fetch user data',
-  schema: z.object({}),
+  input: z.object({}),
   async execute(_params, context) {
     // Access context.userId and context.apiKey
     return { userId: context.userId };
@@ -566,7 +537,7 @@ import { lazy } from 'armorer/lazy';
 const heavyTool = createTool({
   name: 'heavy-tool',
   description: 'Runs an expensive workflow',
-  schema: z.object({ input: z.string() }),
+  input: z.object({ input: z.string() }),
   execute: lazy(() => import('./tools/heavy-tool').then((mod) => mod.execute)),
 });
 ```
@@ -581,7 +552,7 @@ Listen to tool execution lifecycle events:
 const tool = createTool({
   name: 'my-tool',
   description: 'A tool with events',
-  schema: z.object({ input: z.string() }),
+  input: z.object({ input: z.string() }),
   async execute({ input }, { dispatch }) {
     dispatch({ type: 'progress', detail: { percent: 50, message: 'Processing...' } });
     return input.toUpperCase();
@@ -620,7 +591,7 @@ Tools that return an `AsyncIterable` support two execution modes:
 const streamTool = createTool({
   name: 'stream-tool',
   description: 'Emits tokens',
-  schema: z.object({}),
+  input: z.object({}),
   async execute() {
     return {
       async *[Symbol.asyncIterator]() {
@@ -660,7 +631,7 @@ To report progress from inside a tool, use the `dispatch` function provided in t
 const longTask = createTool({
   name: 'long-task',
   description: 'Does work in phases',
-  schema: z.object({ input: z.string() }),
+  input: z.object({ input: z.string() }),
   async execute({ input }, { dispatch }) {
     dispatch({ type: 'progress', detail: { percent: 10, message: 'Queued' } });
     // ... do work
@@ -699,7 +670,7 @@ createTool(
   {
     name: 'send-email',
     description: 'Send an email to recipients',
-    schema: z.object({ to: z.string(), subject: z.string(), body: z.string() }),
+    input: z.object({ to: z.string(), subject: z.string(), body: z.string() }),
     tags: ['communication'],
     async execute({ to, subject, body }) {
       return { sent: true };
@@ -739,7 +710,7 @@ Toolbox is written in TypeScript and provides full type inference:
 const tool = createTool({
   name: 'typed-tool',
   description: 'A typed tool',
-  schema: z.object({
+  input: z.object({
     count: z.number(),
     name: z.string().optional(),
   }),

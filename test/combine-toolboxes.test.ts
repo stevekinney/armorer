@@ -14,7 +14,7 @@ describe('combineToolboxes', () => {
       {
         name: 'tool-a',
         description: 'tool a',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => 'A',
       },
     ]);
@@ -23,7 +23,7 @@ describe('combineToolboxes', () => {
       {
         name: 'tool-b',
         description: 'tool b',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => 'B',
       },
     ]);
@@ -42,7 +42,7 @@ describe('combineToolboxes', () => {
       {
         name: 'echo',
         description: 'echo',
-        schema: z.object({ value: z.string() }),
+        input: z.object({ value: z.string() }),
         execute: async ({ value }) => `first:${value}`,
       },
     ]);
@@ -51,7 +51,7 @@ describe('combineToolboxes', () => {
       {
         name: 'echo',
         description: 'echo',
-        schema: z.object({ value: z.string() }),
+        input: z.object({ value: z.string() }),
         execute: async ({ value }) => `second:${value}`,
       },
     ]);
@@ -72,7 +72,7 @@ describe('combineToolboxes', () => {
         {
           name: 'ctx',
           description: 'ctx',
-          schema: z.object({}),
+          input: z.object({}),
           execute: async (_params, context) => {
             const ctx = context as Record<string, unknown>;
             return {
@@ -106,13 +106,13 @@ describe('combineToolboxes', () => {
     const alpha = createTool({
       name: 'alpha',
       description: 'alpha',
-      schema: z.object({}),
+      input: z.object({}),
       execute: async () => 'alpha',
     });
     const beta = createTool({
       name: 'beta',
       description: 'beta',
-      schema: z.object({}),
+      input: z.object({}),
       execute: async () => 'beta',
     });
 
@@ -132,7 +132,7 @@ describe('combineToolbox', () => {
       {
         name: 'alias-a',
         description: 'a',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => 'A',
       },
     ]);
@@ -140,7 +140,7 @@ describe('combineToolbox', () => {
       {
         name: 'alias-b',
         description: 'b',
-        schema: z.object({}),
+        input: z.object({}),
         execute: async () => 'B',
       },
     ]);

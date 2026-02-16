@@ -14,9 +14,8 @@ Options (`CreateToolOptions`):
 
 - `name`: string (maps to `identity.name`)
 - `description`: string (maps to `display.description`)
-- `schema?`: Zod object schema for input validation or a plain object shape; defaults to `z.object({})`.
+- `input?`: Zod object schema for input validation or a plain object shape; defaults to `z.object({})`.
 - `execute`: async `(params: TInput, context: ToolContext) => TOutput`.
-- `dryRun?`: async `(params: TInput, context: ToolContext) => Promise<unknown>` - optional handler for previewing effects.
 - `tags?`: kebab-case strings, de-duped.
 - `metadata?`: `ToolMetadata`, `Promise<ToolMetadata>`, `() => ToolMetadata`, or `() => Promise<ToolMetadata>`.
 - `timeout?`: number (milliseconds).
@@ -29,10 +28,9 @@ Exposed properties and methods:
 - `tool(params)` call signature.
 - `identity`: `{ name, namespace, version }`.
 - `display`: `{ title, description, examples }`.
-- `schema`: the Zod schema.
+- `input`: the Zod input schema.
 - `tags`, `metadata`, `configuration`.
 - `execute(call | params, options?)`: returns `ToolResult` (for call) or raw output (for params).
-- `dryRun(params, context)`: direct access to dry-run logic.
 - `addEventListener`, `dispatchEvent`, `on`, `once`, `subscribe`, `toObservable`, `events`.
 - `complete()`, `completed`.
 
@@ -96,7 +94,7 @@ Creates a Toolbox instance that records all execution history in a `.history` ar
 
 #### `defineTool(options)`
 
-Defines a static tool specification (identity, display, schema) without execution logic. Recommended for shared libraries.
+Defines a static tool specification (identity, display, input) without execution logic. Recommended for shared libraries.
 
 #### `serializeToolDefinition(tool)`
 
@@ -117,7 +115,7 @@ Registry surface (`Toolbox`):
 - Event methods: `addEventListener`, `dispatchEvent`, `on`, `once`, `subscribe`, `toObservable`, `events`
 - Lifecycle: `complete()`, `completed`
 
-`register()` accepts tool instances or raw configurations. When you register a tool, its `configuration` is stored for serialization. `createTool()` is a convenience that uses the same options as `createTool(options)`, registers the result, and returns the registered instance. If `schema`/`parameters` is omitted (in either `register()` raw configuration or `createTool()`), Toolbox defaults it to `z.object({})`.
+`register()` accepts tool instances or raw configurations. When you register a tool, its `configuration` is stored for serialization. `createTool()` is a convenience that uses the same options as `createTool(options)`, registers the result, and returns the registered instance. If `input` is omitted (in either `register()` raw configuration or `createTool()`), Toolbox defaults it to `z.object({})`.
 
 Signature:
 

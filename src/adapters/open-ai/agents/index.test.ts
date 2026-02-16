@@ -11,7 +11,7 @@ describe('open-ai agents adapter', () => {
       createTool({
         name: 'safe-tool',
         description: 'safe',
-        schema: z.object({}),
+        input: z.object({}),
         async execute() {
           return { ok: true };
         },
@@ -19,7 +19,7 @@ describe('open-ai agents adapter', () => {
       createTool({
         name: 'mutating-tool',
         description: 'mutates',
-        schema: z.object({}),
+        input: z.object({}),
         metadata: { mutates: true },
         async execute() {
           return { ok: true };
@@ -28,7 +28,7 @@ describe('open-ai agents adapter', () => {
       createTool({
         name: 'dangerous-tool',
         description: 'dangerous',
-        schema: z.object({}),
+        input: z.object({}),
         metadata: { dangerous: true },
         async execute() {
           return { ok: true };
@@ -49,7 +49,7 @@ describe('open-ai agents adapter', () => {
       createTool({
         name: 'mutating-tool',
         description: 'mutates',
-        schema: z.object({}),
+        input: z.object({}),
         metadata: { mutates: true },
         async execute() {
           return { ok: true };
@@ -58,7 +58,7 @@ describe('open-ai agents adapter', () => {
       createTool({
         name: 'dangerous-tool',
         description: 'dangerous',
-        schema: z.object({}),
+        input: z.object({}),
         metadata: { dangerous: true },
         async execute() {
           return { ok: true };
@@ -104,7 +104,7 @@ describe('open-ai agents adapter', () => {
       createTool({
         name: 'tag-mutating',
         description: 'mutating via tag',
-        schema: z.object({}),
+        input: z.object({}),
         tags: ['mutating'],
         async execute() {
           return { ok: true };
@@ -113,7 +113,7 @@ describe('open-ai agents adapter', () => {
       createTool({
         name: 'tag-readonly',
         description: 'read-only via metadata',
-        schema: z.object({}),
+        input: z.object({}),
         tags: ['mutating'],
         metadata: { readOnly: true },
         async execute() {
@@ -123,7 +123,7 @@ describe('open-ai agents adapter', () => {
       createTool({
         name: 'tag-dangerous',
         description: 'dangerous via tag',
-        schema: z.object({}),
+        input: z.object({}),
         tags: ['dangerous'],
         async execute() {
           return { ok: true };
@@ -142,7 +142,7 @@ describe('open-ai agents adapter', () => {
     const structured = createTool({
       name: 'structured',
       description: 'returns an object',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         return { ok: true };
       },
@@ -150,7 +150,7 @@ describe('open-ai agents adapter', () => {
     const empty = createTool({
       name: 'empty',
       description: 'returns undefined',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         return undefined;
       },
@@ -158,7 +158,7 @@ describe('open-ai agents adapter', () => {
     const stringResult = createTool({
       name: 'string',
       description: 'returns string',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         return 'hello';
       },
@@ -206,7 +206,7 @@ describe('open-ai agents adapter', () => {
     const tool = createTool({
       name: 'original',
       description: 'original description',
-      schema: z.object({ a: z.number() }),
+      input: z.object({ a: z.number() }),
       async execute({ a }) {
         return a * 2;
       },

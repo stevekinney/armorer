@@ -12,28 +12,28 @@ describe('pipe()', () => {
   const parseNumber = createTool({
     name: 'parse-number',
     description: 'Parses a string to a number',
-    schema: z.object({ str: z.string() }),
+    input: z.object({ str: z.string() }),
     execute: async ({ str }) => ({ value: parseInt(str, 10) }),
   });
 
   const double = createTool({
     name: 'double',
     description: 'Doubles a number',
-    schema: z.object({ value: z.number() }),
+    input: z.object({ value: z.number() }),
     execute: async ({ value }) => ({ value: value * 2 }),
   });
 
   const stringify = createTool({
     name: 'stringify',
     description: 'Converts number to formatted string',
-    schema: z.object({ value: z.number() }),
+    input: z.object({ value: z.number() }),
     execute: async ({ value }) => ({ text: `Result: ${value}` }),
   });
 
   const addPrefix = createTool({
     name: 'add-prefix',
     description: 'Adds prefix to string',
-    schema: z.object({ text: z.string() }),
+    input: z.object({ text: z.string() }),
     execute: async ({ text }) => `PREFIX: ${text}`,
   });
 
@@ -54,9 +54,9 @@ describe('pipe()', () => {
       expect(pipeline.description).toBe('Composed pipeline: parse-number → double');
     });
 
-    it('uses first tool schema for input validation', () => {
+    it('uses first tool input for validation', () => {
       const pipeline = pipe(parseNumber, double);
-      expect(pipeline.schema).toBe(parseNumber.schema);
+      expect(pipeline.input).toBe(parseNumber.input);
     });
   });
 
@@ -93,7 +93,7 @@ describe('pipe()', () => {
       const badTool = createTool({
         name: 'bad-tool',
         description: 'Returns wrong type',
-        schema: z.object({ str: z.string() }),
+        input: z.object({ str: z.string() }),
         execute: async () => ({ value: 'not a number' as unknown as number }),
       });
 
@@ -103,25 +103,16 @@ describe('pipe()', () => {
       await expect(pipeline({ str: 'test' })).rejects.toThrow();
     });
 
-    it('forwards stream and dryRun options through pipeline steps', async () => {
-      const observed: Array<{ step: string; stream?: boolean; dryRun?: boolean }> = [];
+    it('forwards stream options through pipeline steps', async () => {
+      const observed: Array<{ step: string; stream?: boolean }> = [];
       const first = createTool({
         name: 'pipe-capture-1',
         description: 'captures execution context',
-        schema: z.object({ str: z.string() }),
+        input: z.object({ str: z.string() }),
         async execute({ str }, context) {
           observed.push({
             step: 'first',
             stream: context.stream,
-            dryRun: context.dryRun,
-          });
-          return { value: Number(str) };
-        },
-        async dryRun({ str }, context) {
-          observed.push({
-            step: 'first',
-            stream: context.stream,
-            dryRun: context.dryRun,
           });
           return { value: Number(str) };
         },
@@ -129,20 +120,11 @@ describe('pipe()', () => {
       const second = createTool({
         name: 'pipe-capture-2',
         description: 'captures execution context',
-        schema: z.object({ value: z.number() }),
+        input: z.object({ value: z.number() }),
         async execute({ value }, context) {
           observed.push({
             step: 'second',
             stream: context.stream,
-            dryRun: context.dryRun,
-          });
-          return { value: value + 1 };
-        },
-        async dryRun({ value }, context) {
-          observed.push({
-            step: 'second',
-            stream: context.stream,
-            dryRun: context.dryRun,
           });
           return { value: value + 1 };
         },
@@ -150,17 +132,16 @@ describe('pipe()', () => {
       const pipeline = pipe(first, second);
 
       const result = await pipeline.execute(
-        createToolCall(pipeline.name, { str: '5' }, 'pipe-stream-dry'),
+        createToolCall(pipeline.name, { str: '5' }, 'pipe-stream'),
         {
           stream: true,
-          dryRun: true,
         },
       );
 
       expect(result.result).toEqual({ value: 6 });
       expect(observed).toEqual([
-        { step: 'first', stream: true, dryRun: true },
-        { step: 'second', stream: true, dryRun: true },
+        { step: 'first', stream: true },
+        { step: 'second', stream: true },
       ]);
     });
   });
@@ -175,7 +156,7 @@ describe('pipe()', () => {
       const delayed = createTool({
         name: 'delayed',
         description: 'delays first step',
-        schema: z.object({ str: z.string() }),
+        input: z.object({ str: z.string() }),
         execute: async () =>
           new Promise<{ value: number }>((resolve) => {
             resolveStep = resolve;
@@ -274,13 +255,11 @@ describe('pipe()', () => {
         stepIndex: 0,
         stepName: 'parse-number',
         input: { str: '5' },
-        dryRun: false,
       });
       expect(events[1]).toEqual({
         stepIndex: 1,
         stepName: 'double',
         input: { value: 5 },
-        dryRun: false,
       });
     });
 
@@ -298,13 +277,11 @@ describe('pipe()', () => {
         stepIndex: 0,
         stepName: 'parse-number',
         output: { value: 5 },
-        dryRun: false,
       });
       expect(events[1]).toEqual({
         stepIndex: 1,
         stepName: 'double',
         output: { value: 10 },
-        dryRun: false,
       });
     });
 
@@ -312,7 +289,7 @@ describe('pipe()', () => {
       const failing = createTool({
         name: 'failing',
         description: 'Always fails',
-        schema: z.object({ value: z.number() }),
+        input: z.object({ value: z.number() }),
         execute: async () => {
           throw new Error('boom');
         },
@@ -339,7 +316,7 @@ describe('pipe()', () => {
       const failing = createTool({
         name: 'failing',
         description: 'Always fails',
-        schema: z.object({ value: z.number() }),
+        input: z.object({ value: z.number() }),
         execute: async () => {
           throw new Error('boom');
         },
@@ -357,7 +334,7 @@ describe('pipe()', () => {
       const failing = createTool({
         name: 'failing',
         description: 'Always fails',
-        schema: z.object({ value: z.number() }),
+        input: z.object({ value: z.number() }),
         execute: async () => {
           throw new Error('boom');
         },
@@ -374,7 +351,7 @@ describe('pipe()', () => {
       const failing = createTool({
         name: 'object-failing',
         description: 'throws object errors',
-        schema: z.object({ value: z.number() }),
+        input: z.object({ value: z.number() }),
         execute: async () => {
           // eslint-disable-next-line @typescript-eslint/only-throw-error
           throw { code: 'OBJECT_FAIL' };
@@ -402,7 +379,7 @@ describe('pipe()', () => {
       const failing = createTool({
         name: 'circular-failing',
         description: 'throws circular object errors',
-        schema: z.object({ value: z.number() }),
+        input: z.object({ value: z.number() }),
         execute: async () => {
           throw circular;
         },
@@ -455,7 +432,7 @@ describe('pipe()', () => {
       expect(isTool(pipeline)).toBe(true);
       expect(pipeline.name).toBeDefined();
       expect(pipeline.description).toBeDefined();
-      expect(pipeline.schema).toBeDefined();
+      expect(pipeline.input).toBeDefined();
       expect(pipeline.configuration).toBeDefined();
       expect(typeof pipeline.execute).toBe('function');
       expect(typeof pipeline.addEventListener).toBe('function');
@@ -477,7 +454,7 @@ describe('bind()', () => {
   const sum = createTool({
     name: 'sum',
     description: 'Adds two numbers',
-    schema: z.object({ a: z.number(), b: z.number() }),
+    input: z.object({ a: z.number(), b: z.number() }),
     execute: async ({ a, b }) => a + b,
   });
 
@@ -485,8 +462,8 @@ describe('bind()', () => {
     const addOne = bind(sum, { a: 1 }, { name: 'add-one' });
     expect(isTool(addOne)).toBe(true);
     expect(addOne.name).toBe('add-one');
-    expect(addOne.schema.safeParse({ b: 2 }).success).toBe(true);
-    expect(addOne.schema.safeParse({}).success).toBe(false);
+    expect(addOne.input.safeParse({ b: 2 }).success).toBe(true);
+    expect(addOne.input.safeParse({}).success).toBe(false);
     const result = await addOne({ b: 2 });
     expect(result).toBe(3);
   });
@@ -504,7 +481,7 @@ describe('bind()', () => {
       return params;
     };
     (rawTool as any).description = 'raw-number';
-    (rawTool as any).schema = z.number();
+    (rawTool as any).input = z.number();
     (rawTool as any).tags = [];
     (rawTool as any).metadata = undefined;
 
@@ -519,50 +496,35 @@ describe('bind()', () => {
       return params;
     };
     (rawTool as any).description = 'raw';
-    (rawTool as any).schema = schemaWithoutOmit;
+    (rawTool as any).input = schemaWithoutOmit;
     (rawTool as any).tags = [];
     (rawTool as any).metadata = undefined;
 
     expect(() => bind(rawTool as any, { a: 'ok' }, { name: 'raw-bound' })).toThrow(
-      /Zod object schema/,
+      /object schema/,
     );
   });
 
-  it('forwards stream and dryRun options to the bound tool', async () => {
-    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+  it('forwards stream options to the bound tool', async () => {
+    const observed: Array<{ stream?: boolean }> = [];
     const capture = createTool({
       name: 'capture-bound',
       description: 'captures context values',
-      schema: z.object({ a: z.number(), b: z.number() }),
+      input: z.object({ a: z.number(), b: z.number() }),
       async execute({ a, b }, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
-        return a + b;
-      },
-      async dryRun({ a, b }, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        observed.push({ stream: context.stream });
         return a + b;
       },
     });
 
     const bound = bind(capture, { a: 2 });
-    const normal = await (bound as any).executeWith({
+    const result = await (bound as any).executeWith({
       params: { b: 3 },
       stream: true,
     });
-    const dryRun = await bound.execute(
-      createToolCall(bound.name, { b: 4 }, 'bind-dry-run'),
-      {
-        stream: true,
-        dryRun: true,
-      },
-    );
 
-    expect(normal.result).toBe(5);
-    expect(dryRun.result).toBe(6);
-    expect(observed).toEqual([
-      { stream: true, dryRun: false },
-      { stream: true, dryRun: true },
-    ]);
+    expect(result.result).toBe(5);
+    expect(observed).toEqual([{ stream: true }]);
   });
 });
 
@@ -570,7 +532,7 @@ describe('tap()', () => {
   const increment = createTool({
     name: 'increment',
     description: 'Adds 1',
-    schema: z.object({ value: z.number() }),
+    input: z.object({ value: z.number() }),
     execute: async ({ value }) => ({ value: value + 1 }),
   }) as ComposedTool<{ value: number }, { value: number }>;
 
@@ -589,7 +551,7 @@ describe('tap()', () => {
     const tagged = createTool({
       name: 'tagged',
       description: 'Has tags',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       tags: ['fast'],
       metadata: { tier: 'premium' },
       execute: async ({ value }) => ({ value: value + 1 }),
@@ -608,7 +570,7 @@ describe('tap()', () => {
     const tool = createTool({
       name: 'tap-context',
       description: 'captures context',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       async execute(_params, context) {
         observed.signal = context.signal;
         observed.timeout = context.timeout;
@@ -628,18 +590,14 @@ describe('tap()', () => {
     expect(observed.timeout).toBe(99);
   });
 
-  it('forwards stream and dryRun to the wrapped tool', async () => {
-    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+  it('forwards stream to the wrapped tool', async () => {
+    const observed: Array<{ stream?: boolean }> = [];
     const tool = createTool({
       name: 'tap-stream',
       description: 'captures stream context',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       async execute(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
-        return { value: 1 };
-      },
-      async dryRun(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        observed.push({ stream: context.stream });
         return { value: 1 };
       },
     });
@@ -648,11 +606,10 @@ describe('tap()', () => {
     const result = await (tapped as any).executeWith({
       params: { value: 1 },
       stream: true,
-      dryRun: true,
     });
 
     expect(result.result).toEqual({ value: 1 });
-    expect(observed).toEqual([{ stream: true, dryRun: true }]);
+    expect(observed).toEqual([{ stream: true }]);
   });
 });
 
@@ -660,14 +617,14 @@ describe('when()', () => {
   const increment = createTool({
     name: 'increment',
     description: 'Adds 1',
-    schema: z.object({ value: z.number() }),
+    input: z.object({ value: z.number() }),
     execute: async ({ value }) => ({ value: value + 1 }),
   }) as ComposedTool<{ value: number }, { value: number }>;
 
   const double = createTool({
     name: 'double',
     description: 'Doubles',
-    schema: z.object({ value: z.number() }),
+    input: z.object({ value: z.number() }),
     execute: async ({ value }) => ({ value: value * 2 }),
   }) as ComposedTool<{ value: number }, { value: number }>;
 
@@ -696,7 +653,7 @@ describe('when()', () => {
     const capture = createTool({
       name: 'capture',
       description: 'captures context',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       async execute(_params, context) {
         observed.signal = context.signal;
         observed.timeout = context.timeout;
@@ -716,18 +673,14 @@ describe('when()', () => {
     expect(observed.timeout).toBe(55);
   });
 
-  it('forwards stream and dryRun to the selected branch', async () => {
-    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+  it('forwards stream to the selected branch', async () => {
+    const observed: Array<{ stream?: boolean }> = [];
     const capture = createTool({
       name: 'when-stream-capture',
       description: 'captures stream context',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       async execute(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
-        return { value: 2 };
-      },
-      async dryRun(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        observed.push({ stream: context.stream });
         return { value: 2 };
       },
     });
@@ -736,11 +689,10 @@ describe('when()', () => {
     const result = await (conditional as any).executeWith({
       params: { value: 1 },
       stream: true,
-      dryRun: true,
     });
 
     expect(result.result).toEqual({ value: 2 });
-    expect(observed).toEqual([{ stream: true, dryRun: true }]);
+    expect(observed).toEqual([{ stream: true }]);
   });
 });
 
@@ -748,14 +700,14 @@ describe('parallel()', () => {
   const increment = createTool({
     name: 'increment',
     description: 'Adds 1',
-    schema: z.object({ value: z.number() }),
+    input: z.object({ value: z.number() }),
     execute: async ({ value }) => ({ value: value + 1 }),
   });
 
   const double = createTool({
     name: 'double',
     description: 'Doubles',
-    schema: z.object({ value: z.number() }),
+    input: z.object({ value: z.number() }),
     execute: async ({ value }) => ({ value: value * 2 }),
   });
 
@@ -775,7 +727,7 @@ describe('parallel()', () => {
     const fail = createTool({
       name: 'fail',
       description: 'Fails',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async () => {
         throw new Error('boom');
       },
@@ -803,7 +755,7 @@ describe('parallel()', () => {
     const capture = createTool({
       name: 'capture',
       description: 'captures context',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       async execute(_params, context) {
         observed.push({ signal: context.signal, timeout: context.timeout });
         return { value: 1 };
@@ -825,18 +777,14 @@ describe('parallel()', () => {
     }
   });
 
-  it('forwards stream and dryRun to each parallel branch', async () => {
-    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+  it('forwards stream to each parallel branch', async () => {
+    const observed: Array<{ stream?: boolean }> = [];
     const capture = createTool({
       name: 'parallel-stream-capture',
       description: 'captures stream context',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       async execute(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
-        return { value: 1 };
-      },
-      async dryRun(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        observed.push({ stream: context.stream });
         return { value: 1 };
       },
     });
@@ -845,14 +793,10 @@ describe('parallel()', () => {
     const result = await (combined as any).executeWith({
       params: { value: 1 },
       stream: true,
-      dryRun: true,
     });
 
     expect(result.result).toEqual([{ value: 1 }, { value: 1 }]);
-    expect(observed).toEqual([
-      { stream: true, dryRun: true },
-      { stream: true, dryRun: true },
-    ]);
+    expect(observed).toEqual([{ stream: true }, { stream: true }]);
   });
 });
 
@@ -860,7 +804,7 @@ describe('retry()', () => {
   const increment = createTool({
     name: 'increment',
     description: 'Adds 1',
-    schema: z.object({ value: z.number() }),
+    input: z.object({ value: z.number() }),
     execute: async ({ value }) => ({ value: value + 1 }),
   });
 
@@ -869,7 +813,7 @@ describe('retry()', () => {
     const flaky = createTool({
       name: 'flaky',
       description: 'Fails twice',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async ({ value }) => {
         attempts += 1;
         if (attempts < 3) {
@@ -891,7 +835,7 @@ describe('retry()', () => {
     const failing = createTool({
       name: 'failing',
       description: 'Always fails',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async () => {
         attempts += 1;
         throw new Error('boom');
@@ -922,7 +866,7 @@ describe('retry()', () => {
     const failing = createTool({
       name: 'fail-fast',
       description: 'fails',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async () => {
         attempts += 1;
         throw new Error('stop');
@@ -944,7 +888,7 @@ describe('retry()', () => {
     const flaky = createTool({
       name: 'flaky',
       description: 'fails once',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async ({ value }) => {
         attempts += 1;
         if (attempts === 1) {
@@ -974,7 +918,7 @@ describe('retry()', () => {
     const unstable = createTool({
       name: 'unstable',
       description: 'throws string',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       tags: ['unstable'],
       metadata: { tier: 'dev' },
       execute: async () => {
@@ -994,7 +938,7 @@ describe('retry()', () => {
     const unstable = createTool({
       name: 'object-throw',
       description: 'throws object',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async () => {
         // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw { code: 'OBJECT_FAIL' };
@@ -1014,7 +958,7 @@ describe('retry()', () => {
     const unstable = createTool({
       name: 'circular-throw',
       description: 'throws circular object',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async () => {
         throw circular;
       },
@@ -1025,18 +969,14 @@ describe('retry()', () => {
     await expect(wrapped({ value: 1 })).rejects.toThrow('[object Object]');
   });
 
-  it('forwards stream and dryRun options to retried executions', async () => {
-    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+  it('forwards stream options to retried executions', async () => {
+    const observed: Array<{ stream?: boolean }> = [];
     const capture = createTool({
       name: 'retry-stream-capture',
       description: 'captures stream context',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       async execute(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
-        return { value: 42 };
-      },
-      async dryRun(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        observed.push({ stream: context.stream });
         return { value: 42 };
       },
     });
@@ -1045,11 +985,10 @@ describe('retry()', () => {
     const result = await (wrapped as any).executeWith({
       params: { value: 1 },
       stream: true,
-      dryRun: true,
     });
 
     expect(result.result).toEqual({ value: 42 });
-    expect(observed).toEqual([{ stream: true, dryRun: true }]);
+    expect(observed).toEqual([{ stream: true }]);
   });
 });
 
@@ -1087,14 +1026,14 @@ describe('type inference', () => {
     const toNumber = createTool({
       name: 'to-number',
       description: 'Parses string to number',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       execute: async ({ value }) => ({ value: parseInt(value, 10) }),
     });
 
     const add10 = createTool({
       name: 'add-10',
       description: 'Adds 10',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async ({ value }) => ({ value: value + 10 }),
     });
 
@@ -1118,21 +1057,21 @@ describe('type inference', () => {
     const fetchUser = createTool({
       name: 'fetch-user',
       description: 'Fetches user by ID',
-      schema: z.object({ id: z.string() }),
+      input: z.object({ id: z.string() }),
       execute: async ({ id }): Promise<User> => ({ id, name: 'Test User' }),
     });
 
     const enrichUser = createTool({
       name: 'enrich-user',
       description: 'Enriches user data',
-      schema: z.object({ id: z.string(), name: z.string() }),
+      input: z.object({ id: z.string(), name: z.string() }),
       execute: async (user): Promise<EnrichedUser> => ({ ...user, enriched: true }),
     });
 
     const formatUser = createTool({
       name: 'format-user',
       description: 'Formats user for display',
-      schema: z.object({ id: z.string(), name: z.string(), enriched: z.boolean() }),
+      input: z.object({ id: z.string(), name: z.string(), enriched: z.boolean() }),
       execute: async (user) =>
         `User ${user.id}: ${user.name} (enriched: ${user.enriched})`,
     });

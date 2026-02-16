@@ -20,21 +20,21 @@ import { z } from 'zod';
 const parseNumber = createTool({
   name: 'parse-number',
   description: 'Parse string to number',
-  schema: z.object({ str: z.string() }),
+  input: z.object({ str: z.string() }),
   execute: async ({ str }) => parseInt(str, 10),
 });
 
 const double = createTool({
   name: 'double',
   description: 'Double a number',
-  schema: z.object({ value: z.number() }),
+  input: z.object({ value: z.number() }),
   execute: async ({ value }) => ({ value: value * 2 }),
 });
 
 const stringify = createTool({
   name: 'stringify',
   description: 'Format as result string',
-  schema: z.object({ value: z.number() }),
+  input: z.object({ value: z.number() }),
   execute: async ({ value }) => `Result: ${value}`,
 });
 
@@ -60,7 +60,7 @@ import { bind } from 'armorer/utilities';
 const sendEmail = createTool({
   name: 'send-email',
   description: 'Send an email',
-  schema: z.object({
+  input: z.object({
     to: z.string().email(),
     subject: z.string(),
     body: z.string(),
@@ -139,7 +139,7 @@ import { preprocess } from 'armorer/utilities';
 
 const addNumbers = createTool({
   name: 'add-numbers',
-  schema: z.object({ a: z.number(), b: z.number() }),
+  input: z.object({ a: z.number(), b: z.number() }),
   execute: async ({ a, b }) => a + b,
 });
 
@@ -166,7 +166,7 @@ import { postprocess } from 'armorer/utilities';
 
 const fetchUser = createTool({
   name: 'fetch-user',
-  schema: z.object({ id: z.string() }),
+  input: z.object({ id: z.string() }),
   execute: async ({ id }) => ({ userId: id, name: 'John' }),
 });
 
@@ -209,33 +209,6 @@ pipeline.addEventListener('step-complete', (e) => {
 
 // Compose further
 const extendedPipeline = pipe(pipeline, stringify);
-```
-
-### Dry Run Behavior
-
-All composition utilities support `dryRun` execution. When you call a composed tool with `dryRun: true`, it propagates the dry-run flag to its underlying tools.
-
-- `pipe`: Executes each step in dry-run mode. If a step returns a simulated result, that result is passed to the next step's dry-run handler.
-- `parallel`: Executes all branches in dry-run mode.
-- `retry`: Retries the dry-run execution on failure.
-- `when`: Evaluates the predicate and executes the selected branch in dry-run mode.
-- `tap`: Executes the tool in dry-run mode, then runs the effect. The effect receives the context with `dryRun: true` and can choose to skip side effects.
-- `bind`: Passes `dryRun: true` to the underlying tool.
-
-Note: For a composed tool to support dry-run, **all underlying tools must support dry-run**. If any tool in the chain does not have a `dryRun` handler, the execution will fail with "Tool does not support dryRun".
-
-```typescript
-const deleteFile = createTool({
-  // ...
-  async dryRun({ path }) {
-    return { effect: `Would delete ${path}` };
-  },
-});
-
-const pipeline = pipe(validatePath, deleteFile);
-
-// Runs validatePath (dryRun) -> deleteFile (dryRun)
-const result = await pipeline.execute({ path: 'log.txt' }, { dryRun: true });
 ```
 
 ### Error Handling

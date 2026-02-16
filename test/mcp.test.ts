@@ -91,7 +91,7 @@ describe('createMCP', () => {
       {
         name: 'sum-local',
         description: 'adds two numbers',
-        schema: z.object({ a: z.number(), b: z.number() }),
+        input: z.object({ a: z.number(), b: z.number() }),
         metadata: { readOnly: true },
         async execute({ a, b }) {
           return { total: a + b };
@@ -180,7 +180,7 @@ describe('createMCP', () => {
       {
         name: 'sum',
         description: 'adds two numbers',
-        schema: z.object({ a: z.number(), b: z.number() }),
+        input: z.object({ a: z.number(), b: z.number() }),
         metadata: { owner: 'toolbox' },
         async execute({ a, b }) {
           return a + b;
@@ -192,7 +192,6 @@ describe('createMCP', () => {
     const { client, server } = await connect(toolbox, {
       toolConfiguration: (tool) => ({
         title: `${tool.name}-title`,
-        outputSchema: z.object({ value: z.number() }),
         meta: { ...tool.metadata, source: 'mcp' },
       }),
     });
@@ -205,7 +204,6 @@ describe('createMCP', () => {
       expect(tool?.description).toBe('adds two numbers');
       expect(tool?.inputSchema.type).toBe('object');
       expect(tool?._meta).toEqual({ owner: 'toolbox', source: 'mcp' });
-      expect(tool?.outputSchema?.type).toBe('object');
     } finally {
       await client.close();
       await server.close();
@@ -218,11 +216,11 @@ describe('createMCP', () => {
       {
         name: 'meta-tool',
         description: 'reads metadata',
-        schema: z.object({}),
+        input: z.object({}),
         metadata: {
           mcp: {
             title: 'meta-title',
-            outputSchema: {
+            schema: {
               type: 'object',
               properties: { ok: { type: 'boolean' } },
               required: ['ok'],
@@ -245,7 +243,8 @@ describe('createMCP', () => {
       const tool = tools.tools.find((entry) => entry.name === 'meta-tool');
       expect(tool?.title).toBe('meta-title');
       expect(tool?._meta).toEqual({ source: 'metadata' });
-      expect(tool?.outputSchema?.type).toBe('object');
+      expect(tool?.inputSchema?.type).toBe('object');
+      expect(tool?.inputSchema?.properties).toHaveProperty('ok');
     } finally {
       await client.close();
       await server.close();
@@ -258,7 +257,7 @@ describe('createMCP', () => {
       {
         name: 'meta-default',
         description: 'uses metadata by default',
-        schema: z.object({}),
+        input: z.object({}),
         metadata: { owner: 'toolbox', scope: 'test' },
         async execute() {
           return { ok: true };
@@ -285,7 +284,7 @@ describe('createMCP', () => {
       {
         name: 'read-only-tool',
         description: 'read-only',
-        schema: z.object({}),
+        input: z.object({}),
         metadata: { readOnly: true },
         async execute() {
           return { ok: true };
@@ -312,7 +311,7 @@ describe('createMCP', () => {
       {
         name: 'meta-invalid',
         description: 'metadata is an array',
-        schema: z.object({}),
+        input: z.object({}),
         metadata: [] as unknown as Record<string, unknown>,
         async execute() {
           return { ok: true };
@@ -339,7 +338,7 @@ describe('createMCP', () => {
       {
         name: 'override-configuration',
         description: 'should be overridden',
-        schema: z.object({}),
+        input: z.object({}),
         metadata: {
           mcp: {
             title: 'meta-title',
@@ -348,12 +347,6 @@ describe('createMCP', () => {
               type: 'object',
               properties: { fromMeta: { type: 'boolean' } },
               required: ['fromMeta'],
-              additionalProperties: false,
-            },
-            outputSchema: {
-              type: 'object',
-              properties: { meta: { type: 'boolean' } },
-              required: ['meta'],
               additionalProperties: false,
             },
             meta: { source: 'metadata' },
@@ -371,7 +364,6 @@ describe('createMCP', () => {
         title: 'override-title',
         description: 'override-description',
         schema: z.object({ fromConfiguration: z.string() }),
-        outputSchema: z.object({ configuration: z.boolean() }),
         meta: { source: 'configuration' },
       }),
     });
@@ -384,7 +376,6 @@ describe('createMCP', () => {
       expect(tool?._meta).toEqual({ source: 'configuration' });
       expect(tool?.inputSchema?.type).toBe('object');
       expect(tool?.inputSchema?.properties).toHaveProperty('fromConfiguration');
-      expect(tool?.outputSchema?.properties).toHaveProperty('configuration');
     } finally {
       await client.close();
       await server.close();
@@ -397,7 +388,7 @@ describe('createMCP', () => {
       {
         name: 'string-input',
         description: 'accepts string input',
-        schema: z.object({ fromTool: z.boolean() }),
+        input: z.object({ fromTool: z.boolean() }),
         async execute() {
           return { ok: true };
         },
@@ -428,7 +419,7 @@ describe('createMCP', () => {
       {
         name: 'status',
         description: 'returns a status object',
-        schema: z.object({}),
+        input: z.object({}),
         async execute() {
           return { ok: true };
         },
@@ -456,7 +447,7 @@ describe('createMCP', () => {
       {
         name: 'echo',
         description: 'echoes the id after a delay',
-        schema: z.object({ id: z.number() }),
+        input: z.object({ id: z.number() }),
         async execute({ id }) {
           calls += 1;
           await new Promise((resolve) => setTimeout(resolve, 20));
@@ -488,7 +479,7 @@ describe('createMCP', () => {
     toolbox.register({
       name: 'swap',
       description: 'first description',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         return 'first';
       },
@@ -508,7 +499,7 @@ describe('createMCP', () => {
     toolbox.register({
       name: 'swap',
       description: 'second description',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         return 'second';
       },
@@ -532,7 +523,7 @@ describe('createMCP', () => {
       {
         name: 'ping',
         description: 'ping tool',
-        schema: z.object({}),
+        input: z.object({}),
         async execute() {
           return { ok: true };
         },
@@ -604,7 +595,7 @@ describe('createMCP', () => {
       {
         name: 'explode',
         description: 'throws',
-        schema: z.object({}),
+        input: z.object({}),
         async execute() {
           throw new Error('boom');
         },
@@ -632,7 +623,7 @@ describe('createMCP', () => {
       {
         name: 'wait',
         description: 'waits for abort',
-        schema: z.object({}),
+        input: z.object({}),
         async execute() {
           await new Promise((resolve) => setTimeout(resolve, 50));
           return { ok: true };
@@ -662,7 +653,7 @@ describe('createMCP', () => {
       {
         name: 'readonly-override',
         description: 'read-only with explicit annotation',
-        schema: z.object({}),
+        input: z.object({}),
         metadata: { readOnly: true },
         async execute() {
           return { ok: true };
@@ -745,7 +736,7 @@ describe('createMCP', () => {
         {
           name,
           description: 'schema conversion',
-          schema: z.object({ fromTool: z.boolean() }),
+          input: z.object({ fromTool: z.boolean() }),
           async execute() {
             return { ok: true };
           },
@@ -856,7 +847,7 @@ describe('createMCP', () => {
       {
         name: 'custom-format',
         description: 'format',
-        schema: z.object({}),
+        input: z.object({}),
         async execute() {
           return { ok: true };
         },
@@ -885,7 +876,7 @@ describe('createMCP', () => {
       {
         name: 'empty-result',
         description: 'returns nothing',
-        schema: z.object({}),
+        input: z.object({}),
         async execute() {
           return undefined;
         },
@@ -910,7 +901,7 @@ describe('createMCP', () => {
       {
         name: 'bigint-result',
         description: 'returns bigint',
-        schema: z.object({}),
+        input: z.object({}),
         async execute() {
           return 1n;
         },
@@ -933,7 +924,7 @@ describe('createMCP', () => {
     const tool = {
       name: 'throwing-exec',
       description: 'throws in executeWith',
-      schema: z.object({}),
+      input: z.object({}),
       metadata: undefined,
       tags: [],
       executeWith: async () => {

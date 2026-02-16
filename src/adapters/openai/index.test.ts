@@ -14,7 +14,7 @@ describe('toOpenAI', () => {
   const tool = createTool({
     name: 'test-tool',
     description: 'A test tool',
-    schema: z.object({
+    input: z.object({
       query: z.string().describe('Search query'),
       limit: z.number().optional().describe('Max results'),
     }),

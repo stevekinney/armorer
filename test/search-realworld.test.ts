@@ -107,7 +107,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'issue refund for an order with item-level adjustments',
       tags: ['billing', 'refund', 'orders'],
       metadata: { domain: 'billing', tier: 'pro' },
-      schema: z.object({
+      input: z.object({
         orderId: z.string(),
         amount: z.number().optional(),
         reason: z.string().optional(),
@@ -119,7 +119,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'capture an authorized card payment for an order',
       tags: ['billing', 'payments'],
       metadata: { domain: 'billing', tier: 'pro' },
-      schema: z.object({
+      input: z.object({
         paymentId: z.string(),
         amount: z.number(),
       }),
@@ -130,7 +130,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'track shipment status and carrier updates',
       tags: ['shipping', 'tracking', 'orders'],
       metadata: { domain: 'logistics', tier: 'free' },
-      schema: z.object({
+      input: z.object({
         trackingId: z.string(),
         carrier: z.string().optional(),
       }),
@@ -141,7 +141,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'schedule a delivery window for an order',
       tags: ['shipping', 'delivery'],
       metadata: { domain: 'logistics', locale: 'en-US' },
-      schema: z.object({
+      input: z.object({
         orderId: z.string(),
         date: z.string(),
       }),
@@ -152,7 +152,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'update inventory counts for a SKU',
       tags: ['inventory', 'catalog'],
       metadata: { domain: 'catalog', pii: false },
-      schema: z.object({
+      input: z.object({
         sku: z.string(),
         quantity: z.number(),
       }),
@@ -163,7 +163,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'summarize open support tickets by category',
       tags: ['support', 'analysis'],
       metadata: { domain: 'support', owner: 'team-support' },
-      schema: z.object({
+      input: z.object({
         since: z.string(),
         limit: z.number().optional(),
       }),
@@ -174,7 +174,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'translate a customer message to the requested locale',
       tags: ['localization', 'text'],
       metadata: { domain: 'support', locale: 'es-ES' },
-      schema: z.object({
+      input: z.object({
         text: z.string(),
         locale: z.string(),
       }),
@@ -185,7 +185,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'flag suspicious orders for manual review',
       tags: ['risk', 'fraud', 'orders'],
       metadata: { domain: 'risk', tier: 'enterprise' },
-      schema: z.object({
+      input: z.object({
         orderId: z.string(),
         score: z.number(),
       }),
@@ -196,7 +196,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'fetch the current order status and last update',
       tags: ['orders', 'status'],
       metadata: { domain: 'orders', cache: 'short' },
-      schema: z.object({
+      input: z.object({
         orderId: z.string(),
       }),
       execute: async () => null,
@@ -206,7 +206,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'create a customer profile with marketing preferences',
       tags: ['customers', 'crm'],
       metadata: { domain: 'crm', pii: true },
-      schema: z.object({
+      input: z.object({
         email: z.string(),
         name: z.string(),
       }),
@@ -217,7 +217,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'list invoices for a billing account',
       tags: ['billing', 'invoices'],
       metadata: { domain: 'billing', tier: 'pro' },
-      schema: z.object({
+      input: z.object({
         accountId: z.string(),
       }),
       execute: async () => null,
@@ -227,7 +227,7 @@ function realWorldTools(): ToolConfiguration[] {
       description: 'write audit log entries for compliance',
       tags: ['audit', 'logs'],
       metadata: { domain: 'compliance' },
-      schema: z.object({
+      input: z.object({
         event: z.string(),
         actorId: z.string(),
       }),

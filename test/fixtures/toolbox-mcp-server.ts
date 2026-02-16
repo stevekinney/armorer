@@ -8,7 +8,7 @@ import { createMCP } from '../../src/mcp';
 const sum = createTool({
   name: 'sum',
   description: 'adds two numbers',
-  schema: z.object({ a: z.number(), b: z.number() }),
+  input: z.object({ a: z.number(), b: z.number() }),
   async execute({ a, b }) {
     return a + b;
   },

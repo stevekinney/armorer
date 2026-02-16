@@ -55,7 +55,7 @@ function createDependencyMiddleware(dependencies: DependencyGraph) {
 const authenticate = createTool({
   name: 'authenticate',
   description: 'Authenticate user',
-  schema: z.object({ username: z.string(), password: z.string() }),
+  input: z.object({ username: z.string(), password: z.string() }),
   async execute({ username, password }) {
     return { token: 'abc123' };
   },
@@ -64,7 +64,7 @@ const authenticate = createTool({
 const fetchUserData = createTool({
   name: 'fetch-user-data',
   description: 'Fetch user data (requires auth)',
-  schema: z.object({ userId: z.string() }),
+  input: z.object({ userId: z.string() }),
   async execute({ userId }) {
     return { id: userId, name: 'John Doe' };
   },

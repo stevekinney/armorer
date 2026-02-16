@@ -66,7 +66,7 @@ function makeTool(name: string) {
   return createTool({
     name,
     description: `${name} tool`,
-    schema: z.object({}),
+    input: z.object({}),
     execute: async () => null,
   });
 }

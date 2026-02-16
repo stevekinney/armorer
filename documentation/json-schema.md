@@ -17,17 +17,17 @@ import { z } from 'zod';
 const tool = createTool({
   name: 'my-tool',
   description: 'Does something',
-  parameters: z.object({ input: z.string() }),
+  input: z.object({ input: z.string() }),
   execute: async () => 'done',
 });
 
 const jsonSchema = tool.toJSON();
 // {
-//   type: 'function',
+//   schemaVersion: '2020-12',
+//   id: 'default:my-tool',
 //   name: 'my-tool',
 //   description: 'Does something',
-//   strict: true,
-//   parameters: { type: 'object', properties: { input: { type: 'string' } }, ... }
+//   input: { type: 'object', properties: { input: { type: 'string' } }, ... }
 // }
 ```
 
@@ -47,7 +47,7 @@ toolbox.register(
   createTool({
     name: 'send-email',
     description: 'Send an email',
-    parameters: z.object({
+    input: z.object({
       to: z.string().email(),
       subject: z.string(),
       body: z.string(),
@@ -65,7 +65,7 @@ const toolboxJSONSchema = toolbox.toJSON({ format: 'json-schema' });
 //     id: 'default:send-email',
 //     name: 'send-email',
 //     description: 'Send an email',
-//     schema: { type: 'object', properties: { ... }, required: [...] }
+//     input: { type: 'object', properties: { ... }, required: [...] }
 //   }
 // ]
 

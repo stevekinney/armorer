@@ -28,8 +28,6 @@ Default tool events include:
 - `settled`
 - `policy-denied`
 - `policy-action-required`
-- `output-validate-success`
-- `output-validate-error`
 - `progress`
 - `status-update`
 - `stream-start`
@@ -50,7 +48,7 @@ import { z } from 'zod';
 const summarize = createTool({
   name: 'summarize',
   description: 'Summarize text',
-  parameters: z.object({ text: z.string() }),
+  input: z.object({ text: z.string() }),
   async execute({ text }, { dispatch }) {
     dispatch({ type: 'progress', detail: { percent: 50, message: 'Summarizing...' } });
     return text.slice(0, 50);
@@ -102,7 +100,6 @@ During `toolbox.execute(...)`, toolbox also bubbles many tool events with added 
 
 - `tool.started`, `tool.finished`
 - `execute-start`, `validate-success`, `validate-error`
-- `output-validate-success`, `output-validate-error`
 - `execute-success`, `execute-error`, `settled`, `policy-denied`
 - `progress`, `stream-start`, `stream-chunk`, `stream-end`, `stream-error`
 - `output-chunk`, `log`, `cancelled`, `status-update`

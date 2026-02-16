@@ -10,7 +10,7 @@ describe('preprocess', () => {
     const addNumbers = createTool({
       name: 'add-numbers',
       description: 'Add two numbers',
-      schema: z.object({ a: z.number(), b: z.number() }),
+      input: z.object({ a: z.number(), b: z.number() }),
       execute: async ({ a, b }) => a + b,
     });
 
@@ -30,7 +30,7 @@ describe('preprocess', () => {
     const tool = createTool({
       name: 'original',
       description: 'Original tool',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async ({ value }) => value * 2,
     });
 
@@ -43,7 +43,7 @@ describe('preprocess', () => {
     const tool = createTool({
       name: 'tagged-tool',
       description: 'A tool with tags',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       tags: ['math', 'utility'],
       execute: async ({ value }) => value,
     });
@@ -56,7 +56,7 @@ describe('preprocess', () => {
     const tool = createTool({
       name: 'metadata-tool',
       description: 'A tool with metadata',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       metadata: { category: 'test', priority: 1 },
       execute: async ({ value }) => value,
     });
@@ -69,7 +69,7 @@ describe('preprocess', () => {
     const tool = createTool({
       name: 'double',
       description: 'Double a number',
-      schema: z.object({ n: z.number() }),
+      input: z.object({ n: z.number() }),
       execute: async ({ n }) => n * 2,
     });
 
@@ -85,7 +85,7 @@ describe('preprocess', () => {
     const tool = createTool({
       name: 'no-tags',
       description: 'A tool without tags',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async ({ value }) => value,
     });
 
@@ -98,7 +98,7 @@ describe('preprocess', () => {
     const tool = createTool({
       name: 'context-forward',
       description: 'captures context',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       async execute(_params, context) {
         observed.signal = context.signal;
         observed.timeout = context.timeout;
@@ -118,18 +118,14 @@ describe('preprocess', () => {
     expect(observed.timeout).toBe(123);
   });
 
-  it('forwards stream and dryRun to the wrapped tool', async () => {
-    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+  it('forwards stream to the wrapped tool', async () => {
+    const observed: Array<{ stream?: boolean }> = [];
     const tool = createTool({
       name: 'preprocess-stream-forward',
-      description: 'captures stream + dryRun',
-      schema: z.object({ value: z.number() }),
+      description: 'captures stream',
+      input: z.object({ value: z.number() }),
       async execute(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
-        return 7;
-      },
-      async dryRun(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        observed.push({ stream: context.stream });
         return 7;
       },
     });
@@ -138,11 +134,10 @@ describe('preprocess', () => {
     const result = await (preprocessed as any).executeWith({
       params: { value: 1 },
       stream: true,
-      dryRun: true,
     });
 
     expect(result.result).toBe(7);
-    expect(observed).toEqual([{ stream: true, dryRun: true }]);
+    expect(observed).toEqual([{ stream: true }]);
   });
 });
 
@@ -151,7 +146,7 @@ describe('postprocess', () => {
     const fetchUser = createTool({
       name: 'fetch-user',
       description: 'Fetch user data',
-      schema: z.object({ id: z.string() }),
+      input: z.object({ id: z.string() }),
       execute: async ({ id }) => ({ userId: id, name: 'John' }),
     });
 
@@ -172,7 +167,7 @@ describe('postprocess', () => {
     const tool = createTool({
       name: 'original',
       description: 'Original tool',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async ({ value }) => value * 2,
     });
 
@@ -185,7 +180,7 @@ describe('postprocess', () => {
     const tool = createTool({
       name: 'tagged-tool',
       description: 'A tool with tags',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       tags: ['math', 'utility'],
       execute: async ({ value }) => value,
     });
@@ -198,7 +193,7 @@ describe('postprocess', () => {
     const tool = createTool({
       name: 'metadata-tool',
       description: 'A tool with metadata',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       metadata: { category: 'test', priority: 1 },
       execute: async ({ value }) => value,
     });
@@ -211,7 +206,7 @@ describe('postprocess', () => {
     const tool = createTool({
       name: 'double',
       description: 'Double a number',
-      schema: z.object({ n: z.number() }),
+      input: z.object({ n: z.number() }),
       execute: async ({ n }) => n * 2,
     });
 
@@ -225,7 +220,7 @@ describe('postprocess', () => {
     const tool = createTool({
       name: 'no-tags',
       description: 'A tool without tags',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       execute: async ({ value }) => value,
     });
 
@@ -233,17 +228,17 @@ describe('postprocess', () => {
     expect(postprocessed.tags).toBeUndefined();
   });
 
-  it('uses same schema as original tool', () => {
-    const schema = z.object({ value: z.number() });
+  it('uses same input as original tool', () => {
+    const input = z.object({ value: z.number() });
     const tool = createTool({
       name: 'original',
       description: 'Original tool',
-      schema,
+      input,
       execute: async ({ value }) => value,
     });
 
     const postprocessed = postprocess(tool, async (output) => output);
-    expect(postprocessed.schema).toBe(schema);
+    expect(postprocessed.input).toBe(input);
   });
 
   it('forwards signal and timeout to the wrapped tool', async () => {
@@ -251,7 +246,7 @@ describe('postprocess', () => {
     const tool = createTool({
       name: 'context-forward',
       description: 'captures context',
-      schema: z.object({ value: z.number() }),
+      input: z.object({ value: z.number() }),
       async execute(_params, context) {
         observed.signal = context.signal;
         observed.timeout = context.timeout;
@@ -271,18 +266,14 @@ describe('postprocess', () => {
     expect(observed.timeout).toBe(321);
   });
 
-  it('forwards stream and dryRun to the wrapped tool', async () => {
-    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+  it('forwards stream to the wrapped tool', async () => {
+    const observed: Array<{ stream?: boolean }> = [];
     const tool = createTool({
       name: 'postprocess-stream-forward',
-      description: 'captures stream + dryRun',
-      schema: z.object({ value: z.number() }),
+      description: 'captures stream',
+      input: z.object({ value: z.number() }),
       async execute(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
-        return 9;
-      },
-      async dryRun(_params, context) {
-        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        observed.push({ stream: context.stream });
         return 9;
       },
     });
@@ -291,11 +282,10 @@ describe('postprocess', () => {
     const result = await (postprocessed as any).executeWith({
       params: { value: 1 },
       stream: true,
-      dryRun: true,
     });
 
     expect(result.result).toBe(9);
-    expect(observed).toEqual([{ stream: true, dryRun: true }]);
+    expect(observed).toEqual([{ stream: true }]);
   });
 });
 
@@ -304,7 +294,7 @@ describe('preprocess and postprocess composition', () => {
     const baseTool = createTool({
       name: 'multiply',
       description: 'Multiply by 2',
-      schema: z.object({ n: z.number() }),
+      input: z.object({ n: z.number() }),
       execute: async ({ n }) => n * 2,
     });
 

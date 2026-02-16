@@ -16,7 +16,7 @@ import type { ToolConfiguration } from '../src/is-tool';
 const makeConfiguration = (overrides?: Partial<ToolConfiguration>): ToolConfiguration => ({
   name: 'sum',
   description: 'add two numbers',
-  schema: z.object({ a: z.number(), b: z.number() }),
+  input: z.object({ a: z.number(), b: z.number() }),
   tags: ['math'],
   async execute({ a, b }) {
     return a + b;
@@ -211,7 +211,7 @@ describe('inspect', () => {
       const tool = createTool({
         name: 'calculator',
         description: 'performs calculations',
-        schema: z.object({ a: z.number(), b: z.number() }),
+        input: z.object({ a: z.number(), b: z.number() }),
         tags: ['math', 'utility'],
         async execute({ a, b }) {
           return a + b;
@@ -223,8 +223,8 @@ describe('inspect', () => {
       expect(inspection.name).toBe('calculator');
       expect(inspection.description).toBe('performs calculations');
       expect(inspection.tags).toEqual(['math', 'utility']);
-      expect(inspection.schema?.keys).toEqual(['a', 'b']);
-      expect(inspection.schema?.shape).toBeUndefined();
+      expect(inspection.input?.keys).toEqual(['a', 'b']);
+      expect(inspection.input?.shape).toBeUndefined();
       expect(inspection.metadata?.hasCustomMetadata).toBe(false);
     });
 
@@ -232,7 +232,7 @@ describe('inspect', () => {
       const tool = createTool({
         name: 'calculator',
         description: 'performs calculations',
-        schema: z.object({ a: z.number(), b: z.number() }),
+        input: z.object({ a: z.number(), b: z.number() }),
         tags: ['math'],
         async execute({ a, b }) {
           return a + b;
@@ -241,16 +241,16 @@ describe('inspect', () => {
 
       const inspection = inspectTool(tool, 'full');
 
-      expect(inspection.schema?.shape).toBeDefined();
-      expect(inspection.schema?.shape?.a).toBe('number');
-      expect(inspection.schema?.shape?.b).toBe('number');
+      expect(inspection.input?.shape).toBeDefined();
+      expect(inspection.input?.shape?.a).toBe('number');
+      expect(inspection.input?.shape?.b).toBe('number');
     });
 
     it('handles tools with metadata', () => {
       const tool = createTool({
         name: 'advanced-tool',
         description: 'a tool with metadata',
-        schema: z.object({ input: z.string() }),
+        input: z.object({ input: z.string() }),
         metadata: {
           capabilities: ['read', 'write'],
           effort: 'medium',
@@ -271,7 +271,7 @@ describe('inspect', () => {
       const tool = createTool({
         name: 'no-tags',
         description: 'a tool without tags',
-        schema: z.object({}),
+        input: z.object({}),
         async execute() {
           return null;
         },
@@ -299,20 +299,20 @@ describe('inspect', () => {
         createTool({
           name: 'with-tags',
           description: 'has tags',
-          schema: z.object({}),
+          input: z.object({}),
           tags: ['tag1'],
           async execute() {},
         }),
         createTool({
           name: 'no-tags',
           description: 'no tags',
-          schema: z.object({}),
+          input: z.object({}),
           async execute() {},
         }),
         createTool({
           name: 'more-tags',
           description: 'also has tags',
-          schema: z.object({}),
+          input: z.object({}),
           tags: ['tag2', 'tag3'],
           async execute() {},
         }),
@@ -329,14 +329,14 @@ describe('inspect', () => {
         createTool({
           name: 'with-metadata',
           description: 'has metadata',
-          schema: z.object({}),
+          input: z.object({}),
           metadata: { key: 'value' },
           async execute() {},
         }),
         createTool({
           name: 'no-metadata',
           description: 'no metadata',
-          schema: z.object({}),
+          input: z.object({}),
           async execute() {},
         }),
       ];
@@ -352,7 +352,7 @@ describe('inspect', () => {
         createTool({
           name: 'tool',
           description: 'a tool',
-          schema: z.object({ x: z.number() }),
+          input: z.object({ x: z.number() }),
           async execute() {},
         }),
       ];
@@ -361,21 +361,21 @@ describe('inspect', () => {
       const standardInspection = inspectRegistry(tools, 'standard');
       const fullInspection = inspectRegistry(tools, 'full');
 
-      // Summary level: only name, description, tags (no schema or metadata)
+      // Summary level: only name, description, tags (no input or metadata)
       expect(summaryInspection.detailLevel).toBe('summary');
-      expect(summaryInspection.tools[0]?.schema).toBeUndefined();
+      expect(summaryInspection.tools[0]?.input).toBeUndefined();
       expect(summaryInspection.tools[0]?.metadata).toBeUndefined();
 
-      // Standard level: includes schema.keys and metadata, but not schema.shape
+      // Standard level: includes input.keys and metadata, but not input.shape
       expect(standardInspection.detailLevel).toBe('standard');
-      expect(standardInspection.tools[0]?.schema).toBeDefined();
-      expect(standardInspection.tools[0]?.schema?.keys).toEqual(['x']);
-      expect(standardInspection.tools[0]?.schema?.shape).toBeUndefined();
+      expect(standardInspection.tools[0]?.input).toBeDefined();
+      expect(standardInspection.tools[0]?.input?.keys).toEqual(['x']);
+      expect(standardInspection.tools[0]?.input?.shape).toBeUndefined();
       expect(standardInspection.tools[0]?.metadata).toBeDefined();
 
-      // Full level: includes schema.shape details
+      // Full level: includes input.shape details
       expect(fullInspection.detailLevel).toBe('full');
-      expect(fullInspection.tools[0]?.schema?.shape).toBeDefined();
+      expect(fullInspection.tools[0]?.input?.shape).toBeDefined();
     });
   });
 
@@ -396,7 +396,7 @@ describe('inspect', () => {
       expect(inspection.tools[0]?.name).toBe('sum');
       expect(inspection.tools[0]?.description).toBe('add two numbers');
       expect(inspection.tools[0]?.tags).toEqual(['math']);
-      expect(inspection.tools[0]?.schema?.keys).toEqual(['a', 'b']);
+      expect(inspection.tools[0]?.input?.keys).toEqual(['a', 'b']);
     });
 
     it('returns inspection of multi-tool registry', () => {
@@ -421,8 +421,8 @@ describe('inspect', () => {
       const inspection = toolbox.inspect('summary');
 
       expect(inspection.detailLevel).toBe('summary');
-      // Summary level excludes schema and metadata entirely
-      expect(inspection.tools[0]?.schema).toBeUndefined();
+      // Summary level excludes input and metadata entirely
+      expect(inspection.tools[0]?.input).toBeUndefined();
       expect(inspection.tools[0]?.metadata).toBeUndefined();
       // But still includes name, description, and tags
       expect(inspection.tools[0]?.name).toBe('sum');
@@ -435,10 +435,10 @@ describe('inspect', () => {
       const inspection = toolbox.inspect();
 
       expect(inspection.detailLevel).toBe('standard');
-      // Standard level includes schema.keys and metadata, but not schema.shape
-      expect(inspection.tools[0]?.schema).toBeDefined();
-      expect(inspection.tools[0]?.schema?.keys).toEqual(['a', 'b']);
-      expect(inspection.tools[0]?.schema?.shape).toBeUndefined();
+      // Standard level includes input.keys and metadata, but not input.shape
+      expect(inspection.tools[0]?.input).toBeDefined();
+      expect(inspection.tools[0]?.input?.keys).toEqual(['a', 'b']);
+      expect(inspection.tools[0]?.input?.shape).toBeUndefined();
       expect(inspection.tools[0]?.metadata).toBeDefined();
     });
 
@@ -447,8 +447,8 @@ describe('inspect', () => {
       const inspection = toolbox.inspect('full');
 
       expect(inspection.detailLevel).toBe('full');
-      expect(inspection.tools[0]?.schema?.shape).toBeDefined();
-      expect(inspection.tools[0]?.schema?.shape?.a).toBe('number');
+      expect(inspection.tools[0]?.input?.shape).toBeDefined();
+      expect(inspection.tools[0]?.input?.shape?.a).toBe('number');
     });
 
     it('is side-effect free (does not modify registry)', () => {
@@ -481,7 +481,7 @@ describe('inspect', () => {
       const tool = createTool({
         name: 'test',
         description: 'test tool',
-        schema: z.object({ x: z.number() }),
+        input: z.object({ x: z.number() }),
         tags: ['test'],
         async execute() {},
       });

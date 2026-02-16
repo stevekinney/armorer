@@ -44,7 +44,7 @@ function createFallbackMiddleware(fallbacks: Map<string, string>) {
 const fetchFromApi = createTool({
   name: 'fetch-from-api',
   description: 'Fetch data from external API',
-  schema: z.object({ endpoint: z.string() }),
+  input: z.object({ endpoint: z.string() }),
   async execute({ endpoint }) {
     // Might fail due to network issues
     const response = await fetch(endpoint);
@@ -55,7 +55,7 @@ const fetchFromApi = createTool({
 const fetchFromCache = createTool({
   name: 'fetch-from-cache',
   description: 'Fetch data from cache',
-  schema: z.object({ endpoint: z.string() }),
+  input: z.object({ endpoint: z.string() }),
   async execute({ endpoint }) {
     // Fallback to cached data
     return { cached: true, data: {} };

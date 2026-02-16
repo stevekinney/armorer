@@ -46,7 +46,7 @@ createTool(
   {
     name: 'send-email',
     description: 'Send an email to a recipient',
-    schema: z.object({
+    input: z.object({
       to: z.string().email(),
       subject: z.string(),
       body: z.string(),
@@ -63,7 +63,7 @@ createTool(
   {
     name: 'create-calendar-event',
     description: 'Schedule a meeting or event on the calendar',
-    schema: z.object({
+    input: z.object({
       title: z.string(),
       startTime: z.string(),
       attendees: z.array(z.string().email()),

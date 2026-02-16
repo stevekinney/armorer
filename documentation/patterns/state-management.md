@@ -46,7 +46,7 @@ const stateStore = new StateStore();
 const setCounter = createTool({
   name: 'set-counter',
   description: 'Set counter value',
-  schema: z.object({ value: z.number() }),
+  input: z.object({ value: z.number() }),
   async execute({ value }, context) {
     const { stateStore } = context as { stateStore: StateStore };
     stateStore.set('counter', value);
@@ -57,7 +57,7 @@ const setCounter = createTool({
 const incrementCounter = createTool({
   name: 'increment-counter',
   description: 'Increment counter',
-  schema: z.object({ by: z.number().optional() }),
+  input: z.object({ by: z.number().optional() }),
   async execute({ by = 1 }, context) {
     const { stateStore } = context as { stateStore: StateStore };
     stateStore.update<number>('counter', (current = 0) => current + by);
@@ -68,7 +68,7 @@ const incrementCounter = createTool({
 const getCounter = createTool({
   name: 'get-counter',
   description: 'Get counter value',
-  schema: z.object({}),
+  input: z.object({}),
   async execute(_params, context) {
     const { stateStore } = context as { stateStore: StateStore };
     return { counter: stateStore.get('counter') ?? 0 };

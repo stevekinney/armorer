@@ -10,7 +10,7 @@ describe('queryTools type inference', () => {
       name: 'send-email',
       description: 'Send an email message',
       tags: ['communication', 'email'] as const,
-      schema: z.object({
+      input: z.object({
         to: z.string(),
         body: z.string(),
       }),
@@ -21,7 +21,7 @@ describe('queryTools type inference', () => {
       name: 'get-weather',
       description: 'Get weather information',
       tags: ['weather', 'read-only'] as const,
-      schema: z.object({
+      input: z.object({
         city: z.string(),
         units: z.enum(['c', 'f']).optional(),
       }),

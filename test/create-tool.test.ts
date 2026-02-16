@@ -14,7 +14,7 @@ describe('createTool', () => {
     const tool = createTool<{ a: string; b?: number }, string, Events>({
       name: 'example',
       description: 'An example tool',
-      schema: z.object({
+      input: z.object({
         a: z.string(),
         b: z.number().optional(),
       }),
@@ -23,7 +23,7 @@ describe('createTool', () => {
         expect(toolCall.arguments).toEqual(params);
         expect(toolCall.name).toBe('example');
         expect(configuration.name).toBe('example');
-        expect(configuration.schema).toBe(tool.schema);
+        expect(configuration.input).toBe(tool.input);
         calls.push(params);
         // emit an event to ensure context works
         dispatch({ type: 'called', detail: params });
@@ -39,7 +39,7 @@ describe('createTool', () => {
     expect('description' in tool).toBe(true);
     expect(tool.description).toBe('An example tool');
     expect(typeof tool.execute).toBe('function');
-    expect(tool.schema).toBeDefined();
+    expect(tool.input).toBeDefined();
     // String representations
     expect(tool.toString()).toContain('example');
     expect(`${tool}`).toBe('example');
@@ -57,7 +57,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'raw-exec',
       description: 'executes with raw context',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       async execute({ value }) {
         return value.toUpperCase();
       },
@@ -84,7 +84,7 @@ describe('createTool', () => {
       createTool({
         name: 'bad-execute',
         description: 'invalid execute type',
-        schema: z.object({}),
+        input: z.object({}),
         execute: 123 as any,
       }),
     ).toThrow('execute must be a function or a promise that resolves to a function');
@@ -94,7 +94,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'execute-params',
       description: 'execute with params',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       async execute({ value }) {
         return value.toUpperCase();
       },
@@ -109,7 +109,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'execute-invalid',
       description: 'invalid params',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       async execute({ value }) {
         return value;
       },
@@ -122,7 +122,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'parameters-field',
       description: 'uses parameters',
-      parameters: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       async execute({ value }) {
         return value.toUpperCase();
       },
@@ -130,34 +130,33 @@ describe('createTool', () => {
 
     const result = await tool({ value: 'ok' });
     expect(result).toBe('OK');
-    expect(tool.parameters.safeParse({ value: 'ok' }).success).toBe(true);
+    expect(tool.input.safeParse({ value: 'ok' }).success).toBe(true);
   });
 
-  it('prefers parameters when both parameters and schema are provided', async () => {
+  it('uses input for validation', async () => {
     const tool = createTool({
-      name: 'parameters-precedence',
-      description: 'parameters take precedence',
-      parameters: z.object({ value: z.string() }),
-      schema: z.object({ legacy: z.string() }),
+      name: 'input-validation',
+      description: 'input validation',
+      input: z.object({ value: z.string() }),
       async execute(params: any) {
-        return params.value ?? params.legacy;
+        return params.value;
       },
     });
 
-    expect(tool.parameters.safeParse({ value: 'ok' }).success).toBe(true);
-    expect(tool.parameters.safeParse({ legacy: 'nope' }).success).toBe(false);
+    expect(tool.input.safeParse({ value: 'ok' }).success).toBe(true);
+    expect(tool.input.safeParse({ legacy: 'nope' }).success).toBe(false);
     const result = await tool({ value: 'ok' });
     expect(result).toBe('ok');
   });
 
-  it('defaults schema to an empty object when omitted', async () => {
+  it('defaults input to an empty object when omitted', async () => {
     const tool = createTool({
       name: 'no-schema',
       description: 'defaults schema',
       execute: async () => 'ok',
     });
 
-    expect(tool.schema.safeParse({}).success).toBe(true);
+    expect(tool.input.safeParse({}).success).toBe(true);
     const result = await tool({});
     expect(result).toBe('ok');
   });
@@ -172,7 +171,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'lazy-exec',
       description: 'loads execute lazily',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       execute: executePromise,
     });
 
@@ -188,7 +187,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'lazy-reject',
       description: 'fails on load',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       execute: Promise.resolve().then(() => {
         throw new Error('lazy load failed');
       }),
@@ -202,7 +201,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'lazy-bad',
       description: 'bad execute',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       execute: Promise.resolve(42 as any),
     });
 
@@ -217,7 +216,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'lazy-helper',
       description: 'loads on demand',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       execute: lazy(async () => {
         loads += 1;
         return async ({ value }: { value: string }) => value.toUpperCase();
@@ -255,7 +254,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'diagnostic-failure',
       description: 'diagnostic test',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       execute: async ({ value }) => value,
       diagnostics: {
         createRepairHints: () => {
@@ -274,7 +273,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'configuration-exec',
       description: 'call via configuration',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute({ a }) {
         return a.toUpperCase();
       },
@@ -290,7 +289,7 @@ describe('createTool', () => {
       {
         name: 'ctx-tool',
         description: 'uses context',
-        schema: z.object({ value: z.string() }),
+        input: z.object({ value: z.string() }),
         async execute({ value }, context) {
           expect(context.workspaceId).toBe('ws-1');
           expect(context.role).toBe('admin');
@@ -308,7 +307,7 @@ describe('createTool', () => {
     const tool = builder({
       name: 'regional',
       description: 'curries context',
-      schema: z.object({ n: z.number() }),
+      input: z.object({ n: z.number() }),
       async execute({ n }, context) {
         expect(context.region).toBe('eu');
         return `${context.region}-${n}`;
@@ -323,7 +322,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'invalid-test',
       description: 'Ensures validation errors bubble',
-      schema: z.object({
+      input: z.object({
         a: z.string(),
       }),
       execute: async () => 'never',
@@ -341,7 +340,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'abort-now',
       description: 'cancel immediately',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         runs++;
         return 'never';
@@ -363,7 +362,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'abort-mid-flight',
       description: 'cancel mid run',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         await new Promise((resolve) => setTimeout(resolve, 25));
         return 'done';
@@ -386,7 +385,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'start-abort',
       description: 'aborts after execute-start',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         runs++;
         return 'done';
@@ -410,7 +409,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'validate-abort',
       description: 'aborts after validate-success',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         runs++;
         return 'done';
@@ -434,7 +433,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'abort-before-race',
       description: 'abort inside execute',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         controller.abort('abort inside execute');
         return 'done';
@@ -450,7 +449,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'steady-signal',
       description: 'signal that never aborts',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute({ a }) {
         return `${a}-done`;
       },
@@ -467,7 +466,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'reject-with-signal',
       description: 'runner rejects',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         throw new Error('boom');
       },
@@ -483,7 +482,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'structured-reason',
       description: 'object reason',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         await new Promise((resolve) => setTimeout(resolve, 5));
         return 'never';
@@ -502,7 +501,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'circular-reason',
       description: 'circular reason',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         await new Promise((resolve) => setTimeout(resolve, 5));
         return 'never';
@@ -519,11 +518,11 @@ describe('createTool', () => {
     expect(result.error?.message).toBe('Cancelled');
   });
 
-  it('exposes JSON metadata with parameters JSON Schema', () => {
+  it('exposes JSON metadata with input JSON Schema', () => {
     const tool = createTool({
       name: 'json-meta',
       description: 'JSON view',
-      schema: z.object({
+      input: z.object({
         a: z.string(),
         b: z.number().optional(),
       }),
@@ -537,8 +536,8 @@ describe('createTool', () => {
     expect(meta.display.description).toBe('JSON view');
     expect(() => JSON.stringify(meta)).not.toThrow();
 
-    // Parameters JSON Schema assertions
-    const params = meta.schema as Record<string, unknown>;
+    // Input JSON Schema assertions
+    const params = meta.input as Record<string, unknown>;
     expect(params).toBeDefined();
     expect(params['type']).toBe('object');
 
@@ -559,7 +558,7 @@ describe('createTool', () => {
       createTool({
         name: 'bad-tags',
         description: 'invalid tag',
-        schema: z.object({ a: z.string() }),
+        input: z.object({ a: z.string() }),
         tags: ['Not-Kebab'],
         async execute() {
           return null;
@@ -572,7 +571,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'with-metadata',
       description: 'has custom metadata',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       metadata: { requires: ['account'] as const, cost: 3 },
       async execute({ a }) {
         return a.toUpperCase();
@@ -587,7 +586,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'sync-metadata-factory',
       description: 'metadata from sync factory',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       metadata: () => ({ source: 'sync' as const }),
       async execute({ value }) {
         return value;
@@ -603,7 +602,7 @@ describe('createTool', () => {
     const toolPromise = createTool({
       name: 'promise-metadata',
       description: 'metadata from promise',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       metadata: Promise.resolve({ source: 'promise' as const }),
       async execute({ value }) {
         return value;
@@ -619,7 +618,7 @@ describe('createTool', () => {
     const toolPromise = createTool({
       name: 'async-metadata-factory',
       description: 'metadata from async factory',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       metadata: async () => ({ source: 'async-factory' as const }),
       async execute({ value }) {
         return value;
@@ -635,7 +634,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'collect-stream',
       description: 'collects stream output by default',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         return {
           async *[Symbol.asyncIterator]() {
@@ -679,7 +678,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'stream-mode',
       description: 'returns a live stream',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         return {
           async *[Symbol.asyncIterator]() {
@@ -709,13 +708,11 @@ describe('createTool', () => {
     expect(executeSuccess).toEqual([['a', 'b']]);
   });
 
-  it('validates and digests streams incrementally in collect mode', async () => {
-    const validationErrors: unknown[] = [];
+  it('digests streams incrementally in collect mode', async () => {
     const tool = createTool({
       name: 'stream-validate-digest',
-      description: 'validates stream chunks',
-      schema: z.object({}),
-      outputSchema: z.number(),
+      description: 'digests stream chunks',
+      input: z.object({}),
       digests: { output: true, input: false, algorithm: 'sha256' },
       async execute() {
         return {
@@ -726,26 +723,19 @@ describe('createTool', () => {
         };
       },
     });
-    tool.addEventListener('output-validate-error', (event) => {
-      validationErrors.push(event.detail.error);
-    });
 
     const result = await tool.execute({ id: 'd1', name: 'stream-validate-digest', arguments: {} });
     expect(result.result).toEqual([1, 2]);
-    expect(result.outputValidation).toEqual({ success: true });
     const expectedDigest = createHash('sha256').update('1').update('2').digest('hex');
     expect(result.outputDigest).toBe(expectedDigest);
-    expect(validationErrors).toEqual([]);
   });
 
-  it('returns validation errors when incremental stream validation fails in throw mode', async () => {
+  it('collects mixed stream chunk types without output validation', async () => {
     const streamErrors: unknown[] = [];
     const tool = createTool({
       name: 'stream-validate-throw',
-      description: 'throws on invalid chunk',
-      schema: z.object({}),
-      outputSchema: z.number(),
-      outputValidationMode: 'throw',
+      description: 'collects mixed chunks',
+      input: z.object({}),
       async execute() {
         return {
           async *[Symbol.asyncIterator]() {
@@ -764,9 +754,9 @@ describe('createTool', () => {
       name: 'stream-validate-throw',
       arguments: {},
     });
-    expect(result.outcome).toBe('error');
-    expect(result.error?.category).toBe('validation');
-    expect(streamErrors).toHaveLength(1);
+    expect(result.outcome).toBe('success');
+    expect(result.result).toEqual([1, 'bad']);
+    expect(streamErrors).toHaveLength(0);
   });
 
   it('emits telemetry with incremental validation and digest details in stream mode', async () => {
@@ -774,8 +764,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'stream-telemetry-success',
       description: 'streams with telemetry metadata',
-      schema: z.object({ tag: z.string() }),
-      outputSchema: z.number(),
+      input: z.object({ tag: z.string() }),
       telemetry: true,
       digests: { input: true, output: true, algorithm: 'sha256' },
       async execute() {
@@ -806,7 +795,6 @@ describe('createTool', () => {
     expect(finishedDetails[0].status).toBe('success');
     expect(finishedDetails[0].inputDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(finishedDetails[0].outputDigest).toMatch(/^[a-f0-9]{64}$/);
-    expect(finishedDetails[0].outputValidation).toEqual({ success: true });
   });
 
   it('emits stream and execution error events when live streams fail mid-flight', async () => {
@@ -816,7 +804,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'stream-live-failure',
       description: 'throws during streaming iteration',
-      schema: z.object({}),
+      input: z.object({}),
       telemetry: true,
       digests: { input: true, output: false, algorithm: 'sha256' },
       async execute() {
@@ -868,7 +856,7 @@ describe('createTool', () => {
     const tool = createTool({
       name: 'stream-collect-timeout',
       description: 'times out while collecting stream output',
-      schema: z.object({}),
+      input: z.object({}),
       async execute() {
         return {
           async *[Symbol.asyncIterator]() {
@@ -892,15 +880,15 @@ describe('createTool', () => {
     expect(streamErrors).toHaveLength(1);
   });
 
-  describe('schema normalization', () => {
-    it('accepts a plain object of Zod schemas as the schema', async () => {
-      // This tests the normalization path where schema is a plain object of Zod schemas.
+  describe('input normalization', () => {
+    it('accepts a plain object of Zod schemas as input', async () => {
+      // This tests the normalization path where input is a plain object of Zod schemas.
       const schemaAsObject = { name: z.string(), count: z.number() } as any;
 
       const tool = createTool({
         name: 'object-schema',
         description: 'uses object schema',
-        schema: schemaAsObject,
+        input: schemaAsObject,
         async execute({ name, count }) {
           return `${name}-${count}`;
         },
@@ -910,56 +898,56 @@ describe('createTool', () => {
       expect(result).toBe('test-5');
     });
 
-    it('throws when schema is not a Zod schema or object', () => {
+    it('throws when input is not a Zod schema or object', () => {
       expect(() =>
         createTool({
           name: 'invalid-schema',
           description: 'uses invalid schema',
-          schema: 'not a schema' as any,
+          input: 'not a schema' as any,
           async execute() {
             return null;
           },
         }),
-      ).toThrow(/Tool schema must be a Zod object schema or an object of Zod schemas/);
+      ).toThrow(/Tool input must be a Zod object schema or an object of Zod schemas/);
     });
 
-    it('throws when schema is null', () => {
+    it('throws when input is null', () => {
       expect(() =>
         createTool({
           name: 'null-schema',
           description: 'uses null schema',
-          schema: null as any,
+          input: null as any,
           async execute() {
             return null;
           },
         }),
-      ).toThrow(/Tool schema must be a Zod object schema or an object of Zod schemas/);
+      ).toThrow(/Tool input must be a Zod object schema or an object of Zod schemas/);
     });
 
-    it('throws when schema is a number', () => {
+    it('throws when input is a number', () => {
       expect(() =>
         createTool({
           name: 'number-schema',
           description: 'uses number schema',
-          schema: 42 as any,
+          input: 42 as any,
           async execute() {
             return null;
           },
         }),
-      ).toThrow(/Tool schema must be a Zod object schema or an object of Zod schemas/);
+      ).toThrow(/Tool input must be a Zod object schema or an object of Zod schemas/);
     });
 
-    it('throws when schema is a non-object Zod schema', () => {
+    it('throws when input is a non-object Zod schema', () => {
       expect(() =>
         createTool({
           name: 'primitive-schema',
           description: 'uses primitive schema',
-          schema: z.number(),
+          input: z.number(),
           async execute() {
             return null;
           },
         }),
-      ).toThrow(/Tool schema must be a Zod object schema/);
+      ).toThrow(/Tool input must be a Zod object schema/);
     });
   });
 });
@@ -969,7 +957,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'checker',
       description: 'type guard',
-      schema: z.object({ x: z.number() }),
+      input: z.object({ x: z.number() }),
       execute: async () => 1,
     });
     expect(isTool(tool)).toBe(true);
@@ -980,7 +968,7 @@ describe('isTool', () => {
     const tool = createTool<{ a: string }, string, Events>({
       name: 'events',
       description: 'listener support',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute(_params, { dispatch }) {
         dispatch({ type: 'ping', detail: 1 });
         return 'ok';
@@ -1024,7 +1012,7 @@ describe('isTool', () => {
     const tool = createTool<{ a: string }, null, Events>({
       name: 'events-2',
       description: 'listener options',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute(_params, { dispatch }) {
         dispatch({ type: 'ping', detail: 1 });
         return null;
@@ -1062,7 +1050,7 @@ describe('isTool', () => {
     const tool = createTool<{ a: string }, null, Events>({
       name: 'events-3',
       description: 'ordering & isolation',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute(_params, { dispatch }) {
         dispatch({ type: 'ping', detail: 1 });
         dispatch({ type: 'pong', detail: 'x' });
@@ -1103,7 +1091,7 @@ describe('isTool', () => {
     const tool = createTool<{ a: string }, null, Events>({
       name: 'rej',
       description: 'async rejection',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         return null;
       },
@@ -1137,7 +1125,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'descriptors',
       description: 'props',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         return 1;
       },
@@ -1154,7 +1142,7 @@ describe('isTool', () => {
     const tool = createTool<{ a: string }, null, Events>({
       name: 'dispose',
       description: 'cleanup',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         return null;
       },
@@ -1190,7 +1178,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'valerr',
       description: 'validation error path',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       diagnostics,
       async execute() {
         return 'x';
@@ -1222,7 +1210,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'throwerr',
       description: 'execute error path',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         throw new Error('boom');
       },
@@ -1248,7 +1236,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'oktool',
       description: 'success path',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute({ a }) {
         return a.toUpperCase();
       },
@@ -1292,7 +1280,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'denytool',
       description: 'policy denied',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       policy: {
         beforeExecute() {
           return { allow: false, reason: 'nope' };
@@ -1318,7 +1306,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'telemetry',
       description: 'telemetry events',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       telemetry: true,
       async execute({ a }) {
         return a.toUpperCase();
@@ -1347,7 +1335,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'digest',
       description: 'digests',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       digests: true,
       async execute({ a }) {
         return { ok: a === 'x' };
@@ -1359,32 +1347,36 @@ describe('isTool', () => {
     expect(result.outputDigest).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it('validates output schema and emits output validation events', async () => {
+  it('emits output-chunk events when collecting stream results', async () => {
     const tool = createTool({
       name: 'output-validate',
-      description: 'output schema',
-      schema: z.object({ a: z.string() }),
-      outputSchema: z.object({ ok: z.boolean() }),
+      description: 'output stream chunks',
+      input: z.object({}),
       async execute() {
-        return { ok: true };
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield { ok: true };
+            yield { ok: false };
+          },
+        };
       },
     });
 
-    let validated = 0;
-    tool.addEventListener('output-validate-success' as any, () => {
-      validated += 1;
+    const chunks: unknown[] = [];
+    tool.addEventListener('output-chunk' as any, (event) => {
+      chunks.push((event.detail as any).chunk);
     });
 
     const result = await (tool as any).executeWith({ params: { a: 'x' } });
-    expect(result.outputValidation?.success).toBe(true);
-    expect(validated).toBe(1);
+    expect(result.result).toEqual([{ ok: true }, { ok: false }]);
+    expect(chunks).toEqual([{ ok: true }, { ok: false }]);
   });
 
   it('injects policy context via policyContext provider', async () => {
     const tool = createTool({
       name: 'policy-context',
       description: 'policy context',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       policyContext: () => ({ runId: 'run-1' }),
       policy: {
         beforeExecute({ policyContext }) {
@@ -1406,7 +1398,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'policy-boolean',
       description: 'policy boolean',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       digests: true,
       policy: {
         beforeExecute: () => false,
@@ -1425,7 +1417,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'policy-log',
       description: 'policy log',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       policy: {
         afterExecute: () => {
           throw new Error('after failed');
@@ -1447,21 +1439,19 @@ describe('isTool', () => {
     expect(logs).toBe(1);
   });
 
-  it('throws when output validation mode is throw', async () => {
+  it('does not validate output shape when output validation is disabled', async () => {
     const tool = createTool({
       name: 'output-throw',
       description: 'output throws',
-      schema: z.object({ a: z.string() }),
-      outputSchema: z.object({ ok: z.boolean() }),
-      outputValidationMode: 'throw',
+      input: z.object({ a: z.string() }),
       async execute() {
         return { ok: 'nope' };
       },
     });
 
     const result = await (tool as any).executeWith({ params: { a: 'x' } });
-    expect(result.error?.category).toBe('validation');
-    expect(result.error?.code).toBe('VALIDATION_ERROR');
+    expect(result.outcome).toBe('success');
+    expect(result.result).toEqual({ ok: 'nope' });
   });
 
   it('injects policyContext into error paths', async () => {
@@ -1469,7 +1459,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'policy-error-context',
       description: 'policy error context',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       digests: true,
       policyContext: (context) => {
         calls += 1;
@@ -1490,7 +1480,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'cancel-number',
       description: 'cancel number',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       digests: true,
       async execute() {
         return 'never';
@@ -1511,7 +1501,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'cancel-symbol',
       description: 'cancel symbol',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         return 'never';
       },
@@ -1530,7 +1520,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'run-tool',
       description: 'run',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       async execute({ value }, context) {
         return `${value}:${context.toolCall?.name}`;
       },
@@ -1551,7 +1541,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'proxy-get',
       description: 'proxy get',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         return 'x';
       },
@@ -1564,7 +1554,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'missing-id',
       description: 'missing id',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute({ a }) {
         return a;
       },
@@ -1582,7 +1572,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'transient-code',
       description: 'transient code',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         const error = new Error('boom') as Error & { code?: string };
         error.code = 'ECONNRESET';
@@ -1596,7 +1586,7 @@ describe('isTool', () => {
     const rateLimited = createTool({
       name: 'transient-message',
       description: 'transient message',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         throw new Error('Rate limit exceeded');
       },
@@ -1610,7 +1600,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'digest-array',
       description: 'digest array',
-      schema: z.object({ err: z.any() }),
+      input: z.object({ err: z.any() }),
       digests: { input: true, output: true, algorithm: 'sha256' },
       async execute() {
         return [1, 2, 3];
@@ -1628,7 +1618,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'digest-options',
       description: 'digest options',
-      schema: z.object({ value: z.string() }),
+      input: z.object({ value: z.string() }),
       digests: { input: false, output: true },
       async execute({ value }) {
         return [value];
@@ -1645,7 +1635,7 @@ describe('isTool', () => {
       createTool({
         name: 'bad-tags-type',
         description: 'bad tags',
-        schema: z.object({ a: z.string() }),
+        input: z.object({ a: z.string() }),
         tags: ['ok', 123 as unknown as string],
         async execute() {
           return 'ok';
@@ -1658,7 +1648,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'timeout-reject',
       description: 'timeout rejection',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         throw 'boom';
       },
@@ -1677,7 +1667,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'concurrency',
       description: 'limits',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       concurrency: 1,
       async execute() {
         active += 1;
@@ -1696,7 +1686,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'slow',
       description: 'timeout',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         await new Promise((resolve) => setTimeout(resolve, 50));
         return 'done';
@@ -1712,7 +1702,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'slow-cancel',
       description: 'abort support',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         await new Promise((resolve) => setTimeout(resolve, 50));
         return 'done';
@@ -1737,7 +1727,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'fast',
       description: 'no-timeout',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute({ a }) {
         return a;
       },
@@ -1750,7 +1740,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'fast-fail',
       description: 'rejects quickly',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         throw new Error('bad');
       },
@@ -1765,7 +1755,7 @@ describe('isTool', () => {
     const tool = createTool({
       name: 'desc-proxy',
       description: 'descriptor',
-      schema: z.object({ a: z.string() }),
+      input: z.object({ a: z.string() }),
       async execute() {
         return 'x';
       },

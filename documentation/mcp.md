@@ -23,7 +23,7 @@ createTool(
   {
     name: 'sum',
     description: 'adds two numbers',
-    schema: z.object({ a: z.number(), b: z.number() }),
+    input: z.object({ a: z.number(), b: z.number() }),
     async execute({ a, b }) {
       return a + b;
     },
@@ -80,11 +80,10 @@ createTool(
   {
     name: 'status',
     description: 'reports status',
-    schema: z.object({}),
+    input: z.object({}),
     metadata: {
       mcp: {
         title: 'Status Tool',
-        outputSchema: z.object({ ok: z.boolean() }),
         annotations: { readOnlyHint: true },
         execution: { taskSupport: 'optional' },
         meta: { source: 'toolbox' },
@@ -115,7 +114,7 @@ any overlapping fields. The effective MCP tool configuration is:
 
 1. `metadata.mcp` (if present and valid)
 2. `toolConfiguration(tool)` (overrides any fields from metadata)
-3. Runtime defaults: `description` and `schema` fall back to the tool definition
+3. Runtime defaults: `description` and `input` fall back to the tool definition
 
 If `meta` is set by either configuration, it is exposed as `_meta`. When no `meta` is set,
 the tool's `metadata` object is used as `_meta` (if it's a plain object).

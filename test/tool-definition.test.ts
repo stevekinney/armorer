@@ -4,34 +4,33 @@ import { z } from 'zod';
 import { defineTool } from '../src/core';
 
 describe('defineTool', () => {
-  it('accepts parameters and aliases to schema', () => {
+  it('accepts input schemas', () => {
     const tool = defineTool({
-      name: 'parameters-shape',
-      description: 'uses parameters',
-      parameters: { foo: z.string() },
+      name: 'input-shape',
+      description: 'uses input',
+      input: { foo: z.string() },
     });
 
-    expect(tool.parameters?.parse({ foo: 'bar' })).toEqual({ foo: 'bar' });
-    expect(tool.schema.parse({ foo: 'bar' })).toEqual({ foo: 'bar' });
+    expect(tool.input.parse({ foo: 'bar' })).toEqual({ foo: 'bar' });
   });
 
-  it('defaults schema to an empty object', () => {
+  it('defaults input to an empty object', () => {
     const tool = defineTool({
       name: 'default-schema',
       description: 'defaults schema',
     });
 
-    expect(tool.schema.parse({})).toEqual({});
+    expect(tool.input.parse({})).toEqual({});
   });
 
-  it('accepts object shapes as schema', () => {
+  it('accepts object shapes as input', () => {
     const tool = defineTool({
       name: 'shape-schema',
       description: 'shape schema',
-      schema: { foo: z.string() },
+      input: { foo: z.string() },
     });
 
-    expect(tool.schema.parse({ foo: 'bar' })).toEqual({ foo: 'bar' });
+    expect(tool.input.parse({ foo: 'bar' })).toEqual({ foo: 'bar' });
   });
 
   it('rejects non-object Zod schemas', () => {
@@ -39,18 +38,18 @@ describe('defineTool', () => {
       defineTool({
         name: 'string-schema',
         description: 'invalid schema',
-        schema: z.string(),
+        input: z.string(),
       }),
-    ).toThrow('Tool schema must be a Zod object schema');
+    ).toThrow('Tool input must be a Zod object schema');
   });
 
-  it('rejects invalid schema values', () => {
+  it('rejects invalid input values', () => {
     expect(() =>
       defineTool({
         name: 'invalid-schema',
         description: 'invalid schema',
-        schema: 123 as unknown as z.ZodTypeAny,
+        input: 123 as unknown as z.ZodTypeAny,
       }),
-    ).toThrow('Tool schema must be a Zod object schema or an object of Zod schemas');
+    ).toThrow('Tool input must be a Zod object schema or an object of Zod schemas');
   });
 });

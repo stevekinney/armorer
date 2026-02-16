@@ -84,7 +84,7 @@ const dbPool = new ResourcePool<DbConnection>(
 const queryDatabase = createTool({
   name: 'query-database',
   description: 'Execute a database query',
-  schema: z.object({ sql: z.string() }),
+  input: z.object({ sql: z.string() }),
   async execute({ sql }, context) {
     const { dbPool } = context as { dbPool: ResourcePool<DbConnection> };
     const connection = await dbPool.acquire();
@@ -115,7 +115,7 @@ process.on('SIGTERM', async () => {
 function createResourceTool<TInput extends object, TOutput>(configuration: {
   name: string;
   description: string;
-  schema: z.ZodType<TInput>;
+  input: z.ZodType<TInput>;
   setup: () => Promise<unknown>;
   execute: (params: TInput, resource: unknown) => Promise<TOutput>;
   teardown: (resource: unknown) => Promise<void>;
@@ -126,7 +126,7 @@ function createResourceTool<TInput extends object, TOutput>(configuration: {
   const tool = createTool({
     name: configuration.name,
     description: configuration.description,
-    schema: configuration.schema,
+    input: configuration.input,
     async execute(params) {
       // Lazy setup on first use
       if (!resource && !setupPromise) {
@@ -158,7 +158,7 @@ function createResourceTool<TInput extends object, TOutput>(configuration: {
 const dbTool = createResourceTool({
   name: 'database-tool',
   description: 'Tool with database connection',
-  schema: z.object({ query: z.string() }),
+  input: z.object({ query: z.string() }),
   setup: async () => {
     console.log('Opening database connection...');
     return {
