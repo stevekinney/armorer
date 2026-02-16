@@ -34,4 +34,12 @@ describe('tool identity', () => {
     const parsed = parseToolId('search');
     expect(parsed).toEqual({ namespace: 'default', name: 'search' });
   });
+
+  it('throws when parsing non-string ids', () => {
+    expect(() => parseToolId(123 as unknown as string)).toThrow('ToolId must be a string');
+  });
+
+  it('throws when parsing empty ids', () => {
+    expect(() => parseToolId('   ')).toThrow('ToolId must not be empty');
+  });
 });

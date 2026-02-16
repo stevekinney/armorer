@@ -951,4 +951,263 @@ describe('createMCP', () => {
       await server.close();
     }
   });
+
+  it('rejects invalid inputs when normalizing tools for MCP conversion', () => {
+    expect(() => toMcpTools([{} as unknown as ReturnType<typeof createTool>])).toThrow(
+      'Invalid tool input',
+    );
+    expect(
+      () =>
+        toMcpTools({
+          name: 'not-a-tool',
+          description: 'missing executeWith',
+          input: z.object({}),
+        } as unknown as ReturnType<typeof createTool>),
+    ).toThrow('Invalid input');
+    expect(() => toMcpTools(42 as unknown as ReturnType<typeof createTool>)).toThrow(
+      'Invalid input',
+    );
+  });
+
+  it('maps readOnly annotations and MCP labels into tool metadata', async () => {
+    const [tool] = fromMcpTools([
+      {
+        name: 'annotated',
+        title: 'Annotated title',
+        description: 'annotated description',
+        annotations: { readOnlyHint: true },
+        inputSchema: z.object({}),
+        handler: async () => ({
+          content: [{ type: 'text', text: '{"ok":true}' }],
+          structuredContent: { ok: true },
+        }),
+      },
+    ]);
+
+    expect(tool!.metadata).toEqual({
+      readOnly: true,
+      mcp: {
+        title: 'Annotated title',
+        description: 'annotated description',
+      },
+    });
+    await expect(tool!.execute({})).resolves.toEqual({ ok: true });
+  });
+
+  it('parses MCP content blocks and error payloads across edge cases', async () => {
+    const [errorTool] = fromMcpTools([
+      {
+        name: 'error-tool',
+        description: 'returns MCP errors',
+        inputSchema: z.object({}),
+        handler: async () => ({
+          isError: true,
+          content: [
+            { type: 'text', text: 'first line' },
+            { type: 'text', text: 'second line' },
+          ],
+        }),
+      },
+    ]);
+    await expect(errorTool!.execute({})).rejects.toThrow('first line\nsecond line');
+
+    const mixedContent = [
+      { type: 'text', text: '{"ok":true}' },
+      { type: 'image', mimeType: 'image/png', data: 'x' },
+    ] as const;
+    const [mixedTool] = fromMcpTools([
+      {
+        name: 'mixed-content',
+        description: 'returns non-text content too',
+        inputSchema: z.object({}),
+        handler: async () => ({ content: [...mixedContent] }),
+      },
+    ]);
+    await expect(mixedTool!.execute({})).resolves.toEqual([...mixedContent]);
+
+    const [singleTextTool] = fromMcpTools([
+      {
+        name: 'single-text',
+        description: 'returns plain text',
+        inputSchema: z.object({}),
+        handler: async () => ({ content: [{ type: 'text', text: 'not-json' }] }),
+      },
+    ]);
+    await expect(singleTextTool!.execute({})).resolves.toBe('not-json');
+
+    const [multiTextTool] = fromMcpTools([
+      {
+        name: 'multi-text',
+        description: 'returns multiple text blocks',
+        inputSchema: z.object({}),
+        handler: async () => ({
+          content: [
+            { type: 'text', text: '{"ok":true}' },
+            { type: 'text', text: 'plain' },
+          ],
+        }),
+      },
+    ]);
+    await expect(multiTextTool!.execute({})).resolves.toEqual([{ ok: true }, 'plain']);
+  });
+
+  it('re-registers duplicate tool names and keeps the latest definition', async () => {
+    const first = createTool({
+      name: 'duplicate-name',
+      description: 'first',
+      input: z.object({}),
+      async execute() {
+        return 'first';
+      },
+    });
+    const second = createTool({
+      name: 'duplicate-name',
+      description: 'second',
+      input: z.object({}),
+      async execute() {
+        return 'second';
+      },
+    });
+    const toolbox = {
+      tools: () => [first, second],
+    } as unknown as ReturnType<typeof createToolbox>;
+
+    const { client, server } = await connect(toolbox);
+    try {
+      const tools = await client.listTools();
+      const tool = tools.tools.find((entry) => entry.name === 'duplicate-name');
+      expect(tool?.description).toBe('second');
+
+      const call = await client.callTool({ name: 'duplicate-name', arguments: {} });
+      expect(call.content?.[0]?.text).toContain('second');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('merges readOnly metadata into existing MCP annotations', () => {
+    const tool = createTool({
+      name: 'annotation-merge',
+      description: 'merges annotations',
+      input: z.object({}),
+      metadata: {
+        readOnly: true,
+        mcp: {
+          annotations: {
+            destructiveHint: false,
+          },
+        },
+      },
+      async execute() {
+        return { ok: true };
+      },
+    });
+
+    const [mcpTool] = toMcpTools([tool]);
+    expect(mcpTool?.annotations).toEqual({
+      destructiveHint: false,
+      readOnlyHint: true,
+    });
+  });
+
+  it('falls back for unknown schema types and handles empty enums', () => {
+    const baseTool = createTool({
+      name: 'schema-edges',
+      description: 'schema edge cases',
+      input: z.object({ fromTool: z.boolean() }),
+      async execute() {
+        return { ok: true };
+      },
+    });
+
+    const [unknownType] = toMcpTools([baseTool], {
+      toolConfiguration: () => ({
+        schema: { type: 'mystery' } as unknown as object,
+      }),
+    });
+    expect(unknownType?.inputSchema).toBe(baseTool.input);
+
+    const [emptyEnum] = toMcpTools([baseTool], {
+      toolConfiguration: () => ({
+        schema: { enum: [] },
+      }),
+    });
+    expect((emptyEnum?.inputSchema as z.ZodTypeAny).safeParse('value').success).toBe(false);
+  });
+
+  it('stringifies primitive successful results for MCP tool responses', async () => {
+    const tool = createTool({
+      name: 'numeric-result',
+      description: 'returns a number',
+      input: z.object({}),
+      async execute() {
+        return 42;
+      },
+    });
+
+    const [mcpTool] = toMcpTools([tool]);
+    const result = await mcpTool!.handler({});
+    expect(result.content?.[0]?.text).toBe('42');
+    expect(result.structuredContent).toBeUndefined();
+  });
+
+  it('supports single tool-like inputs in toMcpTools()', async () => {
+    const toolLike = {
+      name: 'single-tool-like',
+      description: 'single tool-like input',
+      input: z.object({}),
+      metadata: undefined,
+      tags: [],
+      async executeWith() {
+        return {
+          outcome: 'success',
+          toolCallId: 'single-tool-like-call',
+          result: { ok: true },
+          content: { ok: true },
+          toolName: 'single-tool-like',
+        };
+      },
+    } as unknown as ReturnType<typeof createTool>;
+
+    const [mcpTool] = toMcpTools(toolLike);
+    expect(mcpTool?.name).toBe('single-tool-like');
+    await expect(mcpTool!.handler({})).resolves.toMatchObject({
+      structuredContent: { ok: true },
+    });
+  });
+
+  it('returns undefined when MCP content blocks are empty', async () => {
+    const [tool] = fromMcpTools([
+      {
+        name: 'empty-content',
+        description: 'empty content payload',
+        inputSchema: z.object({}),
+        handler: async () => ({ content: [] }),
+      },
+    ]);
+
+    await expect(tool!.execute({})).resolves.toBeUndefined();
+  });
+
+  it('derives readOnly annotations from metadata.mcp when missing', () => {
+    const tool = createTool({
+      name: 'metadata-readonly',
+      description: 'metadata readOnly hint',
+      input: z.object({}),
+      metadata: {
+        readOnly: true,
+        mcp: {
+          title: 'metadata title',
+        },
+      },
+      async execute() {
+        return { ok: true };
+      },
+    });
+
+    const [mcpTool] = toMcpTools([tool]);
+    expect(mcpTool?.title).toBe('metadata title');
+    expect(mcpTool?.annotations?.readOnlyHint).toBe(true);
+  });
 });

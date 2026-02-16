@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
+import { isToolError } from '../src/core';
 import { errorString, normalizeError } from '../src/errors';
 
 describe('errors', () => {
@@ -27,5 +28,29 @@ describe('errors', () => {
   it('normalizes plain object via JSON.stringify', () => {
     const n = normalizeError({ k: 1 });
     expect(n.message).toBe('{"k":1}');
+  });
+
+  it('detects valid ToolError shapes', () => {
+    expect(
+      isToolError({
+        code: 'E_TOOL',
+        category: 'internal',
+        retryable: false,
+        message: 'boom',
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects invalid ToolError candidates', () => {
+    expect(isToolError(null)).toBe(false);
+    expect(isToolError('boom')).toBe(false);
+    expect(
+      isToolError({
+        code: 'E_TOOL',
+        category: 'internal',
+        retryable: 'nope',
+        message: 'boom',
+      }),
+    ).toBe(false);
   });
 });

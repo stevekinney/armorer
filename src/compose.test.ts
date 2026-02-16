@@ -233,6 +233,37 @@ describe('pipe()', () => {
       expect(result.outcome).toBe('error');
       expect(result.error?.message).toContain('1');
     });
+
+    it('normalizes aborted reasons when invoking pipeline configuration directly', async () => {
+      const pipeline = pipe(parseNumber, double);
+      const runWithReason = async (reason: unknown): Promise<unknown> =>
+        (pipeline as any).run(
+          { str: '5' },
+          {
+            dispatch: () => {},
+            signal: {
+              aborted: true,
+              reason,
+            } as MinimalAbortSignal,
+          },
+        );
+
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(runWithReason(new Error('direct-error'))).rejects.toThrow(
+        'direct-error',
+      );
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(runWithReason('direct-string')).rejects.toThrow('direct-string');
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(runWithReason({ code: 'DIRECT_OBJECT' })).rejects.toThrow(
+        'DIRECT_OBJECT',
+      );
+
+      const circular: any = { code: 'DIRECT_CYCLE' };
+      circular.self = circular;
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(runWithReason(circular)).rejects.toThrow('[object Object]');
+    });
   });
 
   describe('events', () => {
