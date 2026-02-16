@@ -19,12 +19,6 @@ export type { ObservableLike, Observer, Subscription } from 'event-emission/type
 
 export type MinimalAbortSignal = EventMinimalAbortSignal | AbortSignal;
 
-export type OutputShapingOptions = {
-  maxBytes?: number;
-  truncate?: boolean | { suffix?: string; length?: number };
-  serialization?: 'json' | 'string';
-};
-
 /**
  * Unified tool configuration type.
  *
@@ -32,46 +26,18 @@ export type OutputShapingOptions = {
  * from z.infer<T> while remaining compatible with all tool signatures.
  * Runtime schema validation provides actual type safety.
  */
-type ToolConfigurationSchemaFields =
-  | {
-      parameters: ToolParametersSchema;
-      /** @deprecated Use `parameters` instead. */
-      schema?: ToolParametersSchema;
-    }
-  | {
-      /** @deprecated Use `parameters` instead. */
-      schema: ToolParametersSchema;
-      parameters?: ToolParametersSchema;
-    }
-  | {
-      /**
-       * When omitted, Toolbox defaults to `z.object({})` at registration time.
-       * This matches `createTool()` behavior for no-params tools.
-       */
-      /** @deprecated Use `parameters` instead. */
-      schema?: undefined;
-      parameters?: undefined;
-    };
-
-export type ToolConfiguration = Omit<
-  ToolDefinition<Record<string, unknown>, unknown>,
-  'schema' | 'parameters'
-> &
-  ToolConfigurationSchemaFields & {
-    outputSchema?: z.ZodTypeAny;
-    metadata?: ToolMetadata;
-    execute:
-      | ((params: unknown, context?: unknown) => Promise<unknown>)
-      | Promise<(params: unknown, context?: unknown) => Promise<unknown>>;
-    dryRun?: (params: unknown, context?: unknown) => Promise<unknown>;
-    policy?: ToolPolicyHooks;
-    policyContext?: ToolPolicyContextProvider;
-    digests?: ToolDigestOptions;
-    outputValidationMode?: OutputValidationMode;
-    outputShaping?: OutputShapingOptions;
-    concurrency?: number;
-    diagnostics?: ToolDiagnostics;
-  };
+export type ToolConfiguration = ToolDefinition<Record<string, unknown>, unknown> & {
+  input: ToolParametersSchema;
+  metadata?: ToolMetadata;
+  execute:
+    | ((params: unknown, context?: unknown) => Promise<unknown>)
+    | Promise<(params: unknown, context?: unknown) => Promise<unknown>>;
+  policy?: ToolPolicyHooks;
+  policyContext?: ToolPolicyContextProvider;
+  digests?: ToolDigestOptions;
+  concurrency?: number;
+  diagnostics?: ToolDiagnostics;
+};
 
 export type ToolEventsMap = Record<string, unknown>;
 
@@ -155,7 +121,6 @@ export type ToolPolicyAfterContext = ToolPolicyContext & {
   outcome: 'success' | 'error' | 'denied' | 'action_required';
   result?: unknown;
   outputDigest?: string;
-  outputValidation?: OutputValidationResult;
   errorCategory?: ToolErrorCategory;
   error?: unknown;
   reason?: string;
@@ -180,16 +145,9 @@ export type ToolDigestOptions =
       algorithm?: 'sha256';
     };
 
-export type OutputValidationMode = 'report' | 'throw';
-
-export type OutputValidationResult = {
-  success: boolean;
-  error?: unknown;
-};
-
 export type DefaultToolEvents = {
   'status-update': { status: string };
-  'execute-start': { params: unknown; dryRun?: boolean } & ToolEventDetailContext;
+  'execute-start': { params: unknown } & ToolEventDetailContext;
   'validate-success': { params: unknown; parsed: unknown } & ToolEventDetailContext;
   'validate-error': {
     params: unknown;
@@ -197,12 +155,11 @@ export type DefaultToolEvents = {
     report?: ToolValidationReport;
     repairHints?: ToolRepairHint[];
   } & ToolEventDetailContext;
-  'execute-success': { result: unknown; dryRun?: boolean } & ToolEventDetailContext;
-  'execute-error': { error: unknown; dryRun?: boolean } & ToolEventDetailContext;
+  'execute-success': { result: unknown } & ToolEventDetailContext;
+  'execute-error': { error: unknown } & ToolEventDetailContext;
   settled: {
     result?: unknown;
     error?: unknown;
-    dryRun?: boolean;
   } & ToolEventDetailContext;
   'policy-denied': { params: unknown; reason?: string } & ToolEventDetailContext;
   'policy-action-required': { params: unknown; reason?: string } & ToolEventDetailContext;
@@ -210,14 +167,6 @@ export type DefaultToolEvents = {
     params: unknown;
     startedAt: number;
     inputDigest?: string;
-    dryRun?: boolean;
-  } & ToolEventDetailContext;
-  'output-validate-success': {
-    result: unknown;
-  } & ToolEventDetailContext;
-  'output-validate-error': {
-    result: unknown;
-    error: unknown;
   } & ToolEventDetailContext;
   'tool.finished': {
     status: 'success' | 'error' | 'denied' | 'cancelled' | 'paused';
@@ -230,8 +179,6 @@ export type DefaultToolEvents = {
     errorCategory?: ToolErrorCategory;
     inputDigest?: string;
     outputDigest?: string;
-    outputValidation?: OutputValidationResult;
-    dryRun?: boolean;
   } & ToolEventDetailContext;
   progress: { percent?: number; message?: string };
   'stream-start': { mode: 'stream' | 'collect' };
@@ -260,7 +207,6 @@ export interface RuntimeToolContext<
   signal?: MinimalAbortSignal;
   /** Execution timeout in milliseconds. */
   timeout?: number;
-  dryRun?: boolean;
   stream?: boolean;
 }
 
@@ -271,7 +217,6 @@ export interface ToolExecuteOptions {
   signal?: MinimalAbortSignal;
   /** Execution timeout in milliseconds. */
   timeout?: number;
-  dryRun?: boolean;
   /**
    * When true, preserve async-iterable results as live streams.
    * When false/omitted, async-iterables are collected into arrays.
@@ -291,7 +236,7 @@ export type ToolExecuteWithOptions = ToolExecuteOptions & {
  * Type guard to check if a value is a Toolbox tool.
  *
  * @param obj - The value to check
- * @returns True if the value is an Tool (has required properties: id, identity, name, description, schema/parameters, execute, configuration)
+ * @returns True if the value is an Tool (has required properties: id, identity, name, description, input, execute, configuration)
  *
  * @example
  * ```typescript
@@ -311,7 +256,7 @@ export function isTool(obj: unknown): obj is Tool {
     'identity' in obj &&
     'name' in obj &&
     'description' in obj &&
-    ('schema' in obj || 'parameters' in obj) &&
+    'input' in obj &&
     'execute' in obj &&
     'configuration' in obj
   );
@@ -338,9 +283,7 @@ export type Tool<
 > = ToolDefinition & {
   name: string;
   description: string;
-  /** @deprecated Use `parameters` instead. */
-  schema: ToolParametersSchema;
-  parameters: ToolParametersSchema;
+  input: ToolParametersSchema;
   configuration: ToolConfiguration;
   /** @internal Schema marker for inference. */
   __schema?: T;

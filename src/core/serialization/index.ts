@@ -24,8 +24,7 @@ export type SerializedToolDefinition = {
   risk?: ToolRisk;
   lifecycle?: ToolLifecycle;
   aliases: ToolId[];
-  schema: JsonSchema;
-  outputSchema?: JsonSchema;
+  input: JsonSchema;
 };
 
 export function serializeToolDefinition(
@@ -45,11 +44,7 @@ export function serializeToolDefinition(
     ? (sortJsonValue(definition.lifecycle) as JsonObject)
     : undefined;
 
-  const schemaSource = definition.parameters ?? definition.schema;
-  const schema = toJsonSchema(schemaSource, 'input');
-  const outputSchema = definition.outputSchema
-    ? toJsonSchema(definition.outputSchema, 'output')
-    : undefined;
+  const input = toJsonSchema(definition.input);
 
   return {
     schemaVersion: '2020-12',
@@ -73,8 +68,7 @@ export function serializeToolDefinition(
     ...(normalizedRisk ? { risk: normalizedRisk as ToolRisk } : {}),
     ...(normalizedLifecycle ? { lifecycle: normalizedLifecycle as ToolLifecycle } : {}),
     aliases: options?.aliases ? [...options.aliases].sort() : [],
-    schema,
-    ...(outputSchema ? { outputSchema } : {}),
+    input,
   };
 }
 
@@ -84,11 +78,11 @@ export function serializeRegistry(registry: ToolRegistry): SerializedToolDefinit
     .map((tool) => serializeToolDefinition(tool, { aliases: registry.aliases(tool.id) }));
 }
 
-function toJsonSchema(schema: z.ZodTypeAny, io: 'input' | 'output'): JsonSchema {
+function toJsonSchema(schema: z.ZodTypeAny): JsonSchema {
   const json = z.toJSONSchema(schema, {
     target: 'draft-2020-12',
     unrepresentable: 'throw',
-    io,
+    io: 'input',
   }) as JsonValue;
 
   return sortJsonValue(json) as JsonSchema;

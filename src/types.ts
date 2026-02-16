@@ -46,8 +46,6 @@ export interface ToolResult {
   errorCategory?: import('./core/errors').ToolErrorCategory;
   inputDigest?: string;
   outputDigest?: string;
-  outputValidation?: { success: boolean; error?: string };
-  dryRun?: boolean;
   action?: {
     type: 'approval' | 'input';
     message?: string;
@@ -61,15 +59,5 @@ export interface ToolResult {
 export type MinimalToolConfiguration<Schema = unknown> = {
   name: string;
   description: string;
-} & (
-  | {
-      parameters: Schema;
-      /** @deprecated Use `parameters` instead. */
-      schema?: Schema;
-    }
-  | {
-      /** @deprecated Use `parameters` instead. */
-      schema: Schema;
-      parameters?: Schema;
-    }
-);
+  input: Schema;
+};

@@ -2224,13 +2224,12 @@ function isToolDefinition(value: unknown): value is ToolDefinition {
     typeof candidate['identity'] === 'object' &&
     candidate['identity'] !== null &&
     typeof (candidate['identity'] as Record<string, unknown>)['name'] === 'string' &&
-    (candidate['schema'] !== undefined || candidate['parameters'] !== undefined)
+    candidate['input'] !== undefined
   );
 }
 
 function getToolSchema(tool: ToolDefinition): ToolSchema {
-  const candidate = tool as ToolDefinition & { parameters?: ToolSchema };
-  return candidate.parameters ?? tool.schema;
+  return tool.input;
 }
 
 function isToolRegistry(value: unknown): value is ToolRegistryLike {

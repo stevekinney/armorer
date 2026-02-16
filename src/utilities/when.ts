@@ -34,7 +34,7 @@ type WhenPredicate<TInput = unknown> = (
  *
  * const expensiveProcess = createTool({
  *   name: 'expensive',
- *   schema: z.object({ value: z.number() }),
+ *   input: z.object({ value: z.number() }),
  *   async execute({ value }) {
  *     return value * 2;
  *   },
@@ -42,7 +42,7 @@ type WhenPredicate<TInput = unknown> = (
  *
  * const cheapProcess = createTool({
  *   name: 'cheap',
- *   schema: z.object({ value: z.number() }),
+ *   input: z.object({ value: z.number() }),
  *   async execute({ value }) {
  *     return value + 1;
  *   },
@@ -74,22 +74,14 @@ export function when<
     ? `Conditional tool: ${whenTrue.name} or ${whenFalse.name}`
     : `Conditional tool: ${whenTrue.name}`;
 
-  const runWhen = async (
-    params: unknown,
-    context: ToolContext<DefaultToolEvents>,
-    isDryRun: boolean,
-  ) => {
+  const runWhen = async (params: unknown, context: ToolContext<DefaultToolEvents>) => {
     const input = params as InferToolInput<TTool>;
     const executeOptions =
-      context.signal ||
-      context.timeout !== undefined ||
-      context.stream !== undefined ||
-      isDryRun
+      context.signal || context.timeout !== undefined || context.stream !== undefined
         ? {
             ...(context.signal ? { signal: context.signal } : {}),
             ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
             ...(context.stream !== undefined ? { stream: context.stream } : {}),
-            ...(isDryRun ? { dryRun: true } : {}),
           }
         : undefined;
     const shouldRun = await predicate(input, context);
@@ -105,12 +97,9 @@ export function when<
   return createTool({
     name,
     description,
-    schema: whenTrue.schema as z.ZodTypeAny,
+    input: whenTrue.input as z.ZodTypeAny,
     async execute(params, context) {
-      return runWhen(params, context, false);
-    },
-    async dryRun(params, context) {
-      return runWhen(params, context, true);
+      return runWhen(params, context);
     },
   }) as ComposedTool<
     InferToolInput<TTool>,

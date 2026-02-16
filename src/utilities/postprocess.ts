@@ -22,7 +22,7 @@ type PostprocessMapper<TOutput, TNewOutput> = (
  * ```ts
  * const fetchUser = createTool({
  *   name: 'fetch-user',
- *   schema: z.object({ id: z.string() }),
+ *   input: z.object({ id: z.string() }),
  *   execute: async ({ id }) => ({ userId: id, name: 'John' }),
  * });
  *
@@ -51,18 +51,13 @@ export function postprocess<TTool extends AnyTool, TNewOutput>(
   const runPostprocess = async (
     params: unknown,
     context: ToolContext<DefaultToolEvents>,
-    isDryRun: boolean,
   ) => {
     const executeOptions =
-      context.signal ||
-      context.timeout !== undefined ||
-      context.stream !== undefined ||
-      isDryRun
+      context.signal || context.timeout !== undefined || context.stream !== undefined
         ? {
             ...(context.signal ? { signal: context.signal } : {}),
             ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
             ...(context.stream !== undefined ? { stream: context.stream } : {}),
-            ...(isDryRun ? { dryRun: true } : {}),
           }
         : undefined;
     const result = await tool.execute(params as InferToolInput<TTool>, executeOptions);
@@ -77,7 +72,6 @@ export function postprocess<TTool extends AnyTool, TNewOutput>(
       readonly string[],
       ToolMetadata | undefined,
       ToolContext<DefaultToolEvents>,
-      InferToolInput<TTool>,
       TNewOutput
     >,
     'metadata'
@@ -86,12 +80,9 @@ export function postprocess<TTool extends AnyTool, TNewOutput>(
   } = {
     name,
     description,
-    schema: tool.schema as z.ZodType<InferToolInput<TTool>>,
+    input: tool.input as z.ZodType<InferToolInput<TTool>>,
     async execute(params, context) {
-      return runPostprocess(params, context, false);
-    },
-    async dryRun(params, context) {
-      return runPostprocess(params, context, true);
+      return runPostprocess(params, context);
     },
     ...(tags ? { tags } : {}),
     ...(tool.metadata !== undefined ? { metadata: tool.metadata } : {}),
@@ -103,7 +94,6 @@ export function postprocess<TTool extends AnyTool, TNewOutput>(
     readonly string[],
     ToolMetadata | undefined,
     ToolContext<DefaultToolEvents>,
-    InferToolInput<TTool>,
     TNewOutput
   >(toolOptions) as ComposedTool<InferToolInput<TTool>, TNewOutput>;
 }

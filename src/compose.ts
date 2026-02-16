@@ -181,22 +181,14 @@ export function pipe(...tools: AnyTool[]): AnyTool {
     detail: unknown,
   ) => dispatch({ type, detail } as Parameters<typeof dispatch>[0]);
 
-  const runPipeline = async (
-    input: unknown,
-    context: ToolContext<DefaultToolEvents>,
-    isDryRun: boolean,
-  ) => {
+  const runPipeline = async (input: unknown, context: ToolContext<DefaultToolEvents>) => {
     let result: unknown = input;
     const executeOptions =
-      context.signal ||
-      context.timeout !== undefined ||
-      context.stream !== undefined ||
-      isDryRun
+      context.signal || context.timeout !== undefined || context.stream !== undefined
         ? {
             ...(context.signal ? { signal: context.signal } : {}),
             ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
             ...(context.stream !== undefined ? { stream: context.stream } : {}),
-            ...(isDryRun ? { dryRun: true } : {}),
           }
         : undefined;
 
@@ -211,7 +203,6 @@ export function pipe(...tools: AnyTool[]): AnyTool {
         stepIndex: i,
         stepName: tool.identity.name,
         input: result,
-        dryRun: isDryRun,
       });
 
       try {
@@ -223,7 +214,6 @@ export function pipe(...tools: AnyTool[]): AnyTool {
           stepIndex: i,
           stepName: tool.identity.name,
           output: result,
-          dryRun: isDryRun,
         });
       } catch (error) {
         // Emit step-error event
@@ -231,7 +221,6 @@ export function pipe(...tools: AnyTool[]): AnyTool {
           stepIndex: i,
           stepName: tool.identity.name,
           error,
-          dryRun: isDryRun,
         });
 
         // Wrap error with step context
@@ -249,13 +238,10 @@ export function pipe(...tools: AnyTool[]): AnyTool {
   return createTool({
     name: `pipe(${toolNames.join(', ')})`,
     description: `Composed pipeline: ${toolNames.join(' → ')}`,
-    schema: first.schema as z.ZodTypeAny,
+    input: first.input as z.ZodTypeAny,
 
     async execute(input: unknown, context: ToolContext<DefaultToolEvents>) {
-      return runPipeline(input, context, false);
-    },
-    async dryRun(input: unknown, context: ToolContext<DefaultToolEvents>) {
-      return runPipeline(input, context, true);
+      return runPipeline(input, context);
     },
   }) as AnyTool;
 }
@@ -295,7 +281,7 @@ export function bind<TTool extends AnyTool, TBound extends BindParams<TTool>>(
   bound: TBound,
   options: BindOptions = {},
 ): AnyTool {
-  const schema = resolveBoundSchema(tool.schema, bound);
+  const input = resolveBoundSchema(tool.input, bound);
   const name = options.name ?? `bind(${tool.identity.name})`;
   const description = options.description ?? `Bound tool: ${tool.display.description}`;
   const tags = tool.tags && tool.tags.length ? tool.tags : undefined;
@@ -308,7 +294,6 @@ export function bind<TTool extends AnyTool, TBound extends BindParams<TTool>>(
       readonly string[],
       ToolMetadata | undefined,
       ToolContext<DefaultToolEvents>,
-      BindInput<TTool, TBound>,
       InferToolOutput<TTool>
     >,
     'metadata'
@@ -317,7 +302,7 @@ export function bind<TTool extends AnyTool, TBound extends BindParams<TTool>>(
   } = {
     name,
     description,
-    schema: schema as z.ZodType<BindInput<TTool, TBound>>,
+    input: input as z.ZodType<BindInput<TTool, TBound>>,
     async execute(params, context) {
       const merged = mergeBoundParams(params, bound);
       const executeOptions =
@@ -331,23 +316,6 @@ export function bind<TTool extends AnyTool, TBound extends BindParams<TTool>>(
       const result = await tool.execute(merged as InferToolInput<TTool>, executeOptions);
       return result as InferToolOutput<TTool>;
     },
-    async dryRun(params, context) {
-      const merged = mergeBoundParams(params, bound);
-      const executeOptions =
-        context.signal || context.timeout !== undefined || context.stream !== undefined
-          ? {
-              ...(context.signal ? { signal: context.signal } : {}),
-              ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
-              ...(context.stream !== undefined ? { stream: context.stream } : {}),
-              dryRun: true,
-            }
-          : {
-              ...(context.stream !== undefined ? { stream: context.stream } : {}),
-              dryRun: true,
-            };
-      const result = await tool.execute(merged as InferToolInput<TTool>, executeOptions);
-      return result as InferToolOutput<TTool>;
-    },
     ...(tags ? { tags } : {}),
     ...(tool.metadata !== undefined ? { metadata: tool.metadata } : {}),
   };
@@ -358,7 +326,6 @@ export function bind<TTool extends AnyTool, TBound extends BindParams<TTool>>(
     readonly string[],
     ToolMetadata | undefined,
     ToolContext<DefaultToolEvents>,
-    BindInput<TTool, TBound>,
     InferToolOutput<TTool>
   >(toolOptions) as ComposedTool<BindInput<TTool, TBound>, InferToolOutput<TTool>>;
 }

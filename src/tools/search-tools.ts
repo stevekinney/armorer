@@ -137,7 +137,7 @@ export function createSearchTool(
   const tool = createTool({
     name,
     description,
-    schema: z.object({
+    input: z.object({
       query: z.string().describe('The search query to find relevant tools'),
       limit: z
         .number()

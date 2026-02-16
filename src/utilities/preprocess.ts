@@ -22,7 +22,7 @@ type PreprocessMapper<TInput, TTransformedInput> = (
  * ```ts
  * const addNumbers = createTool({
  *   name: 'add-numbers',
- *   schema: z.object({ a: z.number(), b: z.number() }),
+ *   input: z.object({ a: z.number(), b: z.number() }),
  *   execute: async ({ a, b }) => a + b,
  * });
  *
@@ -55,19 +55,14 @@ export function preprocess<TTool extends AnyTool, TNewInput extends object>(
   const runPreprocess = async (
     params: unknown,
     context: ToolContext<DefaultToolEvents>,
-    isDryRun: boolean,
   ): Promise<InferToolOutput<TTool>> => {
     const transformed = await mapper(params as TNewInput, context);
     const executeOptions =
-      context.signal ||
-      context.timeout !== undefined ||
-      context.stream !== undefined ||
-      isDryRun
+      context.signal || context.timeout !== undefined || context.stream !== undefined
         ? {
             ...(context.signal ? { signal: context.signal } : {}),
             ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
             ...(context.stream !== undefined ? { stream: context.stream } : {}),
-            ...(isDryRun ? { dryRun: true } : {}),
           }
         : undefined;
     const result = await tool.execute(transformed, executeOptions);
@@ -82,7 +77,6 @@ export function preprocess<TTool extends AnyTool, TNewInput extends object>(
       readonly string[],
       ToolMetadata | undefined,
       ToolContext<DefaultToolEvents>,
-      TNewInput,
       InferToolOutput<TTool>
     >,
     'metadata'
@@ -91,12 +85,9 @@ export function preprocess<TTool extends AnyTool, TNewInput extends object>(
   } = {
     name,
     description,
-    schema,
+    input: schema,
     async execute(params, context) {
-      return runPreprocess(params, context, false);
-    },
-    async dryRun(params, context) {
-      return runPreprocess(params, context, true);
+      return runPreprocess(params, context);
     },
     ...(tags ? { tags } : {}),
     ...(tool.metadata !== undefined ? { metadata: tool.metadata } : {}),
@@ -108,7 +99,6 @@ export function preprocess<TTool extends AnyTool, TNewInput extends object>(
     readonly string[],
     ToolMetadata | undefined,
     ToolContext<DefaultToolEvents>,
-    TNewInput,
     InferToolOutput<TTool>
   >(toolOptions) as ComposedTool<TNewInput, InferToolOutput<TTool>>;
 }

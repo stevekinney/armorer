@@ -9,9 +9,7 @@ type AnyToolbox = Toolbox<any>;
 
 export type MockToolOptions<TInput = any, TOutput = any> = {
   name?: string;
-  parameters?: z.ZodType<TInput>;
-  /** @deprecated Use `parameters` instead. */
-  schema?: z.ZodType<TInput>;
+  input?: z.ZodType<TInput>;
   impl?: (params: TInput) => Promise<TOutput> | TOutput;
 };
 
@@ -30,10 +28,7 @@ export function createMockTool<TInput extends object = any, TOutput = any>(
   mockReset: () => void;
 } {
   const name = options.name ?? 'mock-tool';
-  const schema =
-    options.parameters ??
-    options.schema ??
-    (z.object({}) as unknown as z.ZodType<TInput>);
+  const input = options.input ?? (z.object({}) as unknown as z.ZodType<TInput>);
 
   const calls: TInput[] = [];
   let nextImplementation: ((params: TInput) => Promise<TOutput> | TOutput) | undefined;
@@ -41,7 +36,7 @@ export function createMockTool<TInput extends object = any, TOutput = any>(
   const tool = createTool({
     name,
     description: 'A mock tool for testing',
-    parameters: schema,
+    input,
     execute: async (params: TInput) => {
       calls.push(params);
       if (nextImplementation) {

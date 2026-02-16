@@ -157,9 +157,7 @@ function buildEmbeddingInputs(tool: ToolDefinition): EmbeddingInput[] {
       inputs.push({ field: 'tags', text: tagsText });
     }
   }
-  const schema =
-    (tool as ToolDefinition & { parameters?: ToolDefinition['schema'] }).parameters ??
-    tool.schema;
+  const schema = tool.input;
   const schemaKeys = getSchemaKeys(schema);
   if (schemaKeys.length) {
     inputs.push({ field: 'schemaKeys', text: schemaKeys.join(' ') });

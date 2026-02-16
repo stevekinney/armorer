@@ -208,21 +208,13 @@ export function parallel(...tools: AnyTool[]): AnyTool {
     detail: unknown,
   ) => dispatch({ type, detail } as Parameters<typeof dispatch>[0]);
 
-  const runParallel = async (
-    input: unknown,
-    context: ToolContext<DefaultToolEvents>,
-    isDryRun: boolean,
-  ) => {
+  const runParallel = async (input: unknown, context: ToolContext<DefaultToolEvents>) => {
     const executeOptions =
-      context.signal ||
-      context.timeout !== undefined ||
-      context.stream !== undefined ||
-      isDryRun
+      context.signal || context.timeout !== undefined || context.stream !== undefined
         ? {
             ...(context.signal ? { signal: context.signal } : {}),
             ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
             ...(context.stream !== undefined ? { stream: context.stream } : {}),
-            ...(isDryRun ? { dryRun: true } : {}),
           }
         : undefined;
 
@@ -232,7 +224,6 @@ export function parallel(...tools: AnyTool[]): AnyTool {
           stepIndex: index,
           stepName: tool.name,
           input,
-          dryRun: isDryRun,
         });
 
         try {
@@ -241,7 +232,6 @@ export function parallel(...tools: AnyTool[]): AnyTool {
             stepIndex: index,
             stepName: tool.name,
             output: result,
-            dryRun: isDryRun,
           });
           return result;
         } catch (error) {
@@ -249,7 +239,6 @@ export function parallel(...tools: AnyTool[]): AnyTool {
             stepIndex: index,
             stepName: tool.name,
             error,
-            dryRun: isDryRun,
           });
           throw error;
         }
@@ -262,12 +251,9 @@ export function parallel(...tools: AnyTool[]): AnyTool {
   return createTool({
     name: `parallel(${toolNames.join(', ')})`,
     description: `Parallel tools: ${toolNames.join(' | ')}`,
-    schema: first.schema,
+    input: first.input,
     async execute(input: unknown, context: ToolContext<DefaultToolEvents>) {
-      return runParallel(input, context, false);
-    },
-    async dryRun(input: unknown, context: ToolContext<DefaultToolEvents>) {
-      return runParallel(input, context, true);
+      return runParallel(input, context);
     },
   }) as AnyTool;
 }

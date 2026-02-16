@@ -19,9 +19,6 @@ import { errorString, normalizeError } from './errors';
 import type {
   DefaultToolEvents,
   MinimalAbortSignal,
-  OutputShapingOptions,
-  OutputValidationMode,
-  OutputValidationResult,
   Tool,
   ToolCallWithArguments,
   ToolConfiguration,
@@ -47,7 +44,7 @@ import { createConcurrencyLimiter, normalizeConcurrency } from './utilities/conc
 /**
  * Options for creating a tool.
  *
- * TInput is inferred from the parameters type. To minimize type computation:
+ * TInput is inferred from the input schema. To minimize type computation:
  * - ToolContext and related types use type-erasure (unknown) for params
  * - Runtime schema validation provides actual type safety
  * - Only the execute function receives typed params
@@ -59,7 +56,6 @@ export interface CreateToolOptions<
   Tags extends readonly string[] = readonly string[],
   M extends ToolMetadata | undefined = ToolMetadata | undefined,
   TContext extends ToolContext<E> = ToolContext<E>,
-  TParameters extends object = TInput,
   TReturn = TOutput,
 > {
   name: string;
@@ -70,14 +66,10 @@ export interface CreateToolOptions<
   examples?: readonly string[];
   risk?: ToolRisk;
   lifecycle?: ToolLifecycle;
-  parameters?: z.ZodType<TParameters> | z.ZodRawShape | z.ZodTypeAny;
-  /** @deprecated Use `parameters` instead. */
-  schema?: z.ZodType<TParameters> | z.ZodRawShape | z.ZodTypeAny;
-  outputSchema?: z.ZodTypeAny;
+  input?: z.ZodType<TInput> | z.ZodRawShape | z.ZodTypeAny;
   execute:
-    | ((params: TParameters, context: TContext) => Promise<TReturn>)
-    | Promise<(params: TParameters, context: TContext) => Promise<TReturn>>;
-  dryRun?: (params: TParameters, context: TContext) => Promise<unknown>;
+    | ((params: TInput, context: TContext) => Promise<TReturn>)
+    | Promise<(params: TInput, context: TContext) => Promise<TReturn>>;
   /** Default execution timeout in milliseconds. */
   timeout?: number;
   tags?: NormalizeTagsOption<Tags>;
@@ -85,8 +77,6 @@ export interface CreateToolOptions<
   policy?: ToolPolicyHooks;
   policyContext?: ToolPolicyContextProvider;
   digests?: ToolDigestOptions;
-  outputValidationMode?: OutputValidationMode;
-  outputShaping?: OutputShapingOptions;
   concurrency?: number;
   telemetry?: boolean;
   diagnostics?: ToolDiagnostics;
@@ -160,7 +150,7 @@ export type WithContext<
  * const tool = createTool({
  *   name: 'expensive-operation',
  *   description: 'Tool with heavy dependencies',
- *   parameters: z.object({ data: z.string() }),
+ *   input: z.object({ data: z.string() }),
  *   execute: lazy(async () => {
  *     // Heavy import only loaded when tool is first executed
  *     const { processData } = await import('./heavy-module');
@@ -202,22 +192,20 @@ export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
 }
 
 /**
- * Creates a validated, executable AI tool with parameters, metadata, and lifecycle hooks.
+ * Creates a validated, executable AI tool with input schema, metadata, and lifecycle hooks.
  *
- * Tools define their input parameters using Zod, execute logic, and optional features like
- * dry-run simulation, policies, event handlers, and output validation. Tools can be
+ * Tools define their input schema using Zod, execute logic, and optional features like
+ * policies and event handlers. Tools can be
  * used standalone or provided to `createToolbox(...)`.
  *
  * @param options - Tool configuration object
  * @param options.name - Unique tool name (alphanumeric, hyphens, underscores)
  * @param options.description - Human-readable description of what the tool does
- * @param options.parameters - Zod schema defining the tool's input parameters
+ * @param options.input - Zod schema defining the tool's input
  * @param options.execute - Async function that implements the tool's logic
- * @param options.dryRun - Optional function for simulating execution without side effects
  * @param options.tags - Array of string tags for categorization and search
  * @param options.metadata - Custom metadata (risk level, category, version, etc.)
  * @param options.policy - Policy hooks for access control and validation
- * @param options.outputSchema - Optional Zod schema for output validation
  * @param options.timeout - Hard execution timeout in milliseconds
  * @param options.namespace - Optional namespace for organizing tools
  * @param options.version - Semantic version string
@@ -232,7 +220,7 @@ export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
  * const addNumbers = createTool({
  *   name: 'add',
  *   description: 'Add two numbers together',
- *   parameters: z.object({
+ *   input: z.object({
  *     a: z.number().describe('First number'),
  *     b: z.number().describe('Second number'),
  *   }),
@@ -252,7 +240,7 @@ export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
  *
  * const tool = createTool<MyInput, MyOutput>({
  *   name: 'myTool',
- *   parameters: z.object({ foo: z.string(), bar: z.number() }),
+ *   input: z.object({ foo: z.string(), bar: z.number() }),
  *   async execute(params) {
  *     // params is MyInput - properly typed!
  *     return { result: params.foo };
@@ -260,12 +248,12 @@ export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
  * });
  * ```
  *
- * @example With dry-run and metadata
+ * @example With metadata
  * ```typescript
  * const deleteFile = createTool({
  *   name: 'delete-file',
  *   description: 'Delete a file from disk',
- *   parameters: z.object({ path: z.string() }),
+ *   input: z.object({ path: z.string() }),
  *   metadata: {
  *     risk: 'high',
  *     category: 'file-system',
@@ -273,9 +261,6 @@ export function lazy<TExecute extends (...args: unknown[]) => Promise<unknown>>(
  *   async execute({ path }) {
  *     await fs.promises.unlink(path);
  *     return { deleted: path };
- *   },
- *   async dryRun({ path }) {
- *     return { effect: `Would delete ${path}` };
  *   },
  * });
  * ```
@@ -294,63 +279,12 @@ export function createTool<
   TName extends string = string,
 >(
   options: Omit<
-    CreateToolOptions<
-      InferSchemaInput<TSchema>,
-      TOutput,
-      E,
-      Tags,
-      M,
-      TContext,
-      InferSchemaInput<TSchema>,
-      TReturn
-    >,
+    CreateToolOptions<InferSchemaInput<TSchema>, TOutput, E, Tags, M, TContext, TReturn>,
     'metadata' | 'name'
   > & {
     name: TName;
     metadata?: TMetadataInput;
-    parameters: TSchema;
-    schema?: SchemaInput;
-  },
-): CreateToolReturn<
-  TName,
-  z.ZodType<InferSchemaInput<TSchema>>,
-  E,
-  TReturn,
-  M,
-  Tags,
-  TMetadataInput
->;
-
-export function createTool<
-  TSchema extends SchemaInput,
-  TOutput = unknown,
-  E extends ToolEventsMap = DefaultToolEvents,
-  Tags extends readonly string[] = readonly string[],
-  M extends ToolMetadata | undefined = ToolMetadata | undefined,
-  TContext extends ToolContext<E> = ToolContext<E>,
-  TReturn = TOutput,
-  TMetadataInput extends ToolMetadataInput<M> | undefined =
-    | SyncToolMetadataInput<M>
-    | undefined,
-  TName extends string = string,
->(
-  options: Omit<
-    CreateToolOptions<
-      InferSchemaInput<TSchema>,
-      TOutput,
-      E,
-      Tags,
-      M,
-      TContext,
-      InferSchemaInput<TSchema>,
-      TReturn
-    >,
-    'metadata' | 'name'
-  > & {
-    name: TName;
-    metadata?: TMetadataInput;
-    schema: TSchema;
-    parameters?: SchemaInput;
+    input: TSchema;
   },
 ): CreateToolReturn<
   TName,
@@ -369,7 +303,6 @@ export function createTool<
   Tags extends readonly string[] = readonly string[],
   M extends ToolMetadata | undefined = ToolMetadata | undefined,
   TContext extends ToolContext<E> = ToolContext<E>,
-  TParameters extends object = TInput,
   TReturn = TOutput,
   TMetadataInput extends ToolMetadataInput<M> | undefined =
     | SyncToolMetadataInput<M>
@@ -377,7 +310,7 @@ export function createTool<
   TName extends string = string,
 >(
   options: Omit<
-    CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
+    CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TReturn>,
     'metadata' | 'name'
   > & {
     name: TName;
@@ -391,7 +324,6 @@ export function createTool<
   Tags extends readonly string[] = readonly string[],
   M extends ToolMetadata | undefined = ToolMetadata | undefined,
   TContext extends ToolContext<E> = ToolContext<E>,
-  TParameters extends object = TInput,
   TReturn = TOutput,
   TMetadataInput extends ToolMetadataInput<M> | undefined =
     | ToolMetadataInput<M>
@@ -399,7 +331,7 @@ export function createTool<
   TName extends string = string,
 >(
   options: Omit<
-    CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
+    CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TReturn>,
     'metadata' | 'name'
   > & {
     name: TName;
@@ -412,7 +344,7 @@ export function createTool<
   if (isPromise<M>(resolvedMetadata)) {
     const recreateWithLegacy = createTool as unknown as (
       nextOptions: Omit<
-        CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TParameters, TReturn>,
+        CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TReturn>,
         'metadata'
       > & {
         metadata: M;
@@ -439,34 +371,20 @@ export function createTool<
     examples,
     risk,
     lifecycle,
-    parameters: toolParameters,
-    schema: toolSchema,
-    outputSchema,
+    input: toolInput,
     execute: fn,
-    dryRun,
     timeout,
     tags,
     policy,
     policyContext,
     digests,
-    outputValidationMode,
-    outputShaping,
     concurrency,
     telemetry,
     diagnostics,
-  } = options as CreateToolOptions<
-    TInput,
-    TOutput,
-    E,
-    Tags,
-    M,
-    TContext,
-    TParameters,
-    TReturn
-  >;
+  } = options as CreateToolOptions<TInput, TOutput, E, Tags, M, TContext, TReturn>;
 
   const customMetadata = resolvedMetadata ?? (undefined as M);
-  const normalizedSchema = normalizeSchema(toolParameters ?? toolSchema);
+  const normalizedInput = normalizeSchema(toolInput);
 
   const hub = createEventTarget<E>();
   const {
@@ -489,7 +407,6 @@ export function createTool<
   const normalizedTags = normalizeTagsWithRisk(tags, resolvedRisk, name);
   const telemetryEnabled = telemetry === true;
   const digestOptions = normalizeDigestOptions(digests);
-  const resolvedOutputValidationMode = outputValidationMode ?? 'report';
   const concurrencyLimit = normalizeConcurrency(
     typeof metadataValue?.concurrency === 'number'
       ? metadataValue.concurrency
@@ -514,16 +431,12 @@ export function createTool<
     ...(metadataValue !== undefined ? { metadata: metadataValue } : {}),
     ...(resolvedRisk !== undefined ? { risk: resolvedRisk } : {}),
     ...(lifecycle !== undefined ? { lifecycle } : {}),
-    parameters: normalizedSchema,
-    ...(outputSchema !== undefined ? { outputSchema } : {}),
-
-    ...(dryRun ? { dryRun: dryRun as any } : {}),
+    input: normalizedInput,
   }) as AnyToolDefinition;
 
-  const parametersSchema = (definition.parameters ??
-    definition.schema) as unknown as ToolParametersSchema;
-  const schema = parametersSchema;
-  const typedSchema = parametersSchema as unknown as z.ZodType<TParameters>;
+  const inputSchema = definition.input as unknown as ToolParametersSchema;
+  const schema = inputSchema;
+  const typedSchema = inputSchema as unknown as z.ZodType<TInput>;
 
   const buildPolicyContext = (
     toolCall: ToolCall,
@@ -594,10 +507,10 @@ export function createTool<
   };
 
   const executeParams = async (
-    params: TParameters,
+    params: TInput,
     options?: ToolExecuteOptions,
   ): Promise<TReturn> => {
-    const toolCall = createToolCall<TParameters>(name, params);
+    const toolCall = createToolCall<TInput>(name, params);
     const result = await executeCall(toolCall, options);
     if (result.error) {
       throw new Error(result.error.message);
@@ -609,7 +522,7 @@ export function createTool<
   };
 
   const execute = (
-    input: ToolCallWithArguments | TParameters,
+    input: ToolCallWithArguments | TInput,
     options?: ToolExecuteOptions,
   ): Promise<ToolResult | TReturn> => {
     if (looksLikeToolCall(input, name)) {
@@ -627,7 +540,6 @@ export function createTool<
     const inputDigest = digestOptions.input
       ? computeDigest(toolCall.arguments, digestOptions.algorithm)
       : undefined;
-    const isDryRun = options.dryRun === true;
 
     const finishTelemetry = (
       status: 'success' | 'error' | 'denied' | 'cancelled' | 'paused',
@@ -638,7 +550,6 @@ export function createTool<
         errorCategory?: ToolErrorCategory;
         inputDigest?: string;
         outputDigest?: string;
-        outputValidation?: OutputValidationResult;
       } = {},
     ) => {
       if (!telemetryEnabled) return;
@@ -649,7 +560,6 @@ export function createTool<
         durationMs: finishedAt - startedAt,
         startedAt,
         finishedAt,
-        dryRun: isDryRun,
         ...details,
       });
     };
@@ -660,7 +570,6 @@ export function createTool<
         params: toolCall.arguments,
         startedAt,
         inputDigest,
-        dryRun: isDryRun,
       });
     }
 
@@ -681,8 +590,8 @@ export function createTool<
         code: 'CANCELLED',
         retryable: false,
       });
-      emit('execute-error', { ...baseDetail, error: errorObj, dryRun: isDryRun });
-      emit('settled', { ...baseDetail, error: errorObj, dryRun: isDryRun });
+      emit('execute-error', { ...baseDetail, error: errorObj });
+      emit('settled', { ...baseDetail, error: errorObj });
       const cancelledDetails: {
         error?: unknown;
         errorCategory?: ToolErrorCategory;
@@ -704,7 +613,6 @@ export function createTool<
         errorMessage: toolError.message,
         errorCategory: toolError.category,
         inputDigest,
-        dryRun: isDryRun,
       } as ToolResult;
     };
 
@@ -716,12 +624,11 @@ export function createTool<
       emit('execute-start', {
         ...baseDetail,
         params: toolCall.arguments,
-        dryRun: isDryRun,
       });
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
       }
-      const parsed = schema.parse(toolCall.arguments) as TParameters;
+      const parsed = schema.parse(toolCall.arguments) as TInput;
       const typedToolCall = { ...toolCall, arguments: parsed } as ToolCallWithArguments;
       const parsedDetail = { toolCall: typedToolCall, configuration };
       emit('validate-success', { ...parsedDetail, params: toolCall.arguments, parsed });
@@ -764,7 +671,6 @@ export function createTool<
             schema: decision.action?.schema,
           },
           inputDigest,
-          dryRun: isDryRun,
         } as ToolResult;
       }
 
@@ -776,8 +682,8 @@ export function createTool<
           code: 'POLICY_DENIED',
           retryable: false,
         });
-        emit('execute-error', { ...parsedDetail, error: errorObj, dryRun: isDryRun });
-        emit('settled', { ...parsedDetail, error: errorObj, dryRun: isDryRun });
+        emit('execute-error', { ...parsedDetail, error: errorObj });
+        emit('settled', { ...parsedDetail, error: errorObj });
         await runPolicyAfter({
           ...policyContext,
           outcome: 'denied',
@@ -805,7 +711,6 @@ export function createTool<
           errorMessage: toolError.message,
           errorCategory: toolError.category,
           inputDigest,
-          dryRun: isDryRun,
         } as ToolResult;
       }
       const meta: { toolName: string; callId?: string } = { toolName: name };
@@ -813,19 +718,7 @@ export function createTool<
         meta.callId = typedToolCall.id;
       }
 
-      // Handle Dry Run
-      if (isDryRun) {
-        if (!definition.dryRun) {
-          throw new Error('Tool does not support dryRun');
-        }
-      }
-
-      const resolvedExecute = isDryRun
-        ? (definition.dryRun as unknown as (
-            params: TParameters,
-            context: TContext,
-          ) => Promise<TReturn>)
-        : await resolveExecute();
+      const resolvedExecute = await resolveExecute();
 
       if (options.signal?.aborted) {
         return handleCancellation(options.signal.reason);
@@ -837,7 +730,6 @@ export function createTool<
         configuration,
         ...(options.signal ? { signal: options.signal } : {}),
         ...(options.timeout !== undefined ? { timeout: options.timeout } : {}),
-        dryRun: isDryRun,
         ...(options.stream !== undefined ? { stream: options.stream } : {}),
       };
 
@@ -853,9 +745,7 @@ export function createTool<
           : runner;
 
       let value: unknown = await raceWithSignal(timed, options.signal);
-      let outputValidation: OutputValidationResult | undefined;
       let outputDigest: string | undefined;
-      let usedIncrementalValidation = false;
       const streamDeadline =
         typeof options.timeout === 'number' ? Date.now() + options.timeout : undefined;
 
@@ -872,9 +762,6 @@ export function createTool<
         chunks: [] as unknown[],
         index: 0,
         completed: false,
-        validationChecked: false,
-        validationFailed: false,
-        validationError: undefined as unknown,
         digest: digestOptions.output ? createHash(digestOptions.algorithm) : undefined,
       });
 
@@ -888,32 +775,6 @@ export function createTool<
         if (accumulator.digest) {
           accumulator.digest.update(stableStringify(chunk));
         }
-        if (outputSchema) {
-          accumulator.validationChecked = true;
-          const chunkValidation = validateOutput(
-            outputSchema,
-            chunk,
-            resolvedOutputValidationMode,
-          );
-          if (chunkValidation) {
-            if (chunkValidation.success) {
-              emit('output-validate-success', { ...parsedDetail, result: chunk });
-            } else {
-              emit('output-validate-error', {
-                ...parsedDetail,
-                result: chunk,
-                error: chunkValidation.error,
-              });
-              if (!accumulator.validationFailed) {
-                accumulator.validationError = chunkValidation.error;
-              }
-              accumulator.validationFailed = true;
-              if (resolvedOutputValidationMode === 'throw') {
-                throw chunkValidation.error;
-              }
-            }
-          }
-        }
         accumulator.index += 1;
       };
 
@@ -922,20 +783,11 @@ export function createTool<
       ): {
         collected: unknown[];
         outputDigest?: string;
-        outputValidation?: OutputValidationResult;
       } => {
         const finalizedDigest = accumulator.digest?.digest('hex');
-        const finalizedValidation = accumulator.validationChecked
-          ? accumulator.validationFailed
-            ? { success: false, error: accumulator.validationError }
-            : { success: true }
-          : undefined;
         return {
           collected: accumulator.chunks,
           ...(finalizedDigest !== undefined ? { outputDigest: finalizedDigest } : {}),
-          ...(finalizedValidation !== undefined
-            ? { outputValidation: finalizedValidation }
-            : {}),
         };
       };
 
@@ -968,12 +820,10 @@ export function createTool<
                   emit('execute-success', {
                     ...parsedDetail,
                     result: finalized.collected,
-                    dryRun: isDryRun,
                   });
                   emit('settled', {
                     ...parsedDetail,
                     result: finalized.collected,
-                    dryRun: isDryRun,
                   });
                   const policyAfter: ToolPolicyAfterContext = {
                     ...policyContext,
@@ -983,15 +833,11 @@ export function createTool<
                   if (finalized.outputDigest !== undefined) {
                     policyAfter.outputDigest = finalized.outputDigest;
                   }
-                  if (finalized.outputValidation !== undefined) {
-                    policyAfter.outputValidation = finalized.outputValidation;
-                  }
                   await runPolicyAfter(policyAfter);
                   const successDetails: {
                     result?: unknown;
                     inputDigest?: string;
                     outputDigest?: string;
-                    outputValidation?: OutputValidationResult;
                   } = { result: finalized.collected };
                   if (inputDigest !== undefined) {
                     successDetails.inputDigest = inputDigest;
@@ -999,20 +845,15 @@ export function createTool<
                   if (finalized.outputDigest !== undefined) {
                     successDetails.outputDigest = finalized.outputDigest;
                   }
-                  if (finalized.outputValidation !== undefined) {
-                    successDetails.outputValidation = finalized.outputValidation;
-                  }
                   finishTelemetry('success', successDetails);
                 } else {
                   emit('execute-error', {
                     ...parsedDetail,
                     error: streamError,
-                    dryRun: isDryRun,
                   });
                   emit('settled', {
                     ...parsedDetail,
                     error: streamError,
-                    dryRun: isDryRun,
                   });
                   const streamErrorCategory = classifyErrorCategory(streamError);
                   await runPolicyAfter({
@@ -1025,11 +866,9 @@ export function createTool<
                     error?: unknown;
                     errorCategory?: ToolErrorCategory;
                     inputDigest?: string;
-                    dryRun?: boolean;
                   } = {
                     error: streamError,
                     errorCategory: streamErrorCategory,
-                    dryRun: isDryRun,
                   };
                   if (inputDigest !== undefined) {
                     errorDetails.inputDigest = inputDigest;
@@ -1049,7 +888,6 @@ export function createTool<
             result: stream,
             stream,
             inputDigest,
-            dryRun: isDryRun,
           } as ToolResult;
         }
 
@@ -1069,73 +907,13 @@ export function createTool<
         const finalized = finalizeStreamingAccumulator(accumulator);
         value = finalized.collected;
         outputDigest = finalized.outputDigest;
-        outputValidation = finalized.outputValidation;
-        usedIncrementalValidation = true;
-      }
-
-      if (!usedIncrementalValidation) {
-        outputValidation = validateOutput(
-          outputSchema,
-          value,
-          resolvedOutputValidationMode,
-        );
-        if (outputValidation) {
-          if (outputValidation.success) {
-            emit('output-validate-success', { ...parsedDetail, result: value });
-          } else {
-            emit('output-validate-error', {
-              ...parsedDetail,
-              result: value,
-              error: outputValidation.error,
-            });
-            if (resolvedOutputValidationMode === 'throw') {
-              throw outputValidation.error;
-            }
-          }
-        }
-      }
-
-      // Output Shaping
-      let shapedValue: unknown = value;
-      if (outputShaping) {
-        if (
-          outputShaping.serialization === 'json' &&
-          typeof value === 'object' &&
-          value !== null
-        ) {
-          // If result is object, we might want to ensure it is JSON serializable or stringified
-          // For now, let's assume result should be returned as is if it is object,
-          // but if serialization='string' is requested, we stringify it.
-        }
-
-        if (outputShaping.serialization === 'string' && typeof value !== 'string') {
-          shapedValue = stableStringify(value);
-        }
-
-        if (outputShaping.truncate && typeof shapedValue === 'string') {
-          const maxLength =
-            typeof outputShaping.truncate === 'object' && outputShaping.truncate.length
-              ? outputShaping.truncate.length
-              : (outputShaping.maxBytes ?? 1024 * 1024); // Default 1MB or use maxBytes if provided
-
-          // If maxBytes is provided explicitly, prefer it
-          const limit = outputShaping.maxBytes ?? maxLength;
-
-          if (shapedValue.length > limit) {
-            const suffix =
-              (typeof outputShaping.truncate === 'object' &&
-                outputShaping.truncate.suffix) ||
-              '...';
-            shapedValue = shapedValue.slice(0, limit) + suffix;
-          }
-        }
       }
 
       if (outputDigest === undefined && digestOptions.output) {
         outputDigest = computeDigest(value, digestOptions.algorithm);
       }
-      emit('execute-success', { ...parsedDetail, result: value, dryRun: isDryRun });
-      emit('settled', { ...parsedDetail, result: value, dryRun: isDryRun });
+      emit('execute-success', { ...parsedDetail, result: value });
+      emit('settled', { ...parsedDetail, result: value });
       const policyAfter: ToolPolicyAfterContext = {
         ...policyContext,
         outcome: 'success',
@@ -1144,15 +922,11 @@ export function createTool<
       if (outputDigest !== undefined) {
         policyAfter.outputDigest = outputDigest;
       }
-      if (outputValidation !== undefined) {
-        policyAfter.outputValidation = outputValidation;
-      }
       await runPolicyAfter(policyAfter);
       const successDetails: {
         result?: unknown;
         inputDigest?: string;
         outputDigest?: string;
-        outputValidation?: OutputValidationResult;
       } = { result: value };
       if (inputDigest !== undefined) {
         successDetails.inputDigest = inputDigest;
@@ -1160,29 +934,17 @@ export function createTool<
       if (outputDigest !== undefined) {
         successDetails.outputDigest = outputDigest;
       }
-      if (outputValidation !== undefined) {
-        successDetails.outputValidation = outputValidation;
-      }
       finishTelemetry('success', successDetails);
       const callId = typedToolCall.id;
       return {
         callId,
         outcome: 'success',
-        content: shapedValue, // Use shaped value for content
+        content: value,
         toolCallId: callId,
         toolName: name,
-        result: value, // Keep original result
+        result: value,
         inputDigest,
         outputDigest,
-        outputValidation: outputValidation
-          ? {
-              success: outputValidation.success,
-              error: outputValidation.error
-                ? errorString(normalizeError(outputValidation.error))
-                : undefined,
-            }
-          : undefined,
-        dryRun: isDryRun,
       } as ToolResult;
     } catch (error) {
       if (isAbortRejection(error)) {
@@ -1232,9 +994,9 @@ export function createTool<
           repairHints,
         });
       } else {
-        emit('execute-error', { ...baseDetail, error, dryRun: isDryRun });
+        emit('execute-error', { ...baseDetail, error });
       }
-      emit('settled', { ...baseDetail, error, dryRun: isDryRun });
+      emit('settled', { ...baseDetail, error });
       const callId = toolCall.id;
       const errorCategory = classifyErrorCategory(error);
       const errorPolicyContext = buildPolicyContext(
@@ -1258,8 +1020,7 @@ export function createTool<
         error?: unknown;
         errorCategory?: ToolErrorCategory;
         inputDigest?: string;
-        dryRun?: boolean;
-      } = { error, errorCategory, dryRun: isDryRun };
+      } = { error, errorCategory };
       if (inputDigest !== undefined) {
         errorDetails.inputDigest = inputDigest;
       }
@@ -1288,7 +1049,6 @@ export function createTool<
         errorMessage: toolError.message,
         errorCategory: toolError.category,
         inputDigest,
-        dryRun: isDryRun,
       } as ToolResult;
     }
   };
@@ -1315,12 +1075,12 @@ export function createTool<
     return undefined;
   }
 
-  const callable = async (params: unknown) => executeParams(params as TParameters);
+  const callable = async (params: unknown) => executeParams(params as TInput);
 
   const configuration = {
     ...definition,
-    parameters: typedSchema,
-    execute: async (params: unknown) => executeParams(params as TParameters),
+    input: typedSchema,
+    execute: async (params: unknown) => executeParams(params as TInput),
   } as unknown as ToolConfiguration;
   if (policyHooks) {
     configuration.policy = policyHooks;
@@ -1331,12 +1091,6 @@ export function createTool<
   if (digests !== undefined) {
     configuration.digests = digests;
   }
-  if (outputValidationMode !== undefined) {
-    configuration.outputValidationMode = outputValidationMode;
-  }
-  if (outputShaping !== undefined) {
-    configuration.outputShaping = outputShaping;
-  }
   if (concurrencyLimit !== undefined) {
     configuration.concurrency = concurrencyLimit;
   }
@@ -1344,8 +1098,7 @@ export function createTool<
   const toJSON = (() => {
     const serializableConfiguration = {
       ...configuration,
-      parameters: configuration.parameters ?? typedSchema,
-      schema: configuration.schema ?? typedSchema,
+      input: configuration.input ?? typedSchema,
     } as AnyToolDefinition;
     const json = serializeToolDefinition(serializableConfiguration);
     return () => json;
@@ -1358,23 +1111,15 @@ export function createTool<
     display: configuration.display,
     name: configuration.identity.name,
     description: configuration.display.description,
-    schema: configuration.schema ?? typedSchema,
-    parameters: typedSchema,
-    outputSchema: configuration.outputSchema,
+    input: configuration.input ?? typedSchema,
     execute,
     run: async (params: unknown, context: TContext) => {
       const resolved = await resolveExecute();
-      return resolved(params as TParameters, context);
+      return resolved(params as TInput, context);
     },
     rawExecute: async (params: unknown, context: TContext) => {
       const resolved = await resolveExecute();
-      return resolved(params as TParameters, context);
-    },
-    dryRun: async (params: unknown, context: TContext) => {
-      if (definition.dryRun) {
-        return definition.dryRun(params as any, context);
-      }
-      throw new Error('Tool does not support dryRun');
+      return resolved(params as TInput, context);
     },
     configuration,
     // Event listener methods
@@ -1549,7 +1294,7 @@ function isTestRuntime(): boolean {
 
 /**
  * Options for creating a tool with additional context.
- * TInput is the input interface type - the schema validates it at runtime.
+ * TInput is the input interface type - the input schema validates it at runtime.
  */
 type CreateToolWithContextOptions<
   Ctx extends Record<string, unknown>,
@@ -1596,7 +1341,7 @@ type AnyToolWithContextOptions<Ctx extends Record<string, unknown>> =
  * const userTool = createDbTool({
  *   name: 'get-user',
  *   description: 'Get user by ID',
- *   parameters: z.object({ userId: z.string() }),
+ *   input: z.object({ userId: z.string() }),
  *   async execute({ userId }, context) {
  *     // context.db is automatically available
  *     return context.db.users.findById(userId);
@@ -1608,7 +1353,7 @@ type AnyToolWithContextOptions<Ctx extends Record<string, unknown>> =
  * ```typescript
  * const tool = withContext({ apiKey: 'secret' }, {
  *   name: 'api-call',
- *   parameters: z.object({ endpoint: z.string() }),
+ *   input: z.object({ endpoint: z.string() }),
  *   async execute({ endpoint }, context) {
  *     return fetch(endpoint, {
  *       headers: { 'Authorization': `Bearer ${context.apiKey}` }
@@ -1648,7 +1393,7 @@ const ABORT_REJECTION_SYMBOL = Symbol('toolbox.abort');
  * passed to `toolbox.execute()`. Automatically generates a unique ID if not provided.
  *
  * @param toolName - Name of the tool to call
- * @param args - Arguments object matching the tool's parameters
+ * @param args - Arguments object matching the tool's input schema
  * @param id - Optional unique identifier for this call (auto-generated if omitted)
  * @returns A ToolCall object with id, name, and arguments
  *
@@ -1660,7 +1405,7 @@ const ABORT_REJECTION_SYMBOL = Symbol('toolbox.abort');
  * const toolbox = createToolbox([
  *   createTool({
  *     name: 'add',
- *     parameters: z.object({ a: z.number(), b: z.number() }),
+ *     input: z.object({ a: z.number(), b: z.number() }),
  *     execute: async ({ a, b }) => a + b,
  *   }),
  * ]);
@@ -1712,12 +1457,12 @@ function normalizeSchema(schema: unknown): z.ZodTypeAny {
     return schema;
   }
   if (isZodSchema(schema)) {
-    throw new Error('Tool schema must be a Zod object schema');
+    throw new Error('Tool input must be a Zod object schema');
   }
   if (schema && typeof schema === 'object') {
     return z.object(schema as Record<string, z.ZodTypeAny>);
   }
-  throw new Error('Tool schema must be a Zod object schema or an object of Zod schemas');
+  throw new Error('Tool input must be a Zod object schema or an object of Zod schemas');
 }
 
 function getDiagnosticsSchema(schema: unknown): unknown {
@@ -1872,24 +1617,6 @@ function serializeZodIssues(issues: z.ZodIssue[]): JsonValue {
     ),
     message: issue.message,
   }));
-}
-
-function validateOutput(
-  schema: z.ZodTypeAny | undefined,
-  value: unknown,
-  mode: OutputValidationMode,
-): OutputValidationResult | undefined {
-  if (!schema) {
-    return undefined;
-  }
-  const result = schema.safeParse(value);
-  if (result.success) {
-    return { success: true };
-  }
-  if (mode === 'throw') {
-    return { success: false, error: result.error };
-  }
-  return { success: false, error: result.error };
 }
 
 function normalizeTagsWithRisk(

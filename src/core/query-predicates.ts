@@ -228,9 +228,7 @@ export function buildTextSearchIndex(tool: ToolDefinition): TextSearchIndex {
     nameTokens: tokenize(name),
     descriptionTokens: tokenize(description),
     tags: (tool.tags ?? []).map(toToken),
-    schemaKeys: getSchemaKeys(
-      getToolSchema(tool) ?? (candidate['inputSchema'] as z.ZodTypeAny | undefined),
-    ).map(toToken),
+    schemaKeys: getSchemaKeys(getToolSchema(tool)).map(toToken),
     metadataKeys: extractMetadataKeys(tool.metadata).map(toToken),
   };
 }
@@ -431,12 +429,9 @@ export function schemaHasKeys(keys: readonly string[]): ToolPredicate {
 
 function getToolSchema(tool: ToolDefinition): ToolSchema {
   const candidate = tool as ToolDefinition & {
-    parameters?: z.ZodTypeAny;
-    inputSchema?: z.ZodTypeAny;
+    input?: z.ZodTypeAny;
   };
-  return (
-    candidate.parameters ?? candidate.schema ?? candidate.inputSchema ?? z.object({})
-  );
+  return candidate.input ?? z.object({});
 }
 
 function normalizeTags(tags: readonly string[]): string[] {

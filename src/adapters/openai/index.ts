@@ -192,7 +192,7 @@ function convertToOpenAI(
   tool: SerializedToolDefinition,
   options?: OpenAIAdapterOptions,
 ): OpenAITool {
-  const parameters = stripSchemaId(tool.schema as JSONSchema);
+  const parameters = stripSchemaId(tool.input as JSONSchema);
   const name =
     options?.naming === 'safe-id' ? mapToOpenAIName(tool.id) : tool.identity.name;
   return {

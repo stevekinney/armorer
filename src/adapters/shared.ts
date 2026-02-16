@@ -22,7 +22,7 @@ export function isToolDefinition(input: unknown): input is AnyToolDefinition {
     (typeof input === 'object' || typeof input === 'function') &&
     'id' in input &&
     'identity' in input &&
-    ('schema' in input || 'parameters' in input) &&
+    'input' in input &&
     !('schemaVersion' in input)
   );
 }
@@ -50,10 +50,8 @@ export function normalizeToSerializedDefinitions(
     if (!Array.isArray(tools)) {
       throw new Error('Registry tools() must return an array.');
     }
-    const registryTools: readonly (
-      | SerializedToolDefinition
-      | AnyToolDefinition
-    )[] = tools;
+    const registryTools: readonly (SerializedToolDefinition | AnyToolDefinition)[] =
+      tools;
     return registryTools.map((tool) => toSerialized(tool));
   }
 

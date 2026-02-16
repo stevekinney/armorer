@@ -33,7 +33,7 @@ type TapEffect<TOutput> = (
  *
  * const fetchUser = createTool({
  *   name: 'fetch-user',
- *   schema: z.object({ id: z.string() }),
+ *   input: z.object({ id: z.string() }),
  *   async execute({ id }) {
  *     return { id, name: 'John' };
  *   },
@@ -70,18 +70,13 @@ export function tap<TTool extends AnyTool>(
   const runTap = async (
     params: unknown,
     context: ToolContext<DefaultToolEvents>,
-    isDryRun: boolean,
   ): Promise<InferToolOutput<TTool>> => {
     const executeOptions =
-      context.signal ||
-      context.timeout !== undefined ||
-      context.stream !== undefined ||
-      isDryRun
+      context.signal || context.timeout !== undefined || context.stream !== undefined
         ? {
             ...(context.signal ? { signal: context.signal } : {}),
             ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
             ...(context.stream !== undefined ? { stream: context.stream } : {}),
-            ...(isDryRun ? { dryRun: true } : {}),
           }
         : undefined;
     const result = (await tool.execute(
@@ -100,7 +95,6 @@ export function tap<TTool extends AnyTool>(
       readonly string[],
       ToolMetadata | undefined,
       ToolContext<DefaultToolEvents>,
-      InferToolInput<TTool>,
       InferToolOutput<TTool>
     >,
     'metadata'
@@ -109,12 +103,9 @@ export function tap<TTool extends AnyTool>(
   } = {
     name,
     description,
-    schema: tool.schema as z.ZodType<InferToolInput<TTool>>,
+    input: tool.input as z.ZodType<InferToolInput<TTool>>,
     async execute(params, context) {
-      return runTap(params, context, false);
-    },
-    async dryRun(params, context) {
-      return runTap(params, context, true);
+      return runTap(params, context);
     },
     ...(tags ? { tags } : {}),
     ...(tool.metadata !== undefined ? { metadata: tool.metadata } : {}),
@@ -126,7 +117,6 @@ export function tap<TTool extends AnyTool>(
     readonly string[],
     ToolMetadata | undefined,
     ToolContext<DefaultToolEvents>,
-    InferToolInput<TTool>,
     InferToolOutput<TTool>
   >(toolOptions) as ComposedTool<InferToolInput<TTool>, InferToolOutput<TTool>>;
 }

@@ -38,7 +38,6 @@ import {
 import type {
   DefaultToolEvents,
   MinimalAbortSignal,
-  OutputValidationMode,
   Tool,
   ToolCallWithArguments,
   ToolConfiguration,
@@ -66,7 +65,6 @@ export type ToolboxRuntimeContext<Ctx extends ToolboxContext = ToolboxContext> =
   signal?: MinimalAbortSignal;
   /** Execution timeout in milliseconds. */
   timeout?: number;
-  dryRun?: boolean;
   stream?: boolean;
 };
 
@@ -103,7 +101,6 @@ export interface ToolboxOptions {
   policy?: ToolPolicyHooks;
   policyContext?: ToolPolicyContextProvider | Record<string, unknown>;
   digests?: ToolDigestOptions;
-  outputValidationMode?: OutputValidationMode;
   budget?: { maxCalls?: number; maxDurationMs?: number };
   concurrency?: number;
   telemetry?: boolean;
@@ -172,13 +169,6 @@ export interface ToolboxEvents {
   };
   'execute-success': { tool: Tool; call: ToolCall; result: unknown };
   'execute-error': { tool: Tool; call: ToolCall; error: unknown };
-  'output-validate-success': { tool: Tool; call: ToolCall; result: unknown };
-  'output-validate-error': {
-    tool: Tool;
-    call: ToolCall;
-    result: unknown;
-    error: unknown;
-  };
   settled: { tool: Tool; call: ToolCall; result?: unknown; error?: unknown };
   'policy-denied': {
     tool: Tool;
@@ -195,7 +185,6 @@ export interface ToolboxEvents {
     params: unknown;
     startedAt: number;
     inputDigest?: string;
-    dryRun?: boolean;
   };
   'tool.finished': {
     tool: Tool;
@@ -213,8 +202,6 @@ export interface ToolboxEvents {
     errorCategory?: ToolErrorCategory;
     inputDigest?: string;
     outputDigest?: string;
-    outputValidation?: { success: boolean; error?: unknown };
-    dryRun?: boolean;
   };
   'budget-exceeded': { tool: Tool; call: ToolCall; reason: string };
   progress: { tool: Tool; call: ToolCall; percent?: number; message?: string };
@@ -399,7 +386,6 @@ export interface Toolbox<TTools extends readonly Tool[] = readonly Tool[]> {
  * @param options.policy - Global policy hooks for access control and validation
  * @param options.policyContext - Provider function for dynamic policy context
  * @param options.digests - Configuration for input/output hashing
- * @param options.outputValidationMode - How to handle output schema validation ('report', 'enforce', 'skip')
  * @param options.concurrency - Max concurrent tool executions (default: 10)
  * @param options.telemetry - Enable telemetry events (tool.started, tool.finished)
  * @param options.embed - Embedding function for semantic search capabilities
@@ -419,7 +405,7 @@ export interface Toolbox<TTools extends readonly Tool[] = readonly Tool[]> {
  * const addTool = createTool({
  *   name: 'add',
  *   description: 'Add two numbers',
- *   schema: z.object({ a: z.number(), b: z.number() }),
+ *   input: z.object({ a: z.number(), b: z.number() }),
  *   execute: async ({ a, b }) => a + b,
  * });
  * const toolbox = createToolbox([addTool]);
@@ -487,7 +473,6 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
   const registryPolicy = options.policy;
   const registryPolicyContext = options.policyContext;
   const registryDigests = options.digests;
-  const registryOutputValidationMode = options.outputValidationMode;
   const registryConcurrency = options.concurrency;
   const budget = options.budget;
   const budgetStart = Date.now();
@@ -624,8 +609,6 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
         'execute-start',
         'validate-success',
         'validate-error',
-        'output-validate-success',
-        'output-validate-error',
         'execute-success',
         'execute-error',
         'settled',
@@ -661,12 +644,10 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
         const executeOptions: ToolExecuteOptions =
           options?.signal ||
           options?.timeout !== undefined ||
-          options?.dryRun !== undefined ||
           options?.stream !== undefined
             ? {
                 ...(options?.signal ? { signal: options.signal } : {}),
                 ...(options?.timeout !== undefined ? { timeout: options.timeout } : {}),
-                ...(options?.dryRun !== undefined ? { dryRun: options.dryRun } : {}),
                 ...(options?.stream !== undefined ? { stream: options.stream } : {}),
               }
             : {};
@@ -934,8 +915,6 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
       configuration.policyContext,
     );
     const resolvedDigests = resolveToolDigests(configuration, registryDigests);
-    const resolvedOutputValidationMode =
-      configuration.outputValidationMode ?? registryOutputValidationMode;
     const resolvedConcurrency = resolveToolConcurrency(
       configuration,
       registryConcurrency,
@@ -948,7 +927,6 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
         readonly string[],
         ToolMetadata | undefined,
         ToolContext<ToolEventsMap>,
-        object,
         unknown
       >,
       'metadata'
@@ -973,7 +951,7 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
       ...(configuration.lifecycle !== undefined
         ? { lifecycle: configuration.lifecycle }
         : {}),
-      parameters: configuration.parameters ?? configuration.schema,
+      input: configuration.input,
       async execute(params, toolContext) {
         const executeFn = await resolveExecute();
         return executeFn(params, {
@@ -983,25 +961,15 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
           toolCall: toolContext.toolCall,
           signal: toolContext.signal,
           timeout: toolContext.timeout,
-          dryRun: toolContext.dryRun,
           stream: toolContext.stream,
         });
       },
     };
-    if (configuration.dryRun) {
-      options.dryRun = configuration.dryRun as (
-        params: unknown,
-        context: unknown,
-      ) => Promise<unknown>;
-    }
     if (configuration.tags) {
       options.tags = configuration.tags;
     }
     if (configuration.metadata) {
       options.metadata = configuration.metadata;
-    }
-    if (configuration.outputSchema) {
-      options.outputSchema = configuration.outputSchema;
     }
     if (resolvedPolicy) {
       options.policy = resolvedPolicy;
@@ -1011,9 +979,6 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
     }
     if (resolvedDigests) {
       options.digests = resolvedDigests;
-    }
-    if (resolvedOutputValidationMode) {
-      options.outputValidationMode = resolvedOutputValidationMode;
     }
     if (resolvedConcurrency !== undefined) {
       options.concurrency = resolvedConcurrency;
@@ -1031,7 +996,6 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
       readonly string[],
       ToolMetadata | undefined,
       ToolContext<ToolEventsMap>,
-      object,
       unknown
     >(options) as unknown as Tool;
   }
@@ -1046,10 +1010,7 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
     if (typeof name !== 'string' || !name.trim()) {
       throw new TypeError('createToolbox entries must be ToolConfiguration objects');
     }
-    const rawSchema =
-      configuration.schema ??
-      configuration.parameters ??
-      (candidate['inputSchema'] as z.ZodTypeAny | undefined);
+    const rawInput = configuration.input;
     if (configuration.execute === undefined || configuration.execute === null) {
       throw new TypeError(
         `Tool "${name}" is missing execute. Provide execute or configure createToolbox({ getTool }) to resolve it.`,
@@ -1063,7 +1024,7 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
         `Tool "${name}" has invalid execute. Expected a function or a promise that resolves to a function.`,
       );
     }
-    const normalizedSchema = normalizeToolSchema(rawSchema);
+    const normalizedInput = normalizeToolSchema(rawInput);
     const description =
       (candidate['description'] as string | undefined) ??
       configuration.display?.description;
@@ -1091,20 +1052,11 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
       ...(configuration.metadata ? { metadata: configuration.metadata } : {}),
       ...(resolvedRisk !== undefined ? { risk: resolvedRisk } : {}),
       ...(configuration.lifecycle ? { lifecycle: configuration.lifecycle } : {}),
-      parameters: normalizedSchema,
-      ...(configuration.outputSchema ? { outputSchema: configuration.outputSchema } : {}),
-      ...(configuration.dryRun
-        ? {
-            dryRun: configuration.dryRun as (
-              params: unknown,
-              context: unknown,
-            ) => Promise<unknown>,
-          }
-        : {}),
+      input: normalizedInput,
     }) as AnyToolDefinition;
     const result = {
       ...definition,
-      parameters: normalizedSchema,
+      input: normalizedInput,
       execute: configuration.execute,
     } as unknown as ToolConfiguration;
     if (configuration.policy) {
@@ -1115,9 +1067,6 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
     }
     if (configuration.digests !== undefined) {
       result.digests = configuration.digests;
-    }
-    if (configuration.outputValidationMode) {
-      result.outputValidationMode = configuration.outputValidationMode;
     }
     if (configuration.concurrency !== undefined) {
       result.concurrency = configuration.concurrency;
@@ -1377,12 +1326,12 @@ function normalizeToolSchema(schema: unknown): ToolParametersSchema {
     return schema;
   }
   if (isZodSchema(schema)) {
-    throw new Error('Tool schema must be a Zod object schema');
+    throw new Error('Tool input must be a Zod object schema');
   }
   if (schema && typeof schema === 'object') {
     return z.object(schema as Record<string, z.ZodTypeAny>);
   }
-  throw new Error('Tool schema must be a Zod object schema or an object of Zod schemas');
+  throw new Error('Tool input must be a Zod object schema or an object of Zod schemas');
 }
 
 function checkBudget(

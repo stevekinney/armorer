@@ -67,12 +67,11 @@ export function instrument(
 
   subscriptions.push(
     toolbox.addEventListener('tool.started', (event) => {
-      const { toolCall, params, dryRun } = event.detail;
+      const { toolCall, params } = event.detail;
       const span = activeSpans.get(toolCall.id);
       if (span) {
         span.addEvent('tool.started', {
           'gen_ai.tool.arguments': safeStringify(params),
-          'gen_ai.tool.dry_run': dryRun,
         });
       }
     }),
@@ -80,22 +79,13 @@ export function instrument(
 
   subscriptions.push(
     toolbox.addEventListener('tool.finished', (event) => {
-      const {
-        toolCall,
-        status,
-        result,
-        error,
-        durationMs,
-        dryRun,
-        inputDigest,
-        outputDigest,
-      } = event.detail;
+      const { toolCall, status, result, error, durationMs, inputDigest, outputDigest } =
+        event.detail;
       const span = activeSpans.get(toolCall.id);
       if (span) {
         const attributes: Attributes = {
           'gen_ai.tool.duration_ms': durationMs,
           'gen_ai.tool.status': status,
-          'gen_ai.tool.dry_run': dryRun,
         };
 
         if (inputDigest) {

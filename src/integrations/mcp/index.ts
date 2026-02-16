@@ -29,7 +29,6 @@ export type MCPToolConfiguration = {
   title?: string;
   description?: string;
   schema?: AnySchema;
-  outputSchema?: AnySchema;
   annotations?: ToolAnnotations;
   execution?: ToolExecution;
   meta?: Record<string, unknown>;
@@ -43,7 +42,6 @@ export type MCPToolLike = {
   title?: string;
   description?: string;
   inputSchema?: AnySchema;
-  outputSchema?: AnySchema;
   annotations?: ToolAnnotations;
   execution?: ToolExecution;
   _meta?: Record<string, unknown>;
@@ -87,7 +85,10 @@ const DEFAULT_SERVER_INFO: Implementation = {
   version: '0.0.0',
 };
 
-export function createMCP(toolbox: ToolboxLike, options: CreateMCPOptions = {}): McpServer {
+export function createMCP(
+  toolbox: ToolboxLike,
+  options: CreateMCPOptions = {},
+): McpServer {
   const {
     serverInfo,
     toolConfiguration,
@@ -144,7 +145,7 @@ export function fromMcpTools(
     const createOptions: Parameters<typeof createTool>[0] = {
       name: mcpTool.name,
       description: mcpTool.description ?? mcpTool.title ?? mcpTool.name,
-      schema: schema as z.ZodTypeAny,
+      input: schema as z.ZodTypeAny,
       async execute(params) {
         const callResult = await executeMcpTool(mcpTool, params, options.callTool);
         return options.formatResult
@@ -176,8 +177,7 @@ function toMcpToolDefinition(tool: Tool, options: ToMCPToolsOptions): MCPToolDef
       }
     : configuration.annotations;
   const resolvedInputSchema =
-    resolveMcpSchema(configuration.schema) ?? (tool.schema as unknown as AnySchema);
-  const resolvedOutputSchema = resolveMcpSchema(configuration.outputSchema);
+    resolveMcpSchema(configuration.schema) ?? (tool.input as unknown as AnySchema);
 
   const mcpTool: MCPToolDefinition = {
     name: tool.name,
@@ -220,9 +220,6 @@ function toMcpToolDefinition(tool: Tool, options: ToMCPToolsOptions): MCPToolDef
   if (configuration.execution !== undefined) {
     mcpTool.execution = configuration.execution;
   }
-  if (resolvedOutputSchema) {
-    mcpTool.outputSchema = resolvedOutputSchema;
-  }
   if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
     mcpTool._meta = meta;
   }
@@ -234,7 +231,6 @@ function toMcpRegisteredToolConfiguration(tool: MCPToolDefinition): {
   title?: string;
   description?: string;
   inputSchema: AnySchema;
-  outputSchema?: AnySchema;
   annotations?: ToolAnnotations;
   execution?: ToolExecution;
   _meta?: Record<string, unknown>;
@@ -243,7 +239,6 @@ function toMcpRegisteredToolConfiguration(tool: MCPToolDefinition): {
     title?: string;
     description?: string;
     inputSchema: AnySchema;
-    outputSchema?: AnySchema;
     annotations?: ToolAnnotations;
     execution?: ToolExecution;
     _meta?: Record<string, unknown>;
@@ -259,9 +254,6 @@ function toMcpRegisteredToolConfiguration(tool: MCPToolDefinition): {
   }
   if (tool.execution !== undefined) {
     configuration.execution = tool.execution;
-  }
-  if (tool.outputSchema !== undefined) {
-    configuration.outputSchema = tool.outputSchema;
   }
   if (tool._meta !== undefined) {
     configuration._meta = tool._meta;
@@ -300,7 +292,7 @@ function isToolLike(value: unknown): value is Tool {
     isRecord(value) &&
     isString(value['name']) &&
     isString(value['description']) &&
-    'schema' in value &&
+    'input' in value &&
     typeof value['executeWith'] === 'function'
   );
 }
@@ -451,8 +443,6 @@ export function toolConfigurationFromMetadata(
   if (configuration.description !== undefined)
     resolved.description = configuration.description;
   if (configuration.schema !== undefined) resolved.schema = configuration.schema;
-  if (configuration.outputSchema !== undefined)
-    resolved.outputSchema = configuration.outputSchema;
   let annotations = configuration.annotations
     ? { ...configuration.annotations }
     : undefined;

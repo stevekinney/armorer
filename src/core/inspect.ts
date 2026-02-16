@@ -35,13 +35,13 @@ export type MetadataFlags = z.infer<typeof MetadataFlagsSchema>;
 /**
  * Inspection result for a single tool.
  * At 'summary' level, only name/description/tags are included.
- * At 'standard' and 'full' levels, schema and metadata are also included.
+ * At 'standard' and 'full' levels, input and metadata are also included.
  */
 export const ToolInspectionSchema = z.object({
   name: z.string(),
   description: z.string(),
   tags: z.array(z.string()),
-  schema: SchemaSummarySchema.optional(),
+  input: SchemaSummarySchema.optional(),
   metadata: MetadataFlagsSchema.optional(),
 });
 export type ToolInspection = z.infer<typeof ToolInspectionSchema>;
@@ -152,8 +152,8 @@ export function extractMetadataFlags(metadata: JsonObject | undefined): Metadata
 /**
  * Inspect a single tool and return its inspection result.
  * At 'summary' level, only name/description/tags are included.
- * At 'standard' and 'full' levels, schema keys and metadata flags are included.
- * At 'full' level, schema shape details are also included.
+ * At 'standard' and 'full' levels, input keys and metadata flags are included.
+ * At 'full' level, input shape details are also included.
  */
 export function inspectTool(
   tool: ToolDefinition,
@@ -165,12 +165,10 @@ export function inspectTool(
     tags: tool.tags ? [...tool.tags] : [],
   };
 
-  // Only include schema and metadata for standard and full levels
+  // Only include input and metadata for standard and full levels
   if (detailLevel !== 'summary') {
     const includeShape = detailLevel === 'full';
-    const schema =
-      (tool as typeof tool & { parameters?: ToolSchema }).parameters ?? tool.schema;
-    result.schema = extractSchemaSummary(schema, includeShape);
+    result.input = extractSchemaSummary(tool.input, includeShape);
     result.metadata = extractMetadataFlags(tool.metadata);
   }
 

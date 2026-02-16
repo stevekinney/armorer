@@ -85,7 +85,7 @@ export async function toOpenAIAgentTools(
     const name = override?.name ?? tool.name;
     const description = override?.description ?? tool.description;
     const parameters =
-      override?.parameters ?? (tool.schema as unknown as OpenAIAgentsToolParameters);
+      override?.parameters ?? (tool.input as unknown as OpenAIAgentsToolParameters);
 
     toolNames.push(name);
     if (isMutating(tool)) mutatingToolNames.push(name);

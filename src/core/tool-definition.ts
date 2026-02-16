@@ -36,10 +36,7 @@ export type ToolDefinition<
   metadata?: JsonObject | undefined;
   risk?: ToolRisk | undefined;
   lifecycle?: ToolLifecycle | undefined;
-  parameters?: z.ZodTypeAny;
-  schema: z.ZodTypeAny;
-  outputSchema?: z.ZodTypeAny | undefined;
-  dryRun?: ((params: TInput, context: unknown) => Promise<unknown>) | undefined;
+  input: z.ZodTypeAny;
   /** @internal Type marker for inference. */
   __types?: { input: TInput; output: TOutput } | undefined;
 };
@@ -48,7 +45,6 @@ export type AnyToolDefinition = ToolDefinition<Record<string, unknown>, unknown>
 
 export type DefineToolOptions<
   TInput extends object = Record<string, unknown>,
-  TOutput = unknown,
   Tags extends readonly string[] = readonly string[],
 > = {
   name: string;
@@ -61,18 +57,14 @@ export type DefineToolOptions<
   metadata?: JsonObject;
   risk?: ToolRisk;
   lifecycle?: ToolLifecycle;
-  parameters?: z.ZodType<TInput> | z.ZodRawShape | z.ZodTypeAny;
-  /** @deprecated Use `parameters` instead. */
-  schema?: z.ZodType<TInput> | z.ZodRawShape | z.ZodTypeAny;
-  outputSchema?: z.ZodType<TOutput>;
-  dryRun?: (params: TInput, context: unknown) => Promise<unknown>;
+  input?: z.ZodType<TInput> | z.ZodRawShape | z.ZodTypeAny;
 };
 
 export function defineTool<
   TInput extends object = Record<string, unknown>,
   TOutput = unknown,
   Tags extends readonly string[] = readonly string[],
->(options: DefineToolOptions<TInput, TOutput, Tags>): ToolDefinition<TInput, TOutput> {
+>(options: DefineToolOptions<TInput, Tags>): ToolDefinition<TInput, TOutput> {
   const {
     name,
     description,
@@ -84,10 +76,7 @@ export function defineTool<
     metadata,
     risk,
     lifecycle,
-    parameters,
-    schema,
-    outputSchema,
-    dryRun,
+    input,
   } = options;
 
   const normalizedIdentity = normalizeIdentity({
@@ -95,7 +84,7 @@ export function defineTool<
     ...(namespace !== undefined ? { namespace } : {}),
     ...(version !== undefined ? { version } : {}),
   });
-  const normalizedSchema = normalizeSchema(parameters ?? schema);
+  const normalizedInput = normalizeSchema(input);
   const resolvedTags = normalizeTags(tags, name);
   const display: ToolDisplay = {
     title: title ?? name,
@@ -115,10 +104,7 @@ export function defineTool<
     ...(metadata !== undefined ? { metadata } : {}),
     ...(risk !== undefined ? { risk } : {}),
     ...(lifecycle !== undefined ? { lifecycle } : {}),
-    parameters: normalizedSchema as z.ZodType<TInput>,
-    schema: normalizedSchema as z.ZodType<TInput>,
-    ...(outputSchema !== undefined ? { outputSchema } : {}),
-    ...(dryRun ? { dryRun } : {}),
+    input: normalizedInput as z.ZodType<TInput>,
   };
 }
 
@@ -130,12 +116,12 @@ function normalizeSchema(schema: unknown): z.ZodTypeAny {
     return schema;
   }
   if (isZodSchema(schema)) {
-    throw new Error('Tool schema must be a Zod object schema');
+    throw new Error('Tool input must be a Zod object schema');
   }
   if (schema && typeof schema === 'object') {
     return z.object(schema as Record<string, z.ZodTypeAny>);
   }
-  throw new Error('Tool schema must be a Zod object schema or an object of Zod schemas');
+  throw new Error('Tool input must be a Zod object schema or an object of Zod schemas');
 }
 
 function normalizeTags(

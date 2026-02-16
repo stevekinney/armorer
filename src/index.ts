@@ -24,8 +24,6 @@ export type {
   MinimalAbortSignal,
   ObservableLike,
   Observer,
-  OutputValidationMode,
-  OutputValidationResult,
   Subscription,
   Tool,
   ToolCallWithArguments,

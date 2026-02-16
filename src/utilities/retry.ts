@@ -51,7 +51,7 @@ type RetryOptions = {
  *
  * const fetchData = createTool({
  *   name: 'fetch-data',
- *   schema: z.object({ url: z.string() }),
+ *   input: z.object({ url: z.string() }),
  *   async execute({ url }) {
  *     const response = await fetch(url);
  *     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -112,19 +112,14 @@ export function retry<TTool extends AnyTool>(
   const runWithRetry = async (
     params: unknown,
     context: ToolContext<DefaultToolEvents>,
-    isDryRun: boolean,
   ): Promise<InferToolOutput<TTool>> => {
     const input = params as InferToolInput<TTool>;
     const executeOptions =
-      context.signal ||
-      context.timeout !== undefined ||
-      context.stream !== undefined ||
-      isDryRun
+      context.signal || context.timeout !== undefined || context.stream !== undefined
         ? {
             ...(context.signal ? { signal: context.signal } : {}),
             ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
             ...(context.stream !== undefined ? { stream: context.stream } : {}),
-            ...(isDryRun ? { dryRun: true } : {}),
           }
         : undefined;
 
@@ -192,7 +187,6 @@ export function retry<TTool extends AnyTool>(
       readonly string[],
       ToolMetadata | undefined,
       ToolContext<DefaultToolEvents>,
-      InferToolInput<TTool>,
       InferToolOutput<TTool>
     >,
     'metadata'
@@ -201,12 +195,9 @@ export function retry<TTool extends AnyTool>(
   } = {
     name,
     description,
-    schema: tool.schema as z.ZodType<InferToolInput<TTool>>,
+    input: tool.input as z.ZodType<InferToolInput<TTool>>,
     async execute(params, context) {
-      return runWithRetry(params, context, false);
-    },
-    async dryRun(params, context) {
-      return runWithRetry(params, context, true);
+      return runWithRetry(params, context);
     },
     ...(tags ? { tags } : {}),
     ...(tool.metadata !== undefined ? { metadata: tool.metadata } : {}),
@@ -218,7 +209,6 @@ export function retry<TTool extends AnyTool>(
     readonly string[],
     ToolMetadata | undefined,
     ToolContext<DefaultToolEvents>,
-    InferToolInput<TTool>,
     InferToolOutput<TTool>
   >(toolOptions) as ComposedTool<InferToolInput<TTool>, InferToolOutput<TTool>>;
 }
