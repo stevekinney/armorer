@@ -50,7 +50,7 @@ The primary API for creating and managing tools:
 import { createToolbox, createTool, isTool } from 'armorer';
 ```
 
-**Exports:** `createToolbox`, `createTool`, `createToolCall`, `combineToolbox` (plus deprecated alias `combineToolboxes`), `lazy`, `withContext`, `isTool`, `isToolbox`, `createMiddleware`, and all core types.
+**Exports:** `createToolbox`, `createTool`, `createToolCall`, `combineToolboxes` (plus deprecated alias `combineToolbox`), `lazy`, `withContext`, `isTool`, `isToolbox`, `createMiddleware`, and all core types.
 
 #### `armorer/utilities`
 
@@ -205,7 +205,7 @@ console.log(toolCall.result); // 8
 Compose toolboxes without mutating existing instances.
 
 ```typescript
-import { createToolbox, combineToolbox } from 'armorer';
+import { createToolbox, combineToolboxes } from 'armorer';
 
 const base = createToolbox([mathTool], {
   context: { region: 'us-east-1' },
@@ -222,7 +222,7 @@ const merged = base.extend(adminTools);
 // Context is shallow merged, last toolbox wins:
 // merged context => { region: 'us-east-1', role: 'admin' }
 
-const combined = combineToolbox(base, adminTools);
+const combined = combineToolboxes(base, adminTools);
 // Same merge rules, useful when combining many toolboxes at once.
 ```
 

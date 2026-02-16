@@ -3,10 +3,10 @@ import { z } from 'zod';
 
 import { combineToolbox, combineToolboxes, createTool, createToolbox } from '../src';
 
-describe('combineToolbox', () => {
+describe('combineToolboxes', () => {
   it('throws when no toolboxes are provided', () => {
-    const combine = combineToolbox as unknown as () => ReturnType<typeof createToolbox>;
-    expect(() => combine()).toThrow('combineToolbox() requires at least 1 Toolbox');
+    const combine = combineToolboxes as unknown as () => ReturnType<typeof createToolbox>;
+    expect(() => combine()).toThrow('combineToolboxes() requires at least 1 Toolbox');
   });
 
   it('combines tools from multiple toolboxes', async () => {
@@ -28,7 +28,7 @@ describe('combineToolbox', () => {
       },
     ]);
 
-    const combined = combineToolbox(a, b);
+    const combined = combineToolboxes(a, b);
 
     const resA = await combined.execute({ id: 'a-1', name: 'tool-a', arguments: {} });
     const resB = await combined.execute({ id: 'b-1', name: 'tool-b', arguments: {} });
@@ -56,7 +56,7 @@ describe('combineToolbox', () => {
       },
     ]);
 
-    const combined = combineToolbox(first, second);
+    const combined = combineToolboxes(first, second);
     const res = await combined.execute({
       id: 'echo-1',
       name: 'echo',
@@ -92,7 +92,7 @@ describe('combineToolbox', () => {
       context: { role: 'admin', shared: 'b' },
     });
 
-    const combined = combineToolbox(a, b);
+    const combined = combineToolboxes(a, b);
     const res = await combined.execute({ id: 'ctx-1', name: 'ctx', arguments: {} });
 
     expect(res.result).toEqual({
@@ -118,7 +118,7 @@ describe('combineToolbox', () => {
 
     const a = createToolbox([alpha] as const);
     const b = createToolbox([beta] as const);
-    const combined = combineToolbox(a, b);
+    const combined = combineToolboxes(a, b);
 
     expectTypeOf<ReturnType<typeof combined.tools>[number]['name']>().toEqualTypeOf<
       'alpha' | 'beta'
@@ -126,8 +126,8 @@ describe('combineToolbox', () => {
   });
 });
 
-describe('combineToolboxes', () => {
-  it('is a compatibility alias of combineToolbox', async () => {
+describe('combineToolbox', () => {
+  it('is a compatibility alias of combineToolboxes', async () => {
     const a = createToolbox([
       {
         name: 'alias-a',
@@ -145,7 +145,7 @@ describe('combineToolboxes', () => {
       },
     ]);
 
-    const combined = combineToolboxes(a, b);
+    const combined = combineToolbox(a, b);
     const result = await combined.execute({ id: 'alias', name: 'alias-b', arguments: {} });
     expect(result.result).toBe('B');
   });

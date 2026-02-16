@@ -144,17 +144,17 @@ Signature:
 function createToolbox(serialized?: SerializedToolbox, options?: ToolboxOptions): Toolbox;
 ```
 
-#### `combineToolbox(...toolboxes)`
+#### `combineToolboxes(...toolboxes)`
 
 Merges one or more toolboxes into a new toolbox. Tool collisions and context collisions both resolve with "last wins" semantics based on argument order.
 
 Signature:
 
 ```typescript
-function combineToolbox(...toolboxes: [Toolbox, ...Toolbox[]]): Toolbox;
+function combineToolboxes(...toolboxes: [Toolbox, ...Toolbox[]]): Toolbox;
 ```
 
-`combineToolboxes(...toolboxes)` is still exported as a compatibility alias but deprecated.
+`combineToolbox(...toolboxes)` is still exported as a compatibility alias but deprecated.
 
 #### `isTool(value)`
 

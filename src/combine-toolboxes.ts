@@ -29,11 +29,11 @@ type ConcatenateTools<TBoxes extends readonly unknown[]> = TBoxes extends readon
  * - If multiple toolboxes define the same tool name, the **last** one wins.
  * - Contexts are shallow-merged in the same order (last one wins on key collisions).
  */
-export function combineToolbox<
+export function combineToolboxes<
   const TBoxes extends readonly [ToolboxLike, ...ToolboxLike[]],
 >(...toolboxes: TBoxes): Toolbox<ConcatenateTools<TBoxes>> {
   if (toolboxes.length === 0) {
-    throw new TypeError('combineToolbox() requires at least 1 Toolbox');
+    throw new TypeError('combineToolboxes() requires at least 1 Toolbox');
   }
 
   const context: ToolboxContext = {};
@@ -51,10 +51,10 @@ export function combineToolbox<
 }
 
 /**
- * @deprecated Use `combineToolbox(...)` instead.
+ * @deprecated Use `combineToolboxes(...)` instead.
  */
-export function combineToolboxes<
+export function combineToolbox<
   const TBoxes extends readonly [ToolboxLike, ...ToolboxLike[]],
 >(...toolboxes: TBoxes): Toolbox<ConcatenateTools<TBoxes>> {
-  return combineToolbox(...toolboxes);
+  return combineToolboxes(...toolboxes);
 }

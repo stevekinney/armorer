@@ -498,19 +498,19 @@ const merged = base.extend(adminToolbox);
 // { workspaceId: 'ws-1', role: 'admin' }
 ```
 
-Use `combineToolbox(...)` when merging many toolboxes at once:
+Use `combineToolboxes(...)` when merging many toolboxes at once:
 
 ```typescript
-import { combineToolbox } from 'armorer';
+import { combineToolboxes } from 'armorer';
 
-const combined = combineToolbox(mathToolbox, stringToolbox, adminToolbox);
+const combined = combineToolboxes(mathToolbox, stringToolbox, adminToolbox);
 console.log(combined.tools()); // All tools from all inputs
 ```
 
-Behavior for both `.extend(toolbox)` and `combineToolbox(...)`:
+Behavior for both `.extend(toolbox)` and `combineToolboxes(...)`:
 
 - Tools are copied via `toJSON()` into a new toolbox
 - If multiple toolboxes define the same tool name, the **last** one wins
 - Contexts are shallow-merged in input order (last one wins on key collisions)
 
-`combineToolboxes(...)` remains available as a compatibility alias but is deprecated in favor of `combineToolbox(...)`.
+`combineToolbox(...)` remains available as a compatibility alias but is deprecated in favor of `combineToolboxes(...)`.
