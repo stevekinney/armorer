@@ -4,33 +4,10 @@ This document outlines potential future enhancements for Armorer. These features
 
 ## Next Up
 
-- Make `Toolbox` immutable so that we can have type safety. We'll provide and/or a `combineToolbox` utility and a `.extend()` method for composing toolboxes.
 - Take a closer look at how we handle searching and querying.
 - Additional adapters: tRPC router, REST API.
 
 ## High Priority
-
-### Streaming Response Support
-
-Status: Implemented in core execution and eventing APIs (`stream: true` with collect fallback by default).
-
-Native support for streaming responses from tools, particularly useful for:
-
-- LLM token streaming
-- Large file transfers
-- Real-time data feeds
-- Server-Sent Events (SSE)
-
-**Implementation approach:**
-
-- Extend `ToolResult` to support async iterators
-- Add streaming event types to tool event system
-- Update provider adapters to handle streaming responses
-- Add examples for SSE and WebSocket patterns
-
-**Related**: See patterns documentation for current workarounds using progress events
-
----
 
 ### Circuit Breaker Pattern (Built-in)
 
