@@ -107,6 +107,7 @@ Registry surface (`Toolbox`):
 - `register(...entries: (ToolConfiguration | Tool)[])`
 - `createTool(options)`: create and register a tool in one call
 - `execute(call | calls)`
+- `extend(...entries | toolbox)`: return a new composed toolbox without mutating the original
 - `tools()` (returns registered `Tool[]` for registry helpers)
 - `getTool(name)`
 - `getMissingTools(names)`
@@ -142,6 +143,18 @@ Signature:
 ```typescript
 function createToolbox(serialized?: SerializedToolbox, options?: ToolboxOptions): Toolbox;
 ```
+
+#### `combineToolbox(...toolboxes)`
+
+Merges one or more toolboxes into a new toolbox. Tool collisions and context collisions both resolve with "last wins" semantics based on argument order.
+
+Signature:
+
+```typescript
+function combineToolbox(...toolboxes: [Toolbox, ...Toolbox[]]): Toolbox;
+```
+
+`combineToolboxes(...toolboxes)` is still exported as a compatibility alias but deprecated.
 
 #### `isTool(value)`
 

@@ -1,13 +1,26 @@
 import {
   createToolbox,
   type SerializedToolbox,
+  type Toolbox,
   type ToolboxContext,
 } from './create-toolbox';
+import type { Tool } from './is-tool';
 
-type ToolboxLike = {
+type ToolboxLike<TTools extends readonly Tool[] = readonly Tool[]> = {
   toJSON: () => SerializedToolbox;
+  tools: () => TTools;
   getContext?: () => ToolboxContext;
 };
+
+type ToolsFromToolbox<TBox> =
+  TBox extends ToolboxLike<infer TTools> ? TTools : readonly Tool[];
+
+type ConcatenateTools<TBoxes extends readonly unknown[]> = TBoxes extends readonly [
+  infer THead,
+  ...infer TTail,
+]
+  ? [...ToolsFromToolbox<THead>, ...ConcatenateTools<TTail>]
+  : [];
 
 /**
  * Combine one or more Toolbox instances into a fresh Toolbox.
@@ -16,11 +29,11 @@ type ToolboxLike = {
  * - If multiple toolboxes define the same tool name, the **last** one wins.
  * - Contexts are shallow-merged in the same order (last one wins on key collisions).
  */
-export function combineToolboxes(
-  ...toolboxes: [ToolboxLike, ...ToolboxLike[]]
-) {
+export function combineToolbox<
+  const TBoxes extends readonly [ToolboxLike, ...ToolboxLike[]],
+>(...toolboxes: TBoxes): Toolbox<ConcatenateTools<TBoxes>> {
   if (toolboxes.length === 0) {
-    throw new TypeError('combineToolboxes() requires at least 1 Toolbox');
+    throw new TypeError('combineToolbox() requires at least 1 Toolbox');
   }
 
   const context: ToolboxContext = {};
@@ -32,5 +45,16 @@ export function combineToolboxes(
   }
 
   const configurations = toolboxes.flatMap((toolbox) => toolbox.toJSON());
-  return createToolbox(configurations, { context });
+  return createToolbox(configurations, { context }) as unknown as Toolbox<
+    ConcatenateTools<TBoxes>
+  >;
+}
+
+/**
+ * @deprecated Use `combineToolbox(...)` instead.
+ */
+export function combineToolboxes<
+  const TBoxes extends readonly [ToolboxLike, ...ToolboxLike[]],
+>(...toolboxes: TBoxes): Toolbox<ConcatenateTools<TBoxes>> {
+  return combineToolbox(...toolboxes);
 }

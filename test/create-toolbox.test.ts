@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, expectTypeOf, it } from 'bun:test';
 import { z } from 'zod';
 
 import {
@@ -188,6 +188,103 @@ describe('createToolbox', () => {
       arguments: { a: 2, b: 2 },
     });
     expect(result.result).toBe(4);
+  });
+
+  it('extend() returns a new toolbox without mutating the original', async () => {
+    const base = createToolbox([
+      makeConfiguration({
+        name: 'base-tool',
+        schema: z.object({}),
+        execute: async () => 'base',
+      }),
+    ]);
+
+    const extended = base.extend({
+      name: 'extended-tool',
+      description: 'extended',
+      schema: z.object({}),
+      execute: async () => 'extended',
+    });
+
+    const baseResult = await base.execute({
+      id: 'base-call',
+      name: 'base-tool',
+      arguments: {},
+    });
+    const missingResult = await base.execute({
+      id: 'missing-call',
+      name: 'extended-tool',
+      arguments: {},
+    });
+    const extendedResult = await extended.execute({
+      id: 'extended-call',
+      name: 'extended-tool',
+      arguments: {},
+    });
+
+    expect(baseResult.result).toBe('base');
+    expect(missingResult.error?.category).toBe('not_found');
+    expect(extendedResult.result).toBe('extended');
+  });
+
+  it('extend() can compose another toolbox and merges context (last wins)', async () => {
+    const first = createToolbox(
+      [
+        {
+          name: 'ctx-read',
+          description: 'reads context',
+          schema: z.object({}),
+          execute: async (_params, context) => {
+            const ctx = context as Record<string, unknown>;
+            return {
+              region: ctx.region,
+              role: ctx.role,
+              shared: ctx.shared,
+            };
+          },
+        },
+      ],
+      { context: { region: 'us-east-1', shared: 'first' } },
+    );
+    const second = createToolbox([], {
+      context: { role: 'admin', shared: 'second' },
+    });
+
+    const combined = first.extend(second);
+    const result = await combined.execute({ id: 'ctx-merge', name: 'ctx-read', arguments: {} });
+
+    expect(result.result).toEqual({
+      region: 'us-east-1',
+      role: 'admin',
+      shared: 'second',
+    });
+  });
+
+  it('extend() preserves tool type information', () => {
+    const alpha = createTool({
+      name: 'alpha',
+      description: 'alpha',
+      schema: z.object({}),
+      execute: async () => 'alpha',
+    });
+    const beta = createTool({
+      name: 'beta',
+      description: 'beta',
+      schema: z.object({}),
+      execute: async () => 'beta',
+    });
+
+    const base = createToolbox([alpha] as const);
+    const extendedWithEntry = base.extend(beta);
+    const extra = createToolbox([beta] as const);
+    const extendedWithToolbox = base.extend(extra);
+
+    expectTypeOf<
+      ReturnType<typeof extendedWithEntry.tools>[number]['name']
+    >().toEqualTypeOf<'alpha' | 'beta'>();
+    expectTypeOf<
+      ReturnType<typeof extendedWithToolbox.tools>[number]['name']
+    >().toEqualTypeOf<'alpha' | 'beta'>();
   });
 
   it('exports registered tools as JSON Schema via toJSON({ format: "json-schema" })', () => {

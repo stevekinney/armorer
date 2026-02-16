@@ -475,28 +475,42 @@ const restored = createToolbox(serialized);
 
 `SerializedToolbox` is a `ToolConfiguration[]` that includes execute functions, so it is meant for in-process cloning. Functions are not JSON-serializable, so `JSON.stringify(toolbox.toJSON())` will drop them. If you need cross-process persistence, store your own manifest (name, schema, metadata, module path) and rebuild configurations at startup, typically using `lazy(() => import(...))` for the execute function.
 
-### Combining Toolboxs
+### Combining Toolboxes
 
-Use `combineToolboxes` to merge multiple registries into a single fresh registry:
+Use `.extend()` for immutable composition from an existing toolbox:
 
 ```typescript
-import { combineToolboxes, createToolbox, createTool } from 'armorer';
+import { createToolbox } from 'armorer';
 
-const mathToolbox = createToolbox();
-mathToolbox.register(addTool, subtractTool);
+const base = createToolbox([addTool, subtractTool], {
+  context: { workspaceId: 'ws-1' },
+});
 
-const stringToolbox = createToolbox();
-stringToolbox.register(formatTool, parseTool);
+const extended = base.extend(formatTool, parseTool);
+// `base` is unchanged. `extended` includes all four tools.
 
-// Combine into a single registry
-const combined = combineToolboxes(mathToolbox, stringToolbox);
-console.log(combined.tools()); // All tools from both registries
+const adminToolbox = createToolbox([auditTool], {
+  context: { role: 'admin' },
+});
+
+const merged = base.extend(adminToolbox);
+// Context merge is shallow, last toolbox wins:
+// { workspaceId: 'ws-1', role: 'admin' }
 ```
 
-Behavior:
+Use `combineToolbox(...)` when merging many toolboxes at once:
 
-- Tools are copied via `toJSON()` and registered into a new toolbox
+```typescript
+import { combineToolbox } from 'armorer';
+
+const combined = combineToolbox(mathToolbox, stringToolbox, adminToolbox);
+console.log(combined.tools()); // All tools from all inputs
+```
+
+Behavior for both `.extend(toolbox)` and `combineToolbox(...)`:
+
+- Tools are copied via `toJSON()` into a new toolbox
 - If multiple toolboxes define the same tool name, the **last** one wins
-- Contexts are shallow-merged in the same order (last one wins on key collisions)
+- Contexts are shallow-merged in input order (last one wins on key collisions)
 
-This is useful for modular tool organization where different parts of your application define their own tools, and you want to expose them through a single registry.
+`combineToolboxes(...)` remains available as a compatibility alias but is deprecated in favor of `combineToolbox(...)`.

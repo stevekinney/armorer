@@ -259,6 +259,11 @@ export type ToolsFromEntries<TEntries extends ToolboxEntries> = ReadonlyArray<
   EntryToTool<TEntries[number]>
 >;
 
+type MergeTools<
+  TLeft extends readonly Tool[],
+  TRight extends readonly Tool[],
+> = ReadonlyArray<TLeft[number] | TRight[number]>;
+
 type ToolboxToolName<TTools extends readonly Tool[]> = TTools[number]['name'] & string;
 
 type ToolboxToolInput<TTool extends Tool> =
@@ -307,6 +312,12 @@ export interface Toolbox<TTools extends readonly Tool[] = readonly Tool[]> {
   ): Promise<{ [K in keyof TCalls]: ToolboxResultForCall<TTools, TCalls[K]> }>;
   execute(call: ToolCallInput, options?: ToolboxExecuteOptions): Promise<ToolResult>;
   execute(calls: ToolCallInput[], options?: ToolboxExecuteOptions): Promise<ToolResult[]>;
+  extend<const TEntries extends ToolboxEntries>(
+    ...entries: TEntries
+  ): Toolbox<MergeTools<TTools, ToolsFromEntries<TEntries>>>;
+  extend<const TOtherTools extends readonly Tool[]>(
+    toolbox: Toolbox<TOtherTools>,
+  ): Toolbox<MergeTools<TTools, TOtherTools>>;
   tools: () => TTools;
   getTool(nameOrId: string): TTools[number] | undefined;
   /**
@@ -725,6 +736,30 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
     return isMultiple ? results : results[0]!;
   }
 
+  function extend<const TExtendEntries extends ToolboxEntries>(
+    ...entries: TExtendEntries
+  ): Toolbox<MergeTools<ToolsFromEntries<TEntries>, ToolsFromEntries<TExtendEntries>>>;
+  function extend<const TOtherTools extends readonly Tool[]>(
+    toolbox: Toolbox<TOtherTools>,
+  ): Toolbox<MergeTools<ToolsFromEntries<TEntries>, TOtherTools>>;
+  function extend(...inputs: readonly unknown[]): Toolbox<any> {
+    const context = { ...baseContext };
+    const mergedEntries: ToolboxEntry[] = [...Array.from(storedConfigurations.values())];
+
+    if (inputs.length === 1 && isToolbox(inputs[0])) {
+      const other = inputs[0];
+      Object.assign(context, other.getContext?.() ?? {});
+      mergedEntries.push(...other.toJSON());
+    } else if (inputs.length > 0) {
+      mergedEntries.push(...(inputs as ToolboxEntries));
+    }
+
+    return createToolbox(mergedEntries, {
+      ...options,
+      context,
+    });
+  }
+
   function normalizeToolCall(call: ToolCallInput): ToolCall {
     const args = Object.prototype.hasOwnProperty.call(call, 'arguments')
       ? call.arguments
@@ -812,6 +847,7 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
 
   const api: Toolbox<ToolsFromEntries<TEntries>> = {
     execute,
+    extend,
     tools,
     getTool,
     getMissingTools,

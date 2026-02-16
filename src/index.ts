@@ -1,4 +1,4 @@
-export { combineToolboxes } from './combine-toolboxes';
+export { combineToolbox, combineToolboxes } from './combine-toolboxes';
 export type { CreateToolOptions, WithContext } from './create-tool';
 export { createTool, createToolCall, lazy, withContext } from './create-tool';
 export type {

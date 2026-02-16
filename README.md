@@ -50,7 +50,7 @@ The primary API for creating and managing tools:
 import { createToolbox, createTool, isTool } from 'armorer';
 ```
 
-**Exports:** `createToolbox`, `createTool`, `createToolCall`, `combineToolboxes`, `lazy`, `withContext`, `isTool`, `isToolbox`, `createMiddleware`, and all core types.
+**Exports:** `createToolbox`, `createTool`, `createToolCall`, `combineToolbox` (plus deprecated alias `combineToolboxes`), `lazy`, `withContext`, `isTool`, `isToolbox`, `createMiddleware`, and all core types.
 
 #### `armorer/utilities`
 
@@ -189,8 +189,7 @@ const addNumbers = createTool({
   },
 });
 
-const toolbox = createToolbox();
-toolbox.register(addNumbers);
+const toolbox = createToolbox([addNumbers]);
 
 const toolCall = await toolbox.execute({
   id: 'call-123',
@@ -199,6 +198,32 @@ const toolCall = await toolbox.execute({
 });
 
 console.log(toolCall.result); // 8
+```
+
+## Immutable Toolbox Composition
+
+Compose toolboxes without mutating existing instances.
+
+```typescript
+import { createToolbox, combineToolbox } from 'armorer';
+
+const base = createToolbox([mathTool], {
+  context: { region: 'us-east-1' },
+});
+
+const extended = base.extend(stringTool);
+// `base` is unchanged, `extended` has both tools.
+
+const adminTools = createToolbox([auditTool], {
+  context: { role: 'admin' },
+});
+
+const merged = base.extend(adminTools);
+// Context is shallow merged, last toolbox wins:
+// merged context => { region: 'us-east-1', role: 'admin' }
+
+const combined = combineToolbox(base, adminTools);
+// Same merge rules, useful when combining many toolboxes at once.
 ```
 
 ## Safety and Dry Run
