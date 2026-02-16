@@ -102,6 +102,67 @@ describe('pipe()', () => {
       // eslint-disable-next-line @typescript-eslint/await-thenable
       await expect(pipeline({ str: 'test' })).rejects.toThrow();
     });
+
+    it('forwards stream and dryRun options through pipeline steps', async () => {
+      const observed: Array<{ step: string; stream?: boolean; dryRun?: boolean }> = [];
+      const first = createTool({
+        name: 'pipe-capture-1',
+        description: 'captures execution context',
+        schema: z.object({ str: z.string() }),
+        async execute({ str }, context) {
+          observed.push({
+            step: 'first',
+            stream: context.stream,
+            dryRun: context.dryRun,
+          });
+          return { value: Number(str) };
+        },
+        async dryRun({ str }, context) {
+          observed.push({
+            step: 'first',
+            stream: context.stream,
+            dryRun: context.dryRun,
+          });
+          return { value: Number(str) };
+        },
+      });
+      const second = createTool({
+        name: 'pipe-capture-2',
+        description: 'captures execution context',
+        schema: z.object({ value: z.number() }),
+        async execute({ value }, context) {
+          observed.push({
+            step: 'second',
+            stream: context.stream,
+            dryRun: context.dryRun,
+          });
+          return { value: value + 1 };
+        },
+        async dryRun({ value }, context) {
+          observed.push({
+            step: 'second',
+            stream: context.stream,
+            dryRun: context.dryRun,
+          });
+          return { value: value + 1 };
+        },
+      });
+      const pipeline = pipe(first, second);
+
+      const result = await pipeline.execute(
+        createToolCall(pipeline.name, { str: '5' }, 'pipe-stream-dry'),
+        {
+          stream: true,
+          dryRun: true,
+        },
+      );
+
+      expect(result.result).toEqual({ value: 6 });
+      expect(observed).toEqual([
+        { step: 'first', stream: true, dryRun: true },
+        { step: 'second', stream: true, dryRun: true },
+      ]);
+    });
   });
 
   describe('signal handling', () => {
@@ -135,6 +196,15 @@ describe('pipe()', () => {
       return pending;
     };
 
+    const runWithPreAbortedSignal = async (reason: unknown) => {
+      const pipeline = pipe(parseNumber, double);
+      const controller = new AbortController();
+      controller.abort(reason);
+      return pipeline.execute(createToolCall(pipeline.name, { str: '5' }), {
+        signal: controller.signal,
+      });
+    };
+
     it('wraps string abort reasons as errors', async () => {
       const result = await runWithAbortReason('stop-now');
       expect(result.outcome).toBe('error');
@@ -155,6 +225,30 @@ describe('pipe()', () => {
 
     it('falls back when abort reasons are not serializable', async () => {
       const result = await runWithAbortReason(1n);
+      expect(result.outcome).toBe('error');
+      expect(result.error?.message).toContain('1');
+    });
+
+    it('normalizes pre-aborted Error reasons', async () => {
+      const result = await runWithPreAbortedSignal(new Error('pre-cancel'));
+      expect(result.outcome).toBe('error');
+      expect(result.error?.message).toContain('pre-cancel');
+    });
+
+    it('normalizes pre-aborted string reasons', async () => {
+      const result = await runWithPreAbortedSignal('pre-stop');
+      expect(result.outcome).toBe('error');
+      expect(result.error?.message).toContain('pre-stop');
+    });
+
+    it('normalizes pre-aborted object reasons', async () => {
+      const result = await runWithPreAbortedSignal({ code: 'PRE_ABORT' });
+      expect(result.outcome).toBe('error');
+      expect(result.error?.message).toContain('PRE_ABORT');
+    });
+
+    it('falls back for pre-aborted unserializable reasons', async () => {
+      const result = await runWithPreAbortedSignal(1n);
       expect(result.outcome).toBe('error');
       expect(result.error?.message).toContain('1');
     });
@@ -275,6 +369,58 @@ describe('pipe()', () => {
       expect(result.error).toBeDefined();
       expect(result.error?.message).toContain('Pipeline failed at step 1 (failing)');
     });
+
+    it('stringifies object errors thrown by pipeline steps', async () => {
+      const failing = createTool({
+        name: 'object-failing',
+        description: 'throws object errors',
+        schema: z.object({ value: z.number() }),
+        execute: async () => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error
+          throw { code: 'OBJECT_FAIL' };
+        },
+      });
+
+      const pipeline = pipe(parseNumber, failing);
+      const stepErrors: Error[] = [];
+      (pipeline as any).addEventListener('step-error', (event: any) => {
+        stepErrors.push(event.detail.error as Error);
+      });
+
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(pipeline({ str: '5' })).rejects.toThrow(
+        'Pipeline failed at step 1 (object-failing)',
+      );
+      expect(stepErrors).toHaveLength(1);
+      expect(stepErrors[0]?.message).toBe(JSON.stringify({ code: 'OBJECT_FAIL' }));
+    });
+
+    it('falls back to String(error) when object errors are not serializable', async () => {
+      const circular: any = { code: 'CYCLE' };
+      circular.self = circular;
+
+      const failing = createTool({
+        name: 'circular-failing',
+        description: 'throws circular object errors',
+        schema: z.object({ value: z.number() }),
+        execute: async () => {
+          throw circular;
+        },
+      });
+
+      const pipeline = pipe(parseNumber, failing);
+      const stepErrors: Error[] = [];
+      (pipeline as any).addEventListener('step-error', (event: any) => {
+        stepErrors.push(event.detail.error as Error);
+      });
+
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(pipeline({ str: '5' })).rejects.toThrow(
+        'Pipeline failed at step 1 (circular-failing)',
+      );
+      expect(stepErrors).toHaveLength(1);
+      expect(stepErrors[0]?.message).toBe('[object Object]');
+    });
   });
 
   describe('composability', () => {
@@ -381,6 +527,43 @@ describe('bind()', () => {
       /Zod object schema/,
     );
   });
+
+  it('forwards stream and dryRun options to the bound tool', async () => {
+    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+    const capture = createTool({
+      name: 'capture-bound',
+      description: 'captures context values',
+      schema: z.object({ a: z.number(), b: z.number() }),
+      async execute({ a, b }, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return a + b;
+      },
+      async dryRun({ a, b }, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return a + b;
+      },
+    });
+
+    const bound = bind(capture, { a: 2 });
+    const normal = await (bound as any).executeWith({
+      params: { b: 3 },
+      stream: true,
+    });
+    const dryRun = await bound.execute(
+      createToolCall(bound.name, { b: 4 }, 'bind-dry-run'),
+      {
+        stream: true,
+        dryRun: true,
+      },
+    );
+
+    expect(normal.result).toBe(5);
+    expect(dryRun.result).toBe(6);
+    expect(observed).toEqual([
+      { stream: true, dryRun: false },
+      { stream: true, dryRun: true },
+    ]);
+  });
 });
 
 describe('tap()', () => {
@@ -444,6 +627,33 @@ describe('tap()', () => {
     expect(observed.signal).toBe(controller.signal);
     expect(observed.timeout).toBe(99);
   });
+
+  it('forwards stream and dryRun to the wrapped tool', async () => {
+    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+    const tool = createTool({
+      name: 'tap-stream',
+      description: 'captures stream context',
+      schema: z.object({ value: z.number() }),
+      async execute(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return { value: 1 };
+      },
+      async dryRun(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return { value: 1 };
+      },
+    });
+
+    const tapped = tap(tool, async () => {});
+    const result = await (tapped as any).executeWith({
+      params: { value: 1 },
+      stream: true,
+      dryRun: true,
+    });
+
+    expect(result.result).toEqual({ value: 1 });
+    expect(observed).toEqual([{ stream: true, dryRun: true }]);
+  });
 });
 
 describe('when()', () => {
@@ -504,6 +714,33 @@ describe('when()', () => {
 
     expect(observed.signal).toBe(controller.signal);
     expect(observed.timeout).toBe(55);
+  });
+
+  it('forwards stream and dryRun to the selected branch', async () => {
+    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+    const capture = createTool({
+      name: 'when-stream-capture',
+      description: 'captures stream context',
+      schema: z.object({ value: z.number() }),
+      async execute(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return { value: 2 };
+      },
+      async dryRun(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return { value: 2 };
+      },
+    });
+
+    const conditional = when(() => true, capture);
+    const result = await (conditional as any).executeWith({
+      params: { value: 1 },
+      stream: true,
+      dryRun: true,
+    });
+
+    expect(result.result).toEqual({ value: 2 });
+    expect(observed).toEqual([{ stream: true, dryRun: true }]);
   });
 });
 
@@ -586,6 +823,36 @@ describe('parallel()', () => {
       expect(entry.signal).toBe(controller.signal);
       expect(entry.timeout).toBe(25);
     }
+  });
+
+  it('forwards stream and dryRun to each parallel branch', async () => {
+    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+    const capture = createTool({
+      name: 'parallel-stream-capture',
+      description: 'captures stream context',
+      schema: z.object({ value: z.number() }),
+      async execute(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return { value: 1 };
+      },
+      async dryRun(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return { value: 1 };
+      },
+    });
+
+    const combined = parallel(capture, capture);
+    const result = await (combined as any).executeWith({
+      params: { value: 1 },
+      stream: true,
+      dryRun: true,
+    });
+
+    expect(result.result).toEqual([{ value: 1 }, { value: 1 }]);
+    expect(observed).toEqual([
+      { stream: true, dryRun: true },
+      { stream: true, dryRun: true },
+    ]);
   });
 });
 
@@ -756,6 +1023,33 @@ describe('retry()', () => {
     const wrapped = retry(unstable, { attempts: 1 });
     // eslint-disable-next-line @typescript-eslint/await-thenable
     await expect(wrapped({ value: 1 })).rejects.toThrow('[object Object]');
+  });
+
+  it('forwards stream and dryRun options to retried executions', async () => {
+    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+    const capture = createTool({
+      name: 'retry-stream-capture',
+      description: 'captures stream context',
+      schema: z.object({ value: z.number() }),
+      async execute(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return { value: 42 };
+      },
+      async dryRun(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return { value: 42 };
+      },
+    });
+
+    const wrapped = retry(capture, { attempts: 1 });
+    const result = await (wrapped as any).executeWith({
+      params: { value: 1 },
+      stream: true,
+      dryRun: true,
+    });
+
+    expect(result.result).toEqual({ value: 42 });
+    expect(observed).toEqual([{ stream: true, dryRun: true }]);
   });
 });
 

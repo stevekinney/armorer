@@ -838,6 +838,7 @@ export function createTool<
         ...(options.signal ? { signal: options.signal } : {}),
         ...(options.timeout !== undefined ? { timeout: options.timeout } : {}),
         dryRun: isDryRun,
+        ...(options.stream !== undefined ? { stream: options.stream } : {}),
       };
 
       // `TContext` may be a subtype of `ToolContext<E>` (e.g. with extra fields).
@@ -851,23 +852,245 @@ export function createTool<
           ? withTimeout(runner, options.timeout)
           : runner;
 
-      const value = await raceWithSignal(timed, options.signal);
-      const outputValidation = validateOutput(
-        outputSchema,
-        value,
-        resolvedOutputValidationMode,
-      );
-      if (outputValidation) {
-        if (outputValidation.success) {
-          emit('output-validate-success', { ...parsedDetail, result: value });
-        } else {
-          emit('output-validate-error', {
-            ...parsedDetail,
-            result: value,
-            error: outputValidation.error,
-          });
-          if (resolvedOutputValidationMode === 'throw') {
-            throw outputValidation.error;
+      let value: unknown = await raceWithSignal(timed, options.signal);
+      let outputValidation: OutputValidationResult | undefined;
+      let outputDigest: string | undefined;
+      let usedIncrementalValidation = false;
+      const streamDeadline =
+        typeof options.timeout === 'number' ? Date.now() + options.timeout : undefined;
+
+      const assertStreamingWindow = () => {
+        if (options.signal?.aborted) {
+          throw createAbortRejection(options.signal.reason);
+        }
+        if (streamDeadline !== undefined && Date.now() > streamDeadline) {
+          throw new Error('TIMEOUT');
+        }
+      };
+
+      const createStreamingAccumulator = () => ({
+        chunks: [] as unknown[],
+        index: 0,
+        completed: false,
+        validationChecked: false,
+        validationFailed: false,
+        validationError: undefined as unknown,
+        digest: digestOptions.output ? createHash(digestOptions.algorithm) : undefined,
+      });
+
+      const processStreamingChunk = (
+        chunk: unknown,
+        accumulator: ReturnType<typeof createStreamingAccumulator>,
+      ) => {
+        emit('stream-chunk', { chunk, index: accumulator.index });
+        emit('output-chunk', { chunk });
+        accumulator.chunks.push(chunk);
+        if (accumulator.digest) {
+          accumulator.digest.update(stableStringify(chunk));
+        }
+        if (outputSchema) {
+          accumulator.validationChecked = true;
+          const chunkValidation = validateOutput(
+            outputSchema,
+            chunk,
+            resolvedOutputValidationMode,
+          );
+          if (chunkValidation) {
+            if (chunkValidation.success) {
+              emit('output-validate-success', { ...parsedDetail, result: chunk });
+            } else {
+              emit('output-validate-error', {
+                ...parsedDetail,
+                result: chunk,
+                error: chunkValidation.error,
+              });
+              if (!accumulator.validationFailed) {
+                accumulator.validationError = chunkValidation.error;
+              }
+              accumulator.validationFailed = true;
+              if (resolvedOutputValidationMode === 'throw') {
+                throw chunkValidation.error;
+              }
+            }
+          }
+        }
+        accumulator.index += 1;
+      };
+
+      const finalizeStreamingAccumulator = (
+        accumulator: ReturnType<typeof createStreamingAccumulator>,
+      ): {
+        collected: unknown[];
+        outputDigest?: string;
+        outputValidation?: OutputValidationResult;
+      } => {
+        const finalizedDigest = accumulator.digest?.digest('hex');
+        const finalizedValidation = accumulator.validationChecked
+          ? accumulator.validationFailed
+            ? { success: false, error: accumulator.validationError }
+            : { success: true }
+          : undefined;
+        return {
+          collected: accumulator.chunks,
+          ...(finalizedDigest !== undefined ? { outputDigest: finalizedDigest } : {}),
+          ...(finalizedValidation !== undefined
+            ? { outputValidation: finalizedValidation }
+            : {}),
+        };
+      };
+
+      if (isAsyncIterable(value)) {
+        if (options.stream === true) {
+          emit('stream-start', { mode: 'stream' });
+          const streamSource = value;
+          const accumulator = createStreamingAccumulator();
+          const stream: AsyncIterable<unknown> = {
+            async *[Symbol.asyncIterator]() {
+              let streamError: unknown;
+              try {
+                for await (const chunk of streamSource) {
+                  assertStreamingWindow();
+                  processStreamingChunk(chunk, accumulator);
+                  yield chunk;
+                }
+                accumulator.completed = true;
+              } catch (error) {
+                streamError = error;
+                emit('stream-error', { error, index: accumulator.index });
+                throw error;
+              } finally {
+                const finalized = finalizeStreamingAccumulator(accumulator);
+                emit('stream-end', {
+                  chunks: accumulator.index,
+                  completed: accumulator.completed,
+                });
+                if (streamError === undefined) {
+                  emit('execute-success', {
+                    ...parsedDetail,
+                    result: finalized.collected,
+                    dryRun: isDryRun,
+                  });
+                  emit('settled', {
+                    ...parsedDetail,
+                    result: finalized.collected,
+                    dryRun: isDryRun,
+                  });
+                  const policyAfter: ToolPolicyAfterContext = {
+                    ...policyContext,
+                    outcome: 'success',
+                    result: finalized.collected,
+                  };
+                  if (finalized.outputDigest !== undefined) {
+                    policyAfter.outputDigest = finalized.outputDigest;
+                  }
+                  if (finalized.outputValidation !== undefined) {
+                    policyAfter.outputValidation = finalized.outputValidation;
+                  }
+                  await runPolicyAfter(policyAfter);
+                  const successDetails: {
+                    result?: unknown;
+                    inputDigest?: string;
+                    outputDigest?: string;
+                    outputValidation?: OutputValidationResult;
+                  } = { result: finalized.collected };
+                  if (inputDigest !== undefined) {
+                    successDetails.inputDigest = inputDigest;
+                  }
+                  if (finalized.outputDigest !== undefined) {
+                    successDetails.outputDigest = finalized.outputDigest;
+                  }
+                  if (finalized.outputValidation !== undefined) {
+                    successDetails.outputValidation = finalized.outputValidation;
+                  }
+                  finishTelemetry('success', successDetails);
+                } else {
+                  emit('execute-error', {
+                    ...parsedDetail,
+                    error: streamError,
+                    dryRun: isDryRun,
+                  });
+                  emit('settled', {
+                    ...parsedDetail,
+                    error: streamError,
+                    dryRun: isDryRun,
+                  });
+                  const streamErrorCategory = classifyErrorCategory(streamError);
+                  await runPolicyAfter({
+                    ...policyContext,
+                    outcome: 'error',
+                    errorCategory: streamErrorCategory,
+                    error: streamError,
+                  });
+                  const errorDetails: {
+                    error?: unknown;
+                    errorCategory?: ToolErrorCategory;
+                    inputDigest?: string;
+                    dryRun?: boolean;
+                  } = {
+                    error: streamError,
+                    errorCategory: streamErrorCategory,
+                    dryRun: isDryRun,
+                  };
+                  if (inputDigest !== undefined) {
+                    errorDetails.inputDigest = inputDigest;
+                  }
+                  finishTelemetry('error', errorDetails);
+                }
+              }
+            },
+          };
+          const callId = typedToolCall.id;
+          return {
+            callId,
+            outcome: 'success',
+            content: '[stream]',
+            toolCallId: callId,
+            toolName: name,
+            result: stream,
+            stream,
+            inputDigest,
+            dryRun: isDryRun,
+          } as ToolResult;
+        }
+
+        emit('stream-start', { mode: 'collect' });
+        const accumulator = createStreamingAccumulator();
+        try {
+          for await (const chunk of value) {
+            assertStreamingWindow();
+            processStreamingChunk(chunk, accumulator);
+          }
+          accumulator.completed = true;
+          emit('stream-end', { chunks: accumulator.index, completed: true });
+        } catch (error) {
+          emit('stream-error', { error, index: accumulator.index });
+          throw error;
+        }
+        const finalized = finalizeStreamingAccumulator(accumulator);
+        value = finalized.collected;
+        outputDigest = finalized.outputDigest;
+        outputValidation = finalized.outputValidation;
+        usedIncrementalValidation = true;
+      }
+
+      if (!usedIncrementalValidation) {
+        outputValidation = validateOutput(
+          outputSchema,
+          value,
+          resolvedOutputValidationMode,
+        );
+        if (outputValidation) {
+          if (outputValidation.success) {
+            emit('output-validate-success', { ...parsedDetail, result: value });
+          } else {
+            emit('output-validate-error', {
+              ...parsedDetail,
+              result: value,
+              error: outputValidation.error,
+            });
+            if (resolvedOutputValidationMode === 'throw') {
+              throw outputValidation.error;
+            }
           }
         }
       }
@@ -908,9 +1131,9 @@ export function createTool<
         }
       }
 
-      const outputDigest = digestOptions.output
-        ? computeDigest(value, digestOptions.algorithm)
-        : undefined;
+      if (outputDigest === undefined && digestOptions.output) {
+        outputDigest = computeDigest(value, digestOptions.algorithm);
+      }
       emit('execute-success', { ...parsedDetail, result: value, dryRun: isDryRun });
       emit('settled', { ...parsedDetail, result: value, dryRun: isDryRun });
       const policyAfter: ToolPolicyAfterContext = {
@@ -1549,6 +1772,13 @@ function stableStringify(value: unknown): string {
       .join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
+    return false;
+  }
+  return Symbol.asyncIterator in value;
 }
 
 function classifyErrorCategory(error: unknown): ToolErrorCategory {

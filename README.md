@@ -275,7 +275,12 @@ if (result.outcome === 'action_required') {
 Toolbox provides helpers to integrate with LLM providers like OpenAI.
 
 ```typescript
-import { toOpenAI, parseToolCalls, formatToolResults } from 'armorer/adapters/openai';
+import {
+  toOpenAI,
+  parseToolCalls,
+  formatToolResults,
+  formatToolResultsAsync,
+} from 'armorer/adapters/openai';
 
 // 1. Export tools
 const tools = toOpenAI(toolbox);
@@ -289,6 +294,9 @@ const results = await toolbox.execute(toolCalls);
 
 // 4. Format results
 const messages = formatToolResults(results);
+
+// Use async formatter when any tool call uses { stream: true }
+const streamingMessages = await formatToolResultsAsync(results);
 ```
 
 ## Observability (OpenTelemetry)
@@ -426,7 +434,7 @@ const greetUser = createTool({
 
 Tools are callable. `await tool(params)` and `await tool.execute(params)` are equivalent. If you need a `ToolResult` object instead of throwing on errors, use `tool.execute(toolCall)` or `tool.executeWith(...)`.
 
-`executeWith(...)` lets you supply params plus `callId`, `timeout` (milliseconds), and `signal` in a single call, returning a `ToolResult` instead of throwing. `rawExecute(...)` invokes the underlying implementation with a full `ToolContext` when you need precise control over dispatch/meta or to bypass the `ToolCall` wrapper.
+`executeWith(...)` lets you supply params plus `callId`, `timeout` (milliseconds), `signal`, and `stream` in a single call, returning a `ToolResult` instead of throwing. `rawExecute(...)` invokes the underlying implementation with a full `ToolContext` when you need precise control over dispatch/meta or to bypass the `ToolCall` wrapper.
 
 Tool schemas must be object schemas (`z.object(...)` or a plain object shape). Tool calls always pass a JSON object for `arguments`, so wrap primitives inside an object (for example, `z.object({ value: z.number() })`).
 
@@ -575,6 +583,49 @@ tool.addEventListener('progress', (event) => {
   }
 });
 ```
+
+### Streaming Output
+
+Tools that return an `AsyncIterable` support two execution modes:
+
+- default (`stream` omitted/`false`): Armorer **collects** chunks into an array and returns that array as `result`.
+- `stream: true`: Armorer returns a live stream on `ToolResult.stream` (and `ToolResult.result`), and you consume it incrementally.
+
+```typescript
+const streamTool = createTool({
+  name: 'stream-tool',
+  description: 'Emits tokens',
+  schema: z.object({}),
+  async execute() {
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield 'hello';
+        yield 'world';
+      },
+    };
+  },
+});
+
+// Collect fallback (default)
+const collected = await streamTool.execute({
+  id: 'collect-1',
+  name: 'stream-tool',
+  arguments: {},
+});
+console.log(collected.result); // ['hello', 'world']
+
+// Live stream mode
+const live = await streamTool.execute(
+  { id: 'live-1', name: 'stream-tool', arguments: {} },
+  { stream: true },
+);
+
+for await (const chunk of live.stream!) {
+  console.log('chunk', chunk);
+}
+```
+
+Stream lifecycle events are emitted for both modes: `stream-start`, `stream-chunk`, `stream-end`, and `stream-error`. `output-chunk` continues to be emitted for compatibility.
 
 ### Dispatching Progress Events
 

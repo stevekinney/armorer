@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 
@@ -627,6 +629,267 @@ describe('createTool', () => {
     expect(toolPromise).toBeInstanceOf(Promise);
     const tool = await toolPromise;
     expect(tool.metadata).toEqual({ source: 'async-factory' });
+  });
+
+  it('collects async-iterable results by default and emits stream lifecycle events', async () => {
+    const tool = createTool({
+      name: 'collect-stream',
+      description: 'collects stream output by default',
+      schema: z.object({}),
+      async execute() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield 1;
+            yield 2;
+          },
+        };
+      },
+    });
+
+    const streamEvents: string[] = [];
+    tool.addEventListener('stream-start', (event) => {
+      streamEvents.push(`start:${event.detail.mode}`);
+    });
+    tool.addEventListener('stream-chunk', (event) => {
+      streamEvents.push(`chunk:${event.detail.index}:${event.detail.chunk}`);
+    });
+    tool.addEventListener('stream-end', (event) => {
+      streamEvents.push(`end:${event.detail.chunks}:${event.detail.completed}`);
+    });
+
+    const result = await tool.execute({} as any);
+    expect(result).toEqual([1, 2]);
+    const callResult = await tool.execute({ id: 'c1', name: 'collect-stream', arguments: {} });
+    expect(callResult.result).toEqual([1, 2]);
+    expect(callResult.stream).toBeUndefined();
+    expect(streamEvents).toEqual([
+      'start:collect',
+      'chunk:0:1',
+      'chunk:1:2',
+      'end:2:true',
+      'start:collect',
+      'chunk:0:1',
+      'chunk:1:2',
+      'end:2:true',
+    ]);
+  });
+
+  it('preserves async-iterable results when stream mode is enabled', async () => {
+    const executeSuccess: unknown[] = [];
+    const tool = createTool({
+      name: 'stream-mode',
+      description: 'returns a live stream',
+      schema: z.object({}),
+      async execute() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield 'a';
+            yield 'b';
+          },
+        };
+      },
+    });
+    tool.addEventListener('execute-success', (event) => {
+      executeSuccess.push(event.detail.result);
+    });
+
+    const result = await tool.execute(
+      { id: 's1', name: 'stream-mode', arguments: {} },
+      { stream: true },
+    );
+    expect(result.stream).toBeDefined();
+    expect(result.content).toBe('[stream]');
+    expect(result.result).toBe(result.stream);
+
+    const chunks: string[] = [];
+    for await (const chunk of result.stream!) {
+      chunks.push(chunk as string);
+    }
+    expect(chunks).toEqual(['a', 'b']);
+    expect(executeSuccess).toEqual([['a', 'b']]);
+  });
+
+  it('validates and digests streams incrementally in collect mode', async () => {
+    const validationErrors: unknown[] = [];
+    const tool = createTool({
+      name: 'stream-validate-digest',
+      description: 'validates stream chunks',
+      schema: z.object({}),
+      outputSchema: z.number(),
+      digests: { output: true, input: false, algorithm: 'sha256' },
+      async execute() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield 1;
+            yield 2;
+          },
+        };
+      },
+    });
+    tool.addEventListener('output-validate-error', (event) => {
+      validationErrors.push(event.detail.error);
+    });
+
+    const result = await tool.execute({ id: 'd1', name: 'stream-validate-digest', arguments: {} });
+    expect(result.result).toEqual([1, 2]);
+    expect(result.outputValidation).toEqual({ success: true });
+    const expectedDigest = createHash('sha256').update('1').update('2').digest('hex');
+    expect(result.outputDigest).toBe(expectedDigest);
+    expect(validationErrors).toEqual([]);
+  });
+
+  it('returns validation errors when incremental stream validation fails in throw mode', async () => {
+    const streamErrors: unknown[] = [];
+    const tool = createTool({
+      name: 'stream-validate-throw',
+      description: 'throws on invalid chunk',
+      schema: z.object({}),
+      outputSchema: z.number(),
+      outputValidationMode: 'throw',
+      async execute() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield 1;
+            yield 'bad';
+          },
+        };
+      },
+    });
+    tool.addEventListener('stream-error', (event) => {
+      streamErrors.push(event.detail.error);
+    });
+
+    const result = await tool.execute({
+      id: 'v1',
+      name: 'stream-validate-throw',
+      arguments: {},
+    });
+    expect(result.outcome).toBe('error');
+    expect(result.error?.category).toBe('validation');
+    expect(streamErrors).toHaveLength(1);
+  });
+
+  it('emits telemetry with incremental validation and digest details in stream mode', async () => {
+    const finishedDetails: any[] = [];
+    const tool = createTool({
+      name: 'stream-telemetry-success',
+      description: 'streams with telemetry metadata',
+      schema: z.object({ tag: z.string() }),
+      outputSchema: z.number(),
+      telemetry: true,
+      digests: { input: true, output: true, algorithm: 'sha256' },
+      async execute() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield 3;
+            yield 4;
+          },
+        };
+      },
+    });
+    tool.addEventListener('tool.finished', (event) => {
+      finishedDetails.push(event.detail);
+    });
+
+    const result = await tool.execute(
+      { id: 'stream-telemetry-1', name: 'stream-telemetry-success', arguments: { tag: 'ok' } },
+      { stream: true },
+    );
+    expect(result.inputDigest).toMatch(/^[a-f0-9]{64}$/);
+
+    const chunks: number[] = [];
+    for await (const chunk of result.stream!) {
+      chunks.push(chunk as number);
+    }
+    expect(chunks).toEqual([3, 4]);
+    expect(finishedDetails).toHaveLength(1);
+    expect(finishedDetails[0].status).toBe('success');
+    expect(finishedDetails[0].inputDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(finishedDetails[0].outputDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(finishedDetails[0].outputValidation).toEqual({ success: true });
+  });
+
+  it('emits stream and execution error events when live streams fail mid-flight', async () => {
+    const streamErrors: unknown[] = [];
+    const streamEndStates: boolean[] = [];
+    const finishedDetails: any[] = [];
+    const tool = createTool({
+      name: 'stream-live-failure',
+      description: 'throws during streaming iteration',
+      schema: z.object({}),
+      telemetry: true,
+      digests: { input: true, output: false, algorithm: 'sha256' },
+      async execute() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield 'first';
+            throw new Error('stream exploded');
+          },
+        };
+      },
+    });
+    tool.addEventListener('stream-error', (event) => {
+      streamErrors.push(event.detail.error);
+    });
+    tool.addEventListener('stream-end', (event) => {
+      streamEndStates.push(event.detail.completed);
+    });
+    tool.addEventListener('tool.finished', (event) => {
+      finishedDetails.push(event.detail);
+    });
+
+    const result = await tool.execute(
+      { id: 'stream-fail-1', name: 'stream-live-failure', arguments: {} },
+      { stream: true },
+    );
+
+    const consumed: string[] = [];
+    let thrown: unknown;
+    try {
+      for await (const chunk of result.stream!) {
+        consumed.push(chunk as string);
+      }
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(consumed).toEqual(['first']);
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain('stream exploded');
+    expect(streamErrors).toHaveLength(1);
+    expect(streamEndStates).toEqual([false]);
+    expect(finishedDetails).toHaveLength(1);
+    expect(finishedDetails[0].status).toBe('error');
+    expect(finishedDetails[0].inputDigest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('returns timeout errors when stream collection exceeds the execution timeout', async () => {
+    const streamErrors: unknown[] = [];
+    const tool = createTool({
+      name: 'stream-collect-timeout',
+      description: 'times out while collecting stream output',
+      schema: z.object({}),
+      async execute() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield 'first';
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            yield 'second';
+          },
+        };
+      },
+    });
+    tool.addEventListener('stream-error', (event) => {
+      streamErrors.push(event.detail.error);
+    });
+
+    const result = await tool.execute(
+      { id: 'stream-timeout-1', name: 'stream-collect-timeout', arguments: {} },
+      { timeout: 5 },
+    );
+    expect(result.outcome).toBe('error');
+    expect(result.error?.category).toBe('timeout');
+    expect(streamErrors).toHaveLength(1);
   });
 
   describe('schema normalization', () => {

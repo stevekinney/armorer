@@ -188,10 +188,14 @@ export function pipe(...tools: AnyTool[]): AnyTool {
   ) => {
     let result: unknown = input;
     const executeOptions =
-      context.signal || context.timeout !== undefined || isDryRun
+      context.signal ||
+      context.timeout !== undefined ||
+      context.stream !== undefined ||
+      isDryRun
         ? {
             ...(context.signal ? { signal: context.signal } : {}),
             ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
+            ...(context.stream !== undefined ? { stream: context.stream } : {}),
             ...(isDryRun ? { dryRun: true } : {}),
           }
         : undefined;
@@ -317,10 +321,11 @@ export function bind<TTool extends AnyTool, TBound extends BindParams<TTool>>(
     async execute(params, context) {
       const merged = mergeBoundParams(params, bound);
       const executeOptions =
-        context.signal || context.timeout !== undefined
+        context.signal || context.timeout !== undefined || context.stream !== undefined
           ? {
               ...(context.signal ? { signal: context.signal } : {}),
               ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
+              ...(context.stream !== undefined ? { stream: context.stream } : {}),
             }
           : undefined;
       const result = await tool.execute(merged as InferToolInput<TTool>, executeOptions);
@@ -329,13 +334,17 @@ export function bind<TTool extends AnyTool, TBound extends BindParams<TTool>>(
     async dryRun(params, context) {
       const merged = mergeBoundParams(params, bound);
       const executeOptions =
-        context.signal || context.timeout !== undefined
+        context.signal || context.timeout !== undefined || context.stream !== undefined
           ? {
               ...(context.signal ? { signal: context.signal } : {}),
               ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
+              ...(context.stream !== undefined ? { stream: context.stream } : {}),
               dryRun: true,
             }
-          : { dryRun: true };
+          : {
+              ...(context.stream !== undefined ? { stream: context.stream } : {}),
+              dryRun: true,
+            };
       const result = await tool.execute(merged as InferToolInput<TTool>, executeOptions);
       return result as InferToolOutput<TTool>;
     },

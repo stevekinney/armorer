@@ -234,6 +234,10 @@ export type DefaultToolEvents = {
     dryRun?: boolean;
   } & ToolEventDetailContext;
   progress: { percent?: number; message?: string };
+  'stream-start': { mode: 'stream' | 'collect' };
+  'stream-chunk': { chunk: unknown; index: number };
+  'stream-end': { chunks: number; completed: boolean };
+  'stream-error': { error: unknown; index: number };
   'output-chunk': { chunk: unknown };
   log: { level: 'debug' | 'info' | 'warn' | 'error'; message: string; data?: unknown };
   cancelled: { reason?: string };
@@ -257,6 +261,7 @@ export interface RuntimeToolContext<
   /** Execution timeout in milliseconds. */
   timeout?: number;
   dryRun?: boolean;
+  stream?: boolean;
 }
 
 export type ToolContext<E extends ToolEventsMap = DefaultToolEvents> =
@@ -267,6 +272,11 @@ export interface ToolExecuteOptions {
   /** Execution timeout in milliseconds. */
   timeout?: number;
   dryRun?: boolean;
+  /**
+   * When true, preserve async-iterable results as live streams.
+   * When false/omitted, async-iterables are collected into arrays.
+   */
+  stream?: boolean;
 }
 
 /**

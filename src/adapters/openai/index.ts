@@ -149,19 +149,12 @@ export function formatToolResults(
 ): OpenAIToolMessage[] {
   const list = Array.isArray(results) ? results : [results];
   return list.map((result) => {
-    const content =
-      typeof result.content === 'string'
-        ? result.content
-        : result.content === undefined || result.content === null
-          ? 'null'
-          : (() => {
-              try {
-                return JSON.stringify(result.content);
-              } catch {
-                // eslint-disable-next-line @typescript-eslint/no-base-to-string
-                return String(result.content);
-              }
-            })();
+    if (result.stream || isAsyncIterable(result.result)) {
+      throw new Error(
+        'formatToolResults does not support streaming results. Use formatToolResultsAsync or execute without { stream: true }.',
+      );
+    }
+    const content = stringifyToolContent(result.content);
 
     return {
       role: 'tool',
@@ -169,6 +162,30 @@ export function formatToolResults(
       content,
     };
   });
+}
+
+/**
+ * Async variant of `formatToolResults(...)` that supports streaming results.
+ * Streaming payloads are collected into arrays before serialization.
+ */
+export async function formatToolResultsAsync(
+  results: ToolResult | ToolResult[],
+): Promise<OpenAIToolMessage[]> {
+  const list = Array.isArray(results) ? results : [results];
+  const messages = await Promise.all(
+    list.map(async (result) => {
+      const stream =
+        result.stream ?? (isAsyncIterable(result.result) ? result.result : null);
+      const contentSource =
+        stream !== null ? await collectAsyncIterable(stream) : result.content;
+      return {
+        role: 'tool' as const,
+        tool_call_id: result.toolCallId,
+        content: stringifyToolContent(contentSource),
+      };
+    }),
+  );
+  return messages;
 }
 
 function convertToOpenAI(
@@ -196,4 +213,34 @@ function stripSchemaId(schema: JSONSchema): JSONSchema {
     delete (copy as Record<string, unknown>)['$schema'];
   }
   return copy;
+}
+
+function stringifyToolContent(content: unknown): string {
+  return typeof content === 'string'
+    ? content
+    : content === undefined || content === null
+      ? 'null'
+      : (() => {
+          try {
+            return JSON.stringify(content);
+          } catch {
+            // eslint-disable-next-line @typescript-eslint/no-base-to-string
+            return String(content);
+          }
+        })();
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
+    return false;
+  }
+  return Symbol.asyncIterator in value;
+}
+
+async function collectAsyncIterable(stream: AsyncIterable<unknown>): Promise<unknown[]> {
+  const chunks: unknown[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  return chunks;
 }

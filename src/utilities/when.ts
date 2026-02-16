@@ -81,10 +81,14 @@ export function when<
   ) => {
     const input = params as InferToolInput<TTool>;
     const executeOptions =
-      context.signal || context.timeout !== undefined || isDryRun
+      context.signal ||
+      context.timeout !== undefined ||
+      context.stream !== undefined ||
+      isDryRun
         ? {
             ...(context.signal ? { signal: context.signal } : {}),
             ...(context.timeout !== undefined ? { timeout: context.timeout } : {}),
+            ...(context.stream !== undefined ? { stream: context.stream } : {}),
             ...(isDryRun ? { dryRun: true } : {}),
           }
         : undefined;

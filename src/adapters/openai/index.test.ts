@@ -3,7 +3,12 @@ import { z } from 'zod';
 
 import { createTool } from '../../create-tool';
 import { createToolbox } from '../../create-toolbox';
-import { formatToolResults, parseToolCalls, toOpenAI } from './index';
+import {
+  formatToolResults,
+  formatToolResultsAsync,
+  parseToolCalls,
+  toOpenAI,
+} from './index';
 
 describe('toOpenAI', () => {
   const tool = createTool({
@@ -78,6 +83,11 @@ describe('toOpenAI', () => {
 });
 
 describe('parseToolCalls', () => {
+  it('returns an empty array when tool calls are missing', () => {
+    expect(parseToolCalls(undefined)).toEqual([]);
+    expect(parseToolCalls(null)).toEqual([]);
+  });
+
   it('parses valid tool calls', () => {
     const calls = [
       {
@@ -171,6 +181,108 @@ describe('formatToolResults', () => {
         role: 'tool',
         tool_call_id: 'call_2',
         content: '{"foo":"bar"}',
+      },
+    ]);
+  });
+
+  it('throws for streaming results', () => {
+    const result = {
+      callId: 'call_1',
+      outcome: 'success' as const,
+      content: '[stream]',
+      toolCallId: 'call_1',
+      toolName: 'tool1',
+      result: {
+        async *[Symbol.asyncIterator]() {
+          yield 'a';
+        },
+      },
+      stream: {
+        async *[Symbol.asyncIterator]() {
+          yield 'a';
+        },
+      },
+    };
+
+    expect(() => formatToolResults(result)).toThrow(
+      'formatToolResults does not support streaming results.',
+    );
+  });
+});
+
+describe('formatToolResultsAsync', () => {
+  it('formats non-streaming results without collection', async () => {
+    const result = {
+      callId: 'call_plain',
+      outcome: 'success' as const,
+      content: { ok: true },
+      toolCallId: 'call_plain',
+      toolName: 'tool-plain',
+      result: { ok: true },
+    };
+
+    const messages = await formatToolResultsAsync(result as any);
+    expect(messages).toEqual([
+      {
+        role: 'tool',
+        tool_call_id: 'call_plain',
+        content: '{"ok":true}',
+      },
+    ]);
+  });
+
+  it('formats streaming results by collecting chunks', async () => {
+    const result = {
+      callId: 'call_1',
+      outcome: 'success' as const,
+      content: '[stream]',
+      toolCallId: 'call_1',
+      toolName: 'tool1',
+      result: {
+        async *[Symbol.asyncIterator]() {
+          yield { token: 'a' };
+          yield { token: 'b' };
+        },
+      },
+      stream: {
+        async *[Symbol.asyncIterator]() {
+          yield { token: 'a' };
+          yield { token: 'b' };
+        },
+      },
+    };
+
+    const messages = await formatToolResultsAsync(result as any);
+    expect(messages).toEqual([
+      {
+        role: 'tool',
+        tool_call_id: 'call_1',
+        content: '[{"token":"a"},{"token":"b"}]',
+      },
+    ]);
+  });
+
+  it('collects chunks from result when stream handle is absent', async () => {
+    const result = {
+      callId: 'call_2',
+      outcome: 'success' as const,
+      content: '[stream]',
+      toolCallId: 'call_2',
+      toolName: 'tool2',
+      result: {
+        async *[Symbol.asyncIterator]() {
+          yield 'x';
+          yield 'y';
+        },
+      },
+    };
+
+    const messages = await formatToolResultsAsync(result as any);
+    expect(messages).toEqual([
+      {
+        role: 'tool',
+        tool_call_id: 'call_2',
+        content: '["x","y"]',
       },
     ]);
   });

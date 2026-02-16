@@ -950,6 +950,128 @@ describe('createToolbox', () => {
     });
   });
 
+  it('bubbles stream lifecycle events and forwards stream execute options', async () => {
+    const toolbox = createToolbox();
+    const events: string[] = [];
+
+    toolbox.addEventListener('stream-start', (event) => {
+      events.push(`start:${event.detail.mode}`);
+    });
+    toolbox.addEventListener('stream-chunk', (event) => {
+      events.push(`chunk:${event.detail.index}:${event.detail.chunk as string}`);
+    });
+    toolbox.addEventListener('stream-end', (event) => {
+      events.push(`end:${event.detail.chunks}:${event.detail.completed}`);
+    });
+
+    toolbox.register({
+      name: 'streaming-task',
+      description: 'streams chunks',
+      schema: z.object({}),
+      async execute() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield 'x';
+            yield 'y';
+          },
+        };
+      },
+    });
+
+    const collected = await toolbox.execute({
+      id: 'stream-collect',
+      name: 'streaming-task',
+      arguments: {},
+    });
+    expect(collected.result).toEqual(['x', 'y']);
+
+    const live = await toolbox.execute(
+      { id: 'stream-live', name: 'streaming-task', arguments: {} },
+      { stream: true },
+    );
+    expect(live.stream).toBeDefined();
+    const chunks: string[] = [];
+    for await (const chunk of live.stream!) {
+      chunks.push(chunk as string);
+    }
+    expect(chunks).toEqual(['x', 'y']);
+
+    expect(events).toEqual([
+      'start:collect',
+      'chunk:0:x',
+      'chunk:1:y',
+      'end:2:true',
+      'start:stream',
+      'chunk:0:x',
+      'chunk:1:y',
+      'end:2:true',
+    ]);
+  });
+
+  it('consumes stream results exposed only through result and keeps bubbling events', async () => {
+    const toolbox = createToolbox([], {
+      toolFactory(configuration, { buildDefaultTool }) {
+        const tool = buildDefaultTool(configuration);
+        if (configuration.name !== 'result-only-stream') {
+          return tool;
+        }
+        return new Proxy(tool, {
+          get(target, prop, receiver) {
+            if (prop === 'execute') {
+              return async (...args: any[]) => {
+                const original = await (target as any).execute(...args);
+                const { stream: _ignored, ...rest } = original;
+                return rest;
+              };
+            }
+            return Reflect.get(target as any, prop, receiver);
+          },
+          apply(target, thisArg, args) {
+            return Reflect.apply(target as any, thisArg, args);
+          },
+        });
+      },
+    });
+
+    const events: string[] = [];
+    toolbox.addEventListener('stream-start', (event) => {
+      events.push(`start:${event.detail.mode}`);
+    });
+    toolbox.addEventListener('stream-chunk', (event) => {
+      events.push(`chunk:${event.detail.index}:${event.detail.chunk as string}`);
+    });
+    toolbox.addEventListener('stream-end', (event) => {
+      events.push(`end:${event.detail.chunks}:${event.detail.completed}`);
+    });
+
+    toolbox.register({
+      name: 'result-only-stream',
+      description: 'streams chunks via result only',
+      schema: z.object({}),
+      async execute() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield 'r1';
+            yield 'r2';
+          },
+        };
+      },
+    });
+
+    const live = await toolbox.execute(
+      { id: 'result-only-1', name: 'result-only-stream', arguments: {} },
+      { stream: true },
+    );
+
+    expect(live.stream).toBeUndefined();
+    const chunks: string[] = [];
+    for await (const chunk of live.result as AsyncIterable<unknown>) {
+      chunks.push(chunk as string);
+    }
+    expect(chunks).toEqual(['r1', 'r2']);
+    expect(events).toEqual(['start:stream', 'chunk:0:r1', 'chunk:1:r2', 'end:2:true']);
+  });
+
   it('surfaces unexpected tool execution errors as ToolResult errors', async () => {
     const toolbox = createToolbox([], {
       toolFactory(configuration, { buildDefaultTool }) {
@@ -980,6 +1102,61 @@ describe('createToolbox', () => {
       arguments: { a: 1, b: 2 },
     });
     expect(result.error?.message).toContain('kaboom');
+  });
+
+  it('throws tool errors when errorMode is failFast', async () => {
+    const toolbox = createToolbox();
+    toolbox.register({
+      name: 'fail-fast-tool-error',
+      description: 'returns a ToolResult error',
+      schema: z.object({}),
+      async execute() {
+        throw new Error('tool failed');
+      },
+    });
+
+    await expect(
+      toolbox.execute(
+        { id: 'fail-fast-1', name: 'fail-fast-tool-error', arguments: {} },
+        { errorMode: 'failFast' },
+      ),
+    ).rejects.toMatchObject({ message: 'tool failed' });
+  });
+
+  it('throws unexpected execution errors when errorMode is failFast', async () => {
+    const toolbox = createToolbox([], {
+      toolFactory(configuration, { buildDefaultTool }) {
+        const tool = buildDefaultTool(configuration);
+        if (configuration.name !== 'fail-fast-unexpected') {
+          return tool;
+        }
+        return new Proxy(tool, {
+          get(target, prop, receiver) {
+            if (prop === 'execute') {
+              return () => {
+                throw new Error('unexpected failure');
+              };
+            }
+            return Reflect.get(target as any, prop, receiver);
+          },
+          apply(target, thisArg, args) {
+            return Reflect.apply(target as any, thisArg, args);
+          },
+        });
+      },
+    });
+    toolbox.register(makeConfiguration({ name: 'fail-fast-unexpected' }));
+
+    await expect(
+      toolbox.execute(
+        {
+          id: 'fail-fast-unexpected-1',
+          name: 'fail-fast-unexpected',
+          arguments: { a: 1, b: 2 },
+        },
+        { errorMode: 'failFast' },
+      ),
+    ).rejects.toThrow('unexpected failure');
   });
 
   describe('getMissingTools', () => {

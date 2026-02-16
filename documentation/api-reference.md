@@ -164,6 +164,10 @@ See [Eventing](eventing.md) for end-to-end usage patterns.
 - `execute-error`: `{ error }`
 - `settled`: `{ result?, error? }`
 - `progress`: `{ percent?, message? }`
+- `stream-start`: `{ mode: 'stream' | 'collect' }`
+- `stream-chunk`: `{ chunk, index }`
+- `stream-end`: `{ chunks, completed }`
+- `stream-error`: `{ error, index }`
 - `output-chunk`: `{ chunk }`
 - `log`: `{ level, message, data? }`
 - `cancelled`: `{ reason? }`
@@ -268,8 +272,8 @@ Tool types:
 - `ToolCustomEvent`: typed event wrapper
 - `ToolContext`: tool execution context
 - `ToolCallWithArguments`: tool call with parsed arguments
-- `ToolExecuteOptions`: execution options (`signal`, `timeout` in milliseconds)
-- `ToolExecuteWithOptions`: execution options with params, callId, and timeout in milliseconds
+- `ToolExecuteOptions`: execution options (`signal`, `timeout` in milliseconds, `stream`)
+- `ToolExecuteWithOptions`: execution options with params, callId, timeout in milliseconds, and `stream`
 
 Policy types:
 
@@ -385,6 +389,9 @@ Pipelines created with `pipe()` and tools created with `parallel()` emit `Compos
 ### Subpath export: `armorer/adapters/openai` (also `armorer/openai`)
 
 - `toOpenAI(input)`: converts a tool, tool array, or `Toolbox` to OpenAI Chat Completions tools (`OpenAITool` or `OpenAITool[]`)
+- `parseToolCalls(toolCalls, mapper?)`: parses OpenAI tool calls into `ToolCallInput[]`
+- `formatToolResults(results)`: sync formatter for non-streaming results
+- `formatToolResultsAsync(results)`: async formatter that collects streaming results before formatting
 - Types: `JSONSchema`, `OpenAIFunction`, `OpenAITool`
 
 ### Subpath export: `armorer/adapters/anthropic` (also `armorer/anthropic`)

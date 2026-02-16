@@ -66,6 +66,8 @@ export type ToolboxRuntimeContext<Ctx extends ToolboxContext = ToolboxContext> =
   signal?: MinimalAbortSignal;
   /** Execution timeout in milliseconds. */
   timeout?: number;
+  dryRun?: boolean;
+  stream?: boolean;
 };
 
 export type SerializedToolbox = readonly ToolConfiguration[];
@@ -216,6 +218,15 @@ export interface ToolboxEvents {
   };
   'budget-exceeded': { tool: Tool; call: ToolCall; reason: string };
   progress: { tool: Tool; call: ToolCall; percent?: number; message?: string };
+  'stream-start': { tool: Tool; call: ToolCall; mode: 'stream' | 'collect' };
+  'stream-chunk': { tool: Tool; call: ToolCall; chunk: unknown; index: number };
+  'stream-end': {
+    tool: Tool;
+    call: ToolCall;
+    chunks: number;
+    completed: boolean;
+  };
+  'stream-error': { tool: Tool; call: ToolCall; error: unknown; index: number };
   'output-chunk': { tool: Tool; call: ToolCall; chunk: unknown };
   log: {
     tool: Tool;
@@ -609,6 +620,10 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
         'settled',
         'policy-denied',
         'progress',
+        'stream-start',
+        'stream-chunk',
+        'stream-end',
+        'stream-error',
         'output-chunk',
         'log',
         'cancelled',
@@ -635,11 +650,13 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
         const executeOptions: ToolExecuteOptions =
           options?.signal ||
           options?.timeout !== undefined ||
-          options?.dryRun !== undefined
+          options?.dryRun !== undefined ||
+          options?.stream !== undefined
             ? {
                 ...(options?.signal ? { signal: options.signal } : {}),
                 ...(options?.timeout !== undefined ? { timeout: options.timeout } : {}),
                 ...(options?.dryRun !== undefined ? { dryRun: options.dryRun } : {}),
+                ...(options?.stream !== undefined ? { stream: options.stream } : {}),
               }
             : {};
 
@@ -647,16 +664,33 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
           toolCall as ToolCallWithArguments,
           executeOptions,
         );
+        let hasLiveStream = false;
+        const stream = resolveResultStream(result);
+        if (stream) {
+          hasLiveStream = true;
+          const wrapped = wrapAsyncIterable(stream, () => {
+            cleanup.forEach((fn) => fn());
+          });
+          if (result.stream === stream) {
+            result.stream = wrapped;
+          }
+          if (result.result === stream) {
+            result.result = wrapped;
+          }
+        }
         if (result.error) {
           emit('error', { tool, result });
+          cleanup.forEach((fn) => fn());
           if (errorMode === 'failFast') {
             // eslint-disable-next-line @typescript-eslint/only-throw-error
             throw result.error;
           }
         } else {
           emit('complete', { tool, result });
+          if (!hasLiveStream) {
+            cleanup.forEach((fn) => fn());
+          }
         }
-        cleanup.forEach((fn) => fn());
         return result;
       } catch (error) {
         cleanup.forEach((fn) => fn());
@@ -697,6 +731,40 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
       : {};
     const id = typeof call.id === 'string' && call.id.length ? call.id : undefined;
     return createToolCall(call.name, args, id);
+  }
+
+  function resolveResultStream(result: ToolResult): AsyncIterable<unknown> | undefined {
+    if (isAsyncIterable(result.stream)) {
+      return result.stream;
+    }
+    if (isAsyncIterable(result.result)) {
+      return result.result;
+    }
+    return undefined;
+  }
+
+  function wrapAsyncIterable(
+    stream: AsyncIterable<unknown>,
+    onFinalize: () => void,
+  ): AsyncIterable<unknown> {
+    let finalized = false;
+    const finalize = () => {
+      if (!finalized) {
+        finalized = true;
+        onFinalize();
+      }
+    };
+    return {
+      async *[Symbol.asyncIterator]() {
+        try {
+          for await (const chunk of stream) {
+            yield chunk;
+          }
+        } finally {
+          finalize();
+        }
+      },
+    };
   }
 
   function tools(): ToolsFromEntries<TEntries> {
@@ -879,6 +947,8 @@ export function createToolbox<const TEntries extends ToolboxEntries = []>(
           toolCall: toolContext.toolCall,
           signal: toolContext.signal,
           timeout: toolContext.timeout,
+          dryRun: toolContext.dryRun,
+          stream: toolContext.stream,
         });
       },
     };
@@ -1363,6 +1433,13 @@ function createToolError(
   retryable: boolean,
 ): ToolError {
   return { code, category, retryable, message };
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
+    return false;
+  }
+  return Symbol.asyncIterator in value;
 }
 
 function extractErrorCode(error: unknown): string | undefined {

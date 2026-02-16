@@ -31,6 +31,14 @@ export interface ToolResult {
   toolCallId: string;
   toolName: string;
   result: unknown;
+  /**
+   * Optional streaming handle for incremental tool output.
+   *
+   * When present, `result` may also reference this stream.
+   * Consumers that need a non-stream payload can execute without
+   * `stream: true` and rely on collect mode fallback.
+   */
+  stream?: AsyncIterable<unknown>;
   error?: import('./core/errors').ToolError;
   /** @deprecated Use error.message instead. */
   errorMessage?: string;

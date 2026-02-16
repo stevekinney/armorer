@@ -32,6 +32,10 @@ Default tool events include:
 - `output-validate-error`
 - `progress`
 - `status-update`
+- `stream-start`
+- `stream-chunk`
+- `stream-end`
+- `stream-error`
 - `output-chunk`
 - `log`
 - `cancelled`
@@ -100,7 +104,20 @@ During `toolbox.execute(...)`, toolbox also bubbles many tool events with added 
 - `execute-start`, `validate-success`, `validate-error`
 - `output-validate-success`, `output-validate-error`
 - `execute-success`, `execute-error`, `settled`, `policy-denied`
-- `progress`, `output-chunk`, `log`, `cancelled`, `status-update`
+- `progress`, `stream-start`, `stream-chunk`, `stream-end`, `stream-error`
+- `output-chunk`, `log`, `cancelled`, `status-update`
+
+## Streaming Events
+
+When a tool returns an `AsyncIterable`, Armorer emits stream lifecycle events.
+
+- `stream-start`: `{ mode: 'collect' | 'stream' }`
+- `stream-chunk`: `{ chunk, index }`
+- `stream-end`: `{ chunks, completed }`
+- `stream-error`: `{ error, index }`
+
+Default execution mode is collect (`stream: false`), which materializes chunks into an array result.
+With `stream: true`, Armorer returns a live stream on `ToolResult.stream` and `ToolResult.result`.
 
 Example:
 

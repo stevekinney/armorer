@@ -76,6 +76,15 @@ const preview = await toolbox.execute(
 );
 console.log(preview.dryRun); // true
 console.log(preview.content); // "Would delete file.txt" (returned by tool's dryRun handler)
+
+// Streaming mode: preserve async-iterable tool output
+const streamed = await toolbox.execute(
+  { id: 'stream-1', name: 'token-tool', arguments: {} },
+  { stream: true },
+);
+for await (const chunk of streamed.stream!) {
+  console.log('chunk', chunk);
+}
 ```
 
 When executing multiple tool calls, they are executed in parallel using `Promise.all()`. The return value is an array of `ToolResult` objects in the same order as the input calls. You can listen to events from individual tools using `toolbox.addEventListener`:

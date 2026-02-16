@@ -117,6 +117,33 @@ describe('preprocess', () => {
     expect(observed.signal).toBe(controller.signal);
     expect(observed.timeout).toBe(123);
   });
+
+  it('forwards stream and dryRun to the wrapped tool', async () => {
+    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+    const tool = createTool({
+      name: 'preprocess-stream-forward',
+      description: 'captures stream + dryRun',
+      schema: z.object({ value: z.number() }),
+      async execute(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return 7;
+      },
+      async dryRun(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return 7;
+      },
+    });
+
+    const preprocessed = preprocess(tool, async (input) => input);
+    const result = await (preprocessed as any).executeWith({
+      params: { value: 1 },
+      stream: true,
+      dryRun: true,
+    });
+
+    expect(result.result).toBe(7);
+    expect(observed).toEqual([{ stream: true, dryRun: true }]);
+  });
 });
 
 describe('postprocess', () => {
@@ -242,6 +269,33 @@ describe('postprocess', () => {
 
     expect(observed.signal).toBe(controller.signal);
     expect(observed.timeout).toBe(321);
+  });
+
+  it('forwards stream and dryRun to the wrapped tool', async () => {
+    const observed: Array<{ stream?: boolean; dryRun?: boolean }> = [];
+    const tool = createTool({
+      name: 'postprocess-stream-forward',
+      description: 'captures stream + dryRun',
+      schema: z.object({ value: z.number() }),
+      async execute(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return 9;
+      },
+      async dryRun(_params, context) {
+        observed.push({ stream: context.stream, dryRun: context.dryRun });
+        return 9;
+      },
+    });
+
+    const postprocessed = postprocess(tool, async (output) => output);
+    const result = await (postprocessed as any).executeWith({
+      params: { value: 1 },
+      stream: true,
+      dryRun: true,
+    });
+
+    expect(result.result).toBe(9);
+    expect(observed).toEqual([{ stream: true, dryRun: true }]);
   });
 });
 

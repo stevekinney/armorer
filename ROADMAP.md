@@ -12,6 +12,8 @@ This document outlines potential future enhancements for Armorer. These features
 
 ### Streaming Response Support
 
+Status: Implemented in core execution and eventing APIs (`stream: true` with collect fallback by default).
+
 Native support for streaming responses from tools, particularly useful for:
 
 - LLM token streaming
